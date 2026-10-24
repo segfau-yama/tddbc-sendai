@@ -1,6 +1,30 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Position {
+    x: i32,
+    y: i32,
+}
+
+impl Position {
+    pub fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
+    pub fn x(&self) -> i32 {
+        self.x
+    }
+    pub fn y(&self) -> i32 {
+        self.y
+    }
+
+    pub fn distance_to(&self, other: Position) -> f64 {
+        // 整数の差を先に取ると、座標の端でオーバーフローする。
+        (f64::from(self.x) - f64::from(other.x)).hypot(f64::from(self.y) - f64::from(other.y))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Skittle {
     number: i32,
+    position: Position,
 }
 
 impl Skittle {
@@ -11,10 +35,29 @@ impl Skittle {
             (1..=12).contains(&number),
             "スキットル番号は1〜12です: {number}"
         );
-        Self { number }
+        Self {
+            number,
+            position: Position::new(0, 0),
+        }
     }
 
     pub fn number(&self) -> i32 {
         self.number
+    }
+
+    pub fn position(&self) -> Position {
+        self.position
+    }
+
+    pub fn with_position(&self, position: Position) -> Self {
+        Self {
+            number: self.number,
+            position,
+        }
+    }
+
+    pub fn fall_probability(&self, from: Position) -> f64 {
+        // 距離0でも確率が定義でき、距離の増加に応じて単調に下がるモデル。
+        1.0 / (1.0 + self.position.distance_to(from))
     }
 }

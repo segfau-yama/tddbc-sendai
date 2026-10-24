@@ -86,10 +86,31 @@ game.teams()[0].record_throw(&Throw::new(&[Skittle::new(5)]));
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{random_throw, Molkky, Team};
+use rust_molkky::{random_throw, Field, Molkky, Position, Team};
 let mut rng = StdRng::seed_from_u64(20261024);
 let mut game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let thrown = random_throw(&mut rng);
+let mut field = Field::default();
+let thrown = random_throw(&mut field, Position::new(0, 0), &mut rng);
 let points = game.record_throw(0, &thrown);
 assert_eq!(game.teams()[0].score().history(), &[points]);
+```
+
+## 座標を指定して配置し距離から倒れる確率を求める
+
+```rust
+use rust_molkky::{Field, Position, Skittle};
+let pin = Skittle::new(5).with_position(Position::new(3, 4));
+assert_eq!(pin.position().distance_to(Position::new(0, 0)), 5.0);
+assert_eq!(pin.fall_probability(Position::new(3, 4)), 1.0);
+assert!(pin.fall_probability(Position::new(-3, -4)) < pin.fall_probability(Position::new(0, 0)));
+let field = Field::new(vec![pin]);
+assert_eq!(field.skittles()[0].position(), Position::new(3, 4));
+```
+
+## Fieldの配置を読み取りAPIから書き換えることはできない
+
+```compile_fail
+use rust_molkky::{Field, Skittle};
+let mut field = Field::default();
+field.skittles()[0] = Skittle::new(12);
 ```

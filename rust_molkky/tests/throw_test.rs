@@ -43,6 +43,16 @@ mod multiple_skittles {
     fn 同じ番号の別スキットルを重複として拒否する() {
         Throw::new(&[Skittle::new(5), Skittle::new(5)]);
     }
+
+    #[test]
+    #[should_panic(expected = "スキットル番号が重複しています: 5")]
+    fn 同じ番号は位置が違っても重複として拒否する() {
+        use rust_molkky::Position;
+        Throw::new(&[
+            Skittle::new(5),
+            Skittle::new(5).with_position(Position::new(3, 4)),
+        ]);
+    }
 }
 
 mod no_skittles {

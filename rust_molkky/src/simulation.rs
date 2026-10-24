@@ -1,12 +1,17 @@
 use rand::Rng;
 
-use crate::{Skittle, Throw};
+use crate::{Field, Position, Throw};
 
-/// 各ピンが独立に確率1/2で倒れるモデル。乱数源は呼び出し側で指定する。
-pub fn random_throw(rng: &mut impl Rng) -> Throw {
-    let skittles: Vec<_> = (1..=12)
-        .filter(|_| rng.random_bool(0.5))
-        .map(Skittle::new)
+/// 配置されたピンから投てき結果を生成する。
+pub fn random_throw(field: &mut Field, from: Position, rng: &mut impl Rng) -> Throw {
+    let skittles: Vec<_> = field
+        .skittles()
+        .iter()
+        .copied()
+        .filter(|skittle| rng.random_bool(skittle.fall_probability(from)))
         .collect();
-    Throw::new(&skittles)
+    let thrown = Throw::new(&skittles);
+    // 確定した投てき結果には移動前の座標を保持し、判定後に全ピンを移す。
+    field.relocate(rng);
+    thrown
 }
