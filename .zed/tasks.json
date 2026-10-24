@@ -1,0 +1,23 @@
+[
+  {
+    "label": "Test class $ZED_CUSTOM_java_class_name",
+    "command": "./gradlew",
+    "args": ["test", "--tests", "$ZED_CUSTOM_java_package_name.*$ZED_CUSTOM_java_class_name"],
+    "cwd": "$ZED_WORKTREE_ROOT/java_molkky",
+    "tags": ["java-test-class", "java-test-class-nested"]
+  },
+  {
+    "label": "Test $ZED_CUSTOM_java_class_name.$ZED_CUSTOM_java_method_name",
+    "command": "./gradlew",
+    "args": ["test", "--tests", "$ZED_CUSTOM_java_package_name.*$ZED_CUSTOM_java_class_name.$ZED_CUSTOM_java_method_name"],
+    "cwd": "$ZED_WORKTREE_ROOT/java_molkky",
+    "tags": ["java-test-method", "java-test-method-nested"]
+  },
+  {
+    "label": "Run Java tests",
+    "command": "./gradlew",
+    "args": ["test"],
+    "cwd": "$ZED_WORKTREE_ROOT/java_molkky",
+    "tags": ["java-test-all"]
+  }
+]

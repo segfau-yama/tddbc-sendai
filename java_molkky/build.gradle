@@ -1,0 +1,41 @@
+plugins {
+    id 'java'
+    id 'net.ltgt.errorprone' version '5.1.1'
+}
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+dependencies {
+    // JDK 17に対応する最後のError Proneを使用する。
+    errorprone 'com.google.errorprone:error_prone_core:2.42.0'
+    errorprone 'com.uber.nullaway:nullaway:0.14.3'
+    compileOnly 'org.jspecify:jspecify:1.0.1'
+    testCompileOnly 'org.jspecify:jspecify:1.0.1'
+
+    testImplementation platform('org.junit:junit-bom:5.11.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    // JDK 17で依存クラスの型注釈を読み取るために必要。
+    options.compilerArgs.add('-XDaddTypeAnnotationsToSymbol=true')
+    options.errorprone {
+        disableAllChecks = true
+        error('NullAway')
+        option('NullAway:OnlyNullMarked', 'true')
+        option('NullAway:JSpecifyMode', 'true')
+    }
+}
+
+test {
+    useJUnitPlatform()
+}
