@@ -11,7 +11,7 @@ use ratatui::{
         canvas::{Canvas, Line as CanvasLine},
     },
 };
-use rust_molkky::{Field, Molkky, Position, Team, random_throw};
+use rust_molkky::{Field, Molkky, Position, Stick, Team, calc_score, throw_stick};
 
 const MIN_WIDTH: u16 = 72;
 const MIN_HEIGHT: u16 = 24;
@@ -83,14 +83,18 @@ impl Runtime {
             .game
             .teams()
             .iter()
-            .map(|team| team.score().history().len())
+            .map(|team| team.score_board().history().len())
             .sum::<usize>()
             + 1;
-        let before = self.game.teams()[self.active].score().value();
-        let thrown = random_throw(&mut self.field, self.from, &mut rand::rng());
-        let points = self.game.record_throw(self.active, &thrown);
+        let before = self.game.teams()[self.active].score_board().value();
+        let mut rng = rand::rng();
+        let knocked_over = throw_stick(&Stick::new(self.from), self.field.skittles(), &mut rng);
+        let point = calc_score(&knocked_over);
+        self.game = self.game.record_point(self.active, point);
+        self.field = self.field.relocate(&mut rng);
+        let points = point.value();
         let team = &self.game.teams()[self.active];
-        let score = team.score().value();
+        let score = team.score_board().value();
         let reset = if before + points > 50 {
             "  50点を超過したため25点へ"
         } else {
@@ -176,10 +180,10 @@ impl Runtime {
     fn render_scores(&self, frame: &mut Frame, area: Rect) {
         let winner = self.game.result();
         let rows = self.game.teams().iter().enumerate().map(|(index, team)| {
-            let history = team.score().history();
+            let history = team.score_board().history();
             let recent = history[history.len().saturating_sub(6)..]
                 .iter()
-                .map(i32::to_string)
+                .map(|point| point.value().to_string())
                 .collect::<Vec<_>>()
                 .join(" ");
             let marker = if winner == Some(index) {
@@ -192,7 +196,7 @@ impl Runtime {
             Row::new([
                 Cell::from(marker),
                 Cell::from(team.name()),
-                Cell::from(format!("{} / 50", team.score().value())),
+                Cell::from(format!("{} / 50", team.score_board().value())),
                 Cell::from(history.len().to_string()),
                 Cell::from(recent),
             ])

@@ -1,39 +1,14 @@
-use std::collections::HashMap;
+use rand::Rng;
 
-use crate::Skittle;
+use crate::{Skittle, Stick, skittle::validate_unique_numbers};
 
-pub struct Throw {
-    skittles: HashMap<i32, Skittle>,
-}
-
-impl Throw {
-    /// 同じ番号の重複をpanicで拒否し、入力のコピーを保持する。
-    /// スライスやその要素にNoneは指定できない。
-    pub fn new(skittles: &[Skittle]) -> Self {
-        let mut validated = HashMap::new();
-        for &skittle in skittles {
-            // 同じ番号のスキットルは1本だけなので、重複を黙って除去せず拒否する。
-            assert!(
-                validated.insert(skittle.number(), skittle).is_none(),
-                "スキットル番号が重複しています: {}",
-                skittle.number()
-            );
-        }
-        Self {
-            skittles: validated,
-        }
-    }
-
-    pub fn calc_point(&self) -> i32 {
-        // 1本なら番号が点数になり、0本・複数本なら本数が点数になる。
-        if self.skittles.len() == 1 {
-            return self
-                .skittles
-                .values()
-                .next()
-                .expect("1本のスキットルが存在する")
-                .number();
-        }
-        self.skittles.len() as i32
-    }
+/// 入力の配置を変えず、倒れたスキットルのコピーを返す。
+/// 乱数源は更新するため、厳密な意味での純粋関数ではない。
+pub fn throw_stick(stick: &Stick, target_skittles: &[Skittle], rng: &mut impl Rng) -> Vec<Skittle> {
+    validate_unique_numbers(target_skittles);
+    target_skittles
+        .iter()
+        .copied()
+        .filter(|skittle| rng.random_bool(skittle.fall_probability(stick.position())))
+        .collect()
 }

@@ -1,5 +1,98 @@
 # Java版からRust版への移植
 
+## simulation削除とドメインオブジェクトの不変化（最新の変更）
+
+### レビュー・設計
+
+- 対象：ユーザーの今回の指示、Rust版全公開型・状態更新・TUI・テスト。前節以降は過去の設計・実装記録として残す。
+- 高：ScoreBoard::addが元のscore_historyを書き換える。`add(&self, Point) -> Self`へ変え、新しいVecを持つ得点表を返す。
+- 高：Team::record_point・Molkky::record_point・Field::relocateにも入力の更新がある。これらも`&self`から新しいSelfを返し、元の履歴・チーム・配置を維持する。
+- simulation.rsとrandom_throwを削除する。TUIがthrow_stick・calc_score・ゲームの更新・配置の更新を明示的な順序で組み合わせる。代替のラッパーモジュールは作らない。
+- Position・Skittle・Stick・Pointは非公開フィールドと読み取り専用APIを持つ値で、内部可変性はない。全ドメイン型の更新結果にmust_useを付け、戻り値の取りこぼしを検出する。
+- 不変性は「入力オブジェクトを変更しない」契約とする。新しいVecを組み立てる局所変数のmutは許容する。UIの最新状態の差し替え・端末I/O・乱数源の更新は外側に残し、プログラム全体を純粋とは呼ばない。
+- ゲーム終了後の拒否・50点超過の補正・全ピン移動・座標の境界処理・番号重複拒否を維持する。
+- push対象は選択リポジトリのmain。作業開始時のorigin/mainはローカルHEADと一致する。force pushは使用しない。
+
+### テスト計画
+
+- [x] 変更前のcargo test --lockedで79件成功を確認する。
+- [x] ScoreBoardの更新前の値を残し、追加後も元の得点・履歴が変わらないことを確認する。
+- [x] Team・Molkky・Fieldを更新しても、元の値と更新対象以外の値が変わらないことを確認する。
+- [x] simulation削除後も投てき判定と全ピン移動の既存9ケースを直接APIの組合せで検証する。
+- [x] 最新APIにREADMEとドキュメントテストを移行し、全テスト・ビルド・fmt・Clippy・TUIを確認する。
+- [x] 全体の不変性レビュー結果と検証結果を追記し、差分を確認する。
+
+### 全体の不変性レビュー結果
+
+| 対象 | 確認結果 |
+| --- | --- |
+| Position・Skittle・Stick・Point | フィールドは非公開で、可変参照・セッター・内部可変性なし。Skittleの位置指定も新しい値を返す。 |
+| ScoreBoard | addが新しいscore_historyを作成する。historyは共有スライスのみを返す。元の履歴・得点の保持をテストで確認。 |
+| Team・Molkky | record_pointが新しいオブジェクトを返す。元のチーム・ゲームと非対象チームは保持される。teamsは共有スライスのみ。 |
+| Field | relocateが新しいVecとピンの値を返す。元の配置と番号は保持され、座標の端でも範囲内で移動する。 |
+| Rust全ドメイン型 | &mut self・可変フィールド公開・RefCell/Cell/Mutex等の内部可変性なし。新しい値を作る処理内の局所変数は可変でも、元オブジェクトへ影響しない。 |
+| TUI・乱数源・端末I/O | 外側の可変状態。Runtimeだけが最新のゲーム・Fieldを差し替える。throw_stickとrelocateは乱数源を更新するので純粋関数ではない。 |
+| Java版 | Skittleはrecord、Scoreはfinalな数値、ThrowはSet.copyOfで防御コピーした不変集合。状態を書き換えるメソッドなし。今回はコード変更・再テストなし。 |
+
+### Red・Green・Refactorと最終確認
+
+- Red：元の状態を参照し続ける4件のテストを先に追加。更新APIがSelfを返さず、relocateが非公開のためE0599・E0624を確認した。
+- Green：ScoreBoard・Team・Molkky・Fieldを&selfから新しいSelfを返す方式へ変更し、4件が成功した。
+- Refactor：simulation.rs・random_throwを削除。既存の投てきと移動9ケースはfield_movement_testへ移し、throw_stickとrelocateを直接組み合わせるテストへ移行した。
+- README・ドキュメントテスト・TUI・既存テストは、戻り値を明示的に保持するAPIへ移行した。チームの読み取り専用制約は、共有スライス内の要素を置き換えられないこととして検証した。
+- `cargo test --locked`：統合テスト68件・ドキュメントテスト17件、計85件成功。失敗・無視0件。ドキュメントテストは正常利用7件・compile_fail 10件。
+- `cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --all-targets -- -D warnings`・`git diff --check`：すべて成功。
+- `cargo run --locked -- 赤 青`：起動、Spaceで得点・履歴・配置と次チームへの手番更新、Rで初期状態への復帰、Qで終了コード0を確認した。
+- 既存の点数・超過補正・終了後拒否・番号重複拒否を維持した。追加依存・ロックファイルの変更はない。
+- 検証済みの変更をConventional Commits形式でコミットし、通常のpushでmainへ送る。pushの成否とコミットIDはチャットで報告する。
+
+## 投てき・採点・得点履歴の責務分離（今回の変更）
+
+### 設計評価と対象
+
+- 対象：ユーザーの最新提案、STEP 01・02、既存のThrow・Score・Team・Molkky・確率生成・TUIとそのテスト。
+- 中：現在のThrowは「動作」ではなく、重複のない投てき結果を保持する値である。値として成立しているが、動作と同名で役割が分かりにくい。今回はユーザー指定に従い、結果をSkittleの列、動作をthrow_stick関数とする。
+- 中：現在のScoreは単一の得点ではなく履歴を保持する。ScoreBoardへ改名し、採点済みPointの追加と得点集計を担当させる。with_throwは不変な値の更新として誤りではないが、今回選ぶ可変の履歴管理とは異なる。
+- 高：生のスライスへ移行しても番号重複の拒否を失わない。投てき対象・倒れたピンの両方で検証する。
+- 高：50点ちょうどで終了、超過時25点、0点も履歴へ記録、終了後の記録拒否、投てき後の全ピン移動を維持する。
+- 2オブジェクトが関わることだけでは関数化の理由にならない。自分の状態・不変条件の更新はメソッド、どちらにも自然に属さない判定は独立関数が候補。メソッドでも副作用がなければ純粋にでき、独立関数でも乱数源を更新すれば純粋ではない。
+- 例えば既存のPosition::distance_toは2つのPositionを扱うが、どちらも変更せず、距離というPositionに自然な操作なのでメソッドのままでよい。この提案を「複数オブジェクトなら常に関数」という一般ルールにはしない。
+
+### 公開APIと不変条件
+
+- Stickは現在の距離モデルに必要な投てき位置だけを保持する値。未指定の速度・角度・衝突モデルは追加しない。
+- `throw_stick(&Stick, &[Skittle], &mut impl Rng) -> Vec<Skittle>`をthrow.rsに置く。入力ピンを変更せず、移動前に倒れたピンのコピーを返す。乱数源の更新があるため厳密には純粋関数ではない。
+- `random_throw`はField・乱数を更新する外側の処理として残し、throw_stickの判定後に全ピンを移動する。
+- `calc_score(&[Skittle]) -> Point`は純粋な採点関数。0本は0点、1本は番号、複数本は本数。同じ番号は座標によらず拒否する。
+- Pointは非公開の数値を持つ読み取り専用の値。calc_scoreだけが生成し、無効な点数を履歴へ渡せないようにする。
+- ScoreBoardは非公開の`score_history: Vec<Point>`を所有し、`add(Point)`で1投分を追加する。`history()`は読み取り専用、`value()`は投てき順に50点超過の補正を適用する。
+- Team・Molkkyは倒れたピンではなくPointを受け取る。チームの得点更新はMolkky::record_pointから行い、終了判定の迂回を防ぐ。
+- Java版のAPI・実装は変更しない。以前の節は当時の実装履歴として残す。
+
+### テスト計画
+
+- [x] 変更前のcargo test --lockedで71件（失敗・無視0件）を確認する。
+- [x] throw_stickの入力不変性・倒れたピンの番号と位置・同じシードでの再現・空と重複入力を確認する。
+- [x] calc_scoreの0本・1本・複数本・同じ番号の重複拒否を確認する。
+- [x] ScoreBoard::addの順序・0点・同じPointの反復・49/50/51点・再超過を確認する。
+- [x] Team・Molkky・全ピン移動の既存仕様を新しいAPIで検証する。
+- [x] Point・履歴・チーム一覧の読み取り専用制約をドキュメントテストで確認する。
+- [x] READMEとAPI例を更新し、全テスト・ビルド・フォーマット・Clippy・TUI操作を確認する。
+
+### 実行記録
+
+- 変更前：`cargo test --locked`は71件成功。既存挙動の確認であり、新機能のRedではない。
+- Red：新APIで入力不変の投てきとPointの履歴追加を確認する2テストを作成し、未実装のStick・throw_stick・Point・calc_score・ScoreBoardに対するE0432を確認した。
+- Green：上記APIとTUIの呼び出しを実装し、2テストが成功した。検証済みのケースは後でthrow_test・score_test・ドキュメントテストへ集約した。
+- Refactor：旧Throwの9件の採点テストをscore_testのscoringへ移し、期待する点数・番号重複拒否・採点結果の入力からの独立性を維持した。投てきそのものはthrow_testの6件で確認した。
+- Scoreの不変更新は今回廃止した契約なので、旧with_throwのテストは別々の得点表の独立性を確認するテストへ変更した。可変のScoreBoardを不変更新として扱わない。
+- Field・投てき対象・採点入力の番号重複検証を共通化した。固定乱数のテスト用実装もsupportへまとめた。新しい依存は追加していない。
+- `cd rust_molkky && cargo test --locked`：統合テスト64件・ドキュメントテスト15件、計79件成功。失敗・無視0件。ドキュメントテストの内訳は正常利用6件・compile_fail 9件。
+- `cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --all-targets -- -D warnings`：すべて成功。
+- `cargo run --locked -- 赤 青`を対話型端末で起動し、Spaceで赤の履歴・得点が更新され、青の手番へ移ることを確認した。Qで終了コード0を確認した。
+- 旧Throw・Score・with_throwは互換APIを残さず置き換えた。Team::scoreはscore_boardへ、Team/Molkky::record_throwはrecord_pointへ変更し、ライブラリ内・TUI・テスト・READMEの利用箇所を移行した。
+- Java版は変更・再テストしていない。厳密に純粋な投てき関数にする場合は乱数値を入力にするなど別の契約が必要だが、今回は既存の確率仕様と明示的な乱数源の受け渡しを維持した。
+
 ## レビュー
 
 - 対象はJava版のSkittle・Throw・Scoreと、公開済みのSTEP 01・02。

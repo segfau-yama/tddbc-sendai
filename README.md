@@ -3,115 +3,123 @@ TDDBC仙台の備忘録用リポジトリ
 
 ## Rust演習環境
 
-- `rust_molkky`は、Java版を起点に、チームとゲームの管理を追加したライブラリです。
-- 実装は`rust_molkky/src/`に構造体ごとに分け、テストは`rust_molkky/tests/`にあります。
-- STEP 01・02に加え、ユーザー指定の「50点ちょうどで終了、超過すると25点へ戻る」ルールを実装しています。
-- Scoreは点数の生の履歴を保持し、投てきの順に超過ルールを適用して現在得点を求めます。
-- `with_throw`は新しいScoreを返し、元の履歴は変更しません。`history()`は読み取り専用です。
-- ランダム生成は外側の`random_throw`関数に分離し、randを使用しています。初回の依存取得にはインターネット接続が必要です。
-- `Skittle::new`が番号1〜12を保証し、`Throw::new`が番号の重複を拒否します。
-- `skittle.rs`のPositionで座標を表し、`Field`が番号と位置を持つスキットルを配置します。
-- 倒れる確率は投てき位置との距離から求め、投てき後には全ピンが隣接マスへ移動します。
-- 範囲外入力・重複の例外は、既存Rust版と同じく`panic!`で表現しています。
-- Java版の可変長引数はスライスで表現します。通常のRustでは、値・参照・スライスにnullはありません。
-- Optionを入力型に含めず、Noneを渡せないことを`tests/api.md`のドキュメントテストで検証しています。
-- `src/lib.rs`は公開APIを再エクスポートし、`tests/api.md`をドキュメントとして読み込みます。
-- テスト名は日本語とし、ドメインや状況ごとのmodにまとめています。
+`rust_molkky`は、Java版を起点にチーム・ゲーム管理と距離に応じた投てきモデルを追加したライブラリとTUIです。
+実装は`src/`、振る舞いのテストは`tests/`にあります。依存取得にはインターネット接続が必要です。
 
 ```sh
 cd rust_molkky
-cargo test           # テストを実行
-cargo test --test throw_test  # Throwのテストだけ実行
-cargo build          # ビルド
-cargo fmt --check    # フォーマットを確認
-cargo clippy --all-targets -- -D warnings  # 警告をエラーとして検査
+cargo test --locked
+cargo build --locked
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+cargo run --locked -- 赤チーム 青チーム  # 対話型ターミナルで起動
 ```
 
-| 構造体 | 実装 | テスト |
+TUIではSpace / Enterで投てき、矢印キーで投てき位置を移動、Rで再開、Q / Escで終了します。
+
+| 責務 | 公開API | 実装 |
 | --- | --- | --- |
-| Skittle | `rust_molkky/src/skittle.rs` | `rust_molkky/tests/skittle_test.rs` |
-| Throw | `rust_molkky/src/throw.rs` | `rust_molkky/tests/throw_test.rs` |
-| Score | `rust_molkky/src/score.rs` | `rust_molkky/tests/score_test.rs` |
-| Team | `rust_molkky/src/team.rs` | `rust_molkky/tests/team_test.rs` |
-| Molkky | `rust_molkky/src/molkky.rs` | `rust_molkky/tests/molkky_test.rs` |
-| Position | `rust_molkky/src/skittle.rs` | `rust_molkky/tests/position_test.rs` |
-| Field | `rust_molkky/src/field.rs` | `rust_molkky/tests/field_test.rs` |
+| 番号1〜12と位置を持つピン | `Skittle`, `Position` | `src/skittle.rs` |
+| 現在のモデルで使う棒の投てき位置 | `Stick` | `src/stick.rs` |
+| 倒れたピンの判定 | `throw_stick` | `src/throw.rs` |
+| 1投の採点と点数の値 | `calc_score`, `Point` | `src/score.rs` |
+| 1チームの点数履歴と現在得点 | `ScoreBoard` | `src/score.rs` |
+| 名称と得点表 | `Team` | `src/team.rs` |
+| 複数チームと終了判定 | `Molkky` | `src/molkky.rs` |
+| ピンの配置 | `Field` | `src/field.rs` |
+| 元の配置を保ち、移動後の配置を返す | `Field::relocate` | `src/field.rs` |
 
-ランダム生成は`src/simulation.rs`、対応するテストは`tests/simulation_test.rs`にあります。
-
-```rust
-use rust_molkky::{Score, Skittle, Throw};
-
-let first = Throw::new(&[
-    Skittle::new(1), Skittle::new(2), Skittle::new(3),
-    Skittle::new(4), Skittle::new(5),
-]);
-let second = Throw::new(&[Skittle::new(11)]);
-
-assert_eq!(first.calc_point(), 5);
-assert_eq!(Score::new(&[]).value(), 0);
-assert_eq!(Score::new(&[&first, &second]).value(), 16);
-assert_eq!(Score::new(&[&second, &second]).value(), 22);
-```
-
-ゲームへの記録は、対象チームのインデックスと確定したThrowを渡します。
+採点と履歴更新を分離します。`calc_score`は入力だけから`Point`を返す純粋関数です。
+0本なら0点、1本なら番号、複数本なら本数です。`ScoreBoard::add`は元の得点表を変えず、その点数を履歴へ追加した新しい得点表を返します。
 
 ```rust
-use rust_molkky::{Molkky, Skittle, Team, Throw};
+use rust_molkky::{ScoreBoard, Skittle, calc_score};
 
-let mut game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let twelve = Throw::new(&[Skittle::new(12)]);
-for _ in 0..4 { game.record_throw(0, &twelve); }
-game.record_throw(0, &Throw::new(&[Skittle::new(3)])); // 48 + 3で25点へ
-assert_eq!(game.teams()[0].score().value(), 25);
-assert_eq!(game.teams()[0].score().history(), &[12, 12, 12, 12, 3]);
-assert_eq!(game.result(), None);
-
-game.record_throw(0, &twelve); // 37点
-game.record_throw(0, &twelve); // 49点
-game.record_throw(0, &Throw::new(&[Skittle::new(1)])); // 50点
-assert_eq!(game.result(), Some(0)); // 赤チームの勝利
+let first = calc_score(&[Skittle::new(5), Skittle::new(8)]);
+let second = calc_score(&[Skittle::new(11)]);
+let mut board = ScoreBoard::new();
+board = board.add(first);
+board = board.add(second);
+assert_eq!(first.value(), 2);
+assert_eq!(board.value(), 13);
+assert_eq!(board.history(), &[first, second]);
 ```
 
-- `record_throw`の戻り値は、その回の点数です。補正後の得点は`score().value()`で取得します。
-- `result()`は進行中ならNone、終了時は勝者のインデックスをSomeで返します。
-- 終了後の投てき・存在しないチームへの記録はpanicで拒否し、状態を変更しません。
-- チームは1件以上必要です。空の名称・同名のチームは許容し、インデックスで識別します。
-- 既に得点を持つTeamも渡せますが、複数の勝者がいる状態は拒否します。
-- 手番の強制や、指定されていない失投・終了ルールは追加していません。
+- `Point`は読み取り専用で、`calc_score`が0〜12の範囲を保証します。
+- `ScoreBoard`の`score_history`は非公開の`Vec<Point>`です。`history()`では読み取り専用のスライスを返します。
+- 履歴は生の点数の順序を保持します。現在得点は投てき順に計算し、50点超過ならその回に25点へ戻ります。
+- `Skittle::new`は番号1〜12を保証します。同じ番号のピンは、位置が違ってもField・投てき対象・採点入力で拒否します。
+- 不正入力は既存方針の`panic!`で拒否します。通常のRustの値・参照・スライスにnullはありません。
 
-ランダムな投てきは、Field・投てき位置・乱数源を渡して生成します。
+`throw_stick`は棒と対象のピン、呼び出し側の乱数源を受け取り、倒れたピンのコピーを返します。
+入力のピンは移動しませんが、乱数源は更新するため厳密な純粋関数ではありません。
+`Stick`は現在の距離モデルに必要な位置だけを持ち、速度・角度・衝突モデルは追加していません。
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{random_throw, Field, Molkky, Position, Skittle, Team};
+use rust_molkky::{Position, Skittle, Stick, throw_stick, calc_score};
+
+let mut rng = StdRng::seed_from_u64(42);
+let targets = [Skittle::new(5).with_position(Position::new(0, 0))];
+let knocked_over = throw_stick(&Stick::new(Position::new(0, 0)), &targets, &mut rng);
+assert_eq!(knocked_over, targets); // 同じ位置のピンは必ず倒れる。
+assert_eq!(calc_score(&knocked_over).value(), 5);
+```
+
+ゲームへは採点済みのPointを記録します。ピンの判定・採点はTeamやMolkkyの責務に含めません。
+
+```rust
+use rust_molkky::{Molkky, Skittle, Team, calc_score};
+
+let mut game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
+let twelve = calc_score(&[Skittle::new(12)]);
+for _ in 0..4 { game = game.record_point(0, twelve); }
+game = game.record_point(0, calc_score(&[Skittle::new(3)])); // 48 + 3で25点へ。
+assert_eq!(game.teams()[0].score_board().value(), 25);
+game = game.record_point(0, twelve); // 37点。
+game = game.record_point(0, twelve); // 49点。
+game = game.record_point(0, calc_score(&[Skittle::new(1)]));
+assert_eq!(game.result(), Some(0)); // 50点ちょうどで赤チームの勝利。
+```
+
+- `Team::record_point`・`Molkky::record_point`は元の値を変えず、点数を記録した新しいチーム・ゲームを返します。補正後の得点は`score_board().value()`で取得します。
+- `result()`は進行中ならNone、50点ちょうどの勝者がいればSome(index)です。
+- 終了後・存在しないチームへの記録は、履歴を変える前に拒否します。`teams()`から直接更新はできません。
+- チームは1件以上必要です。空の名称・同名は許容し、インデックスで識別します。複数勝者の初期状態は拒否します。
+- ライブラリは手番を強制しません。TUIがチームを順番に切り替えます。失投などの未指定ルールは追加していません。
+
+投てきの判定と配置の更新は呼び出し側で組み合わせます。`simulation.rs`と`random_throw`は削除しました。
+`Field::relocate`は元の配置を変えず、全ピンを移動した新しい配置を返します。
+
+```rust
+use rand::{rngs::StdRng, SeedableRng};
+use rust_molkky::{Field, Molkky, Position, Stick, Team, calc_score, throw_stick};
 
 let mut rng = StdRng::seed_from_u64(20261024);
 let mut game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let mut field = Field::new(vec![
-    Skittle::new(5).with_position(Position::new(0, 1)),
-    Skittle::new(8).with_position(Position::new(0, 4)),
-]);
-let from = Position::new(0, 0);
-let thrown = random_throw(&mut field, from, &mut rng);
-let points = game.record_throw(1, &thrown);
-assert_eq!(game.teams()[1].score().history(), &[points]);
-// field.skittles()から投てき後の新しい配置を読み取れる。
+let mut field = Field::default();
+let knocked_over = throw_stick(&Stick::new(Position::new(0, 0)), field.skittles(), &mut rng);
+let point = calc_score(&knocked_over);
+game = game.record_point(1, point);
+field = field.relocate(&mut rng);
+assert_eq!(game.teams()[1].score_board().history(), &[point]);
+assert_eq!(field.skittles().len(), 12);
 ```
 
-- 座標は整数のグリッドです。`distance_to`はユークリッド距離を返します。
-- 各ピンの確率は`1 / (1 + 距離)`です。同じ場所なら必ず倒れ、遠いほど倒れにくくなります。
-- 倒れる判定は移動前の配置で行い、その後、倒れなかったピンも含めて全ピンが隣接8マスのいずれかへ移動します。
-- i32の座標範囲の端では範囲内の隣接マスを選びます。同じ座標への配置は許容し、衝突計算は行いません。
-- `Field::default()`は1〜12番を3列4行（x=-1,0,1・y=3,4,5,6）へ配置します。任意配置や空のFieldは`Field::new`で作れます。
-- `Skittle::new(number)`は原点に生成します。座標を指定する場合は`with_position`を使います。
-- 同じ番号のピンは、座標が違ってもThrow・Fieldの両方で重複として拒否します。
+- 各ピンの倒れる確率は`1 / (1 + 距離)`です。遠いほど倒れにくくなります。
+- 判定後、倒れなかったピンも含め全ピンを隣接8マスのいずれかへ移動します。整数座標の端でも範囲内へ移動します。
+- `Field::default()`は1〜12番を3列4行（x=-1,0,1、y=3,4,5,6）へ配置します。空・任意配置も指定できます。
+- 同じ座標への配置は許容します。衝突計算はありません。`Skittle::with_position`は元のピンを変えず新しい値を返します。
+- 次回の投てきには返された新しいFieldを使います。同じ初期配置とシードで再現でき、randのバージョン間の同一結果は保証しません。
 
-以前の`random_throw(&mut rng)`は、`random_throw(&mut field, from, &mut rng)`へ変更しています。
-同じ初期配置とシードで再現確認を行っています。randのバージョン間での同一結果は保証しません。
+すべてのドメイン型（Position・Skittle・Stick・Point・ScoreBoard・Team・Molkky・Field）は、非公開フィールドと共有参照のAPIを持ち、既存オブジェクトを書き換えません。
+更新結果は`let updated = original.add(point)`や`game = game.record_point(index, point)`のように受け取ります。
+元の値は引き続き参照でき、更新結果を捨てると`must_use`警告が出ます。
+TUIは返された最新の値を保持し直します。乱数源と端末I/Oには可変状態があり、プログラム全体が純粋関数だけで構成されているわけではありません。
 
-`Throw::new`は整数スライスからSkittleのスライスへ変更しています。
-`Score::new`はThrowの参照を受け取り、同じインスタンスも回数分加算します。
+以前の`Throw`・`Score`・`with_throw`は廃止しました。倒れたピンは`Vec<Skittle>`、採点結果は`Point`、履歴は`ScoreBoard`へ分けています。
+`Team::record_throw`・`Molkky::record_throw`は`record_point`へ、`Team::score`は`score_board`へ変更しました。
+APIの使用例と型による制約は`tests/api.md`を通じたドキュメントテストで検証します。
 レビュー・設計・テスト計画は[rust_molkky/DEVELOPMENT.md](rust_molkky/DEVELOPMENT.md)に記録しています。
 
 ## Java演習環境

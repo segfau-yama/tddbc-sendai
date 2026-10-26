@@ -1,15 +1,16 @@
-use crate::{Score, Throw};
+use crate::{Point, ScoreBoard};
 
+#[derive(Clone)]
 pub struct Team {
     name: String,
-    score: Score,
+    score_board: ScoreBoard,
 }
 
 impl Team {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_owned(),
-            score: Score::new(&[]),
+            score_board: ScoreBoard::new(),
         }
     }
 
@@ -17,12 +18,15 @@ impl Team {
         &self.name
     }
 
-    pub fn score(&self) -> &Score {
-        &self.score
+    pub fn score_board(&self) -> &ScoreBoard {
+        &self.score_board
     }
 
-    pub fn record_throw(&mut self, thrown: &Throw) -> i32 {
-        self.score = self.score.with_throw(thrown);
-        thrown.calc_point()
+    #[must_use]
+    pub fn record_point(&self, point: Point) -> Self {
+        Self {
+            name: self.name.clone(),
+            score_board: self.score_board.add(point),
+        }
     }
 }

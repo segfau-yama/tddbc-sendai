@@ -1,3 +1,17 @@
+use std::collections::HashSet;
+
+pub(crate) fn validate_unique_numbers(skittles: &[Skittle]) {
+    let mut numbers = HashSet::new();
+    for skittle in skittles {
+        // ピンは番号で識別する。座標が異なっても同じ番号は重複になる。
+        assert!(
+            numbers.insert(skittle.number()),
+            "スキットル番号が重複しています: {}",
+            skittle.number()
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Position {
     x: i32,
@@ -49,6 +63,7 @@ impl Skittle {
         self.position
     }
 
+    #[must_use]
     pub fn with_position(&self, position: Position) -> Self {
         Self {
             number: self.number,

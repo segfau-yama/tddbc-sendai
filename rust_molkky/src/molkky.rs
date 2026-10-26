@@ -1,4 +1,4 @@
-use crate::{Team, Throw};
+use crate::{Point, Team};
 
 pub struct Molkky {
     teams: Vec<Team>,
@@ -11,7 +11,7 @@ impl Molkky {
         assert!(
             teams
                 .iter()
-                .filter(|team| team.score().value() == 50)
+                .filter(|team| team.score_board().value() == 50)
                 .count()
                 <= 1,
             "勝者が複数います"
@@ -25,18 +25,19 @@ impl Molkky {
 
     /// 進行中ならNone、終了時は勝ったチームのインデックスを返す。
     pub fn result(&self) -> Option<usize> {
-        // 超過はScore側で25点へ補正済み。50点ちょうどのチームだけが勝者になる。
+        // 超過はScoreBoard側で25点へ補正済み。50点ちょうどのチームだけが勝者になる。
         self.teams
             .iter()
-            .position(|team| team.score().value() == 50)
+            .position(|team| team.score_board().value() == 50)
     }
 
-    pub fn record_throw(&mut self, team_index: usize, thrown: &Throw) -> i32 {
+    #[must_use]
+    pub fn record_point(&self, team_index: usize, point: Point) -> Self {
         // 終了後は、得点や履歴を変更する前に拒否する。
         assert!(self.result().is_none(), "ゲームは終了しています");
-        self.teams
-            .get_mut(team_index)
-            .expect("チームが存在しません")
-            .record_throw(thrown)
+        let team = self.teams.get(team_index).expect("チームが存在しません");
+        let mut teams = self.teams.clone();
+        teams[team_index] = team.record_point(point);
+        Self { teams }
     }
 }
