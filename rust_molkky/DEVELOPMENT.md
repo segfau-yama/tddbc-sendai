@@ -1,5 +1,67 @@
 # Java版からRust版への移植
 
+## Component案のPonytailレビュー（2026-10-26・実装変更なし）
+
+### 対象・前提
+
+- 入力：SkittleComponent/StickComponent/ScoreBoardComponentにapiとviewを持たせ、StickComponentにはStickControllerも持たせる設計案。Apiは既存のcore型、Viewはtui型という指定として読む。別のApiラッパー層を追加する提案とは解釈しない。
+- 使用手順：Ponytailのentry-ponytailからponytail-reviewへ進み、過剰な構造と簡略化の余地を評価する。動作の正しさや性能の監査、コードへの修正は今回の対象外。
+- 前回の設計のみという範囲を維持する。以下の提案は未実装であり、レビュー記録だけを変更する。
+- 行番号は次のように整形したユーザー案を基準とする。末尾のカンマは表記上補っている。
+
+```text
+SkittleComponent {
+    api: SkittleApi,
+    view: SkittleView,
+}
+StickComponent {
+    api: StickApi,
+    view: StickView,
+    key_controll: StickController,
+}
+ScoreBoardComponent {
+    api: ScoreBoardApi,
+    view: ScoreBoardView,
+}
+```
+
+### 指摘（優先度順）
+
+- 提案:L2,L6,L11: shrink: 【高・既存のcore集約も保持する場合】Componentごとにapiを所有すると、Field/Team/Molkkyとの状態の受け渡し・差し替えが増える。既存集約を正本とし、描画時のComponentはapi/viewへの共有参照を組み合わせる。
+- 提案:L8: yagni: 【中・現在の操作を前提】キーから棒の移動を選ぶためだけのStickControllerフィールドは保持しない。[既存Runtimeのキー分岐とmove_from](src/tui/runtime.rs)で足りる。キー変換を分ける場合も、まずはgame内の関数にする。
+
+第1項の根拠は、[core::Molkky](src/core/molkky.rs)が共通のField/StickとTeamを所有し、[core::Field](src/core/field.rs)がSkittleを、[core::Team](src/core/team.rs)がScoreBoardを所有していること。Componentを唯一の正本とする構成ならこの重複はなくなるが、既存の集約との接続も設計し直す必要がある。
+
+第2項は、Controllerの実体や入力状態が提示されていないことを踏まえた判断。押下継続・フォーカス等の状態を実際に扱う必要があるなら、Controllerを保持する理由になる。単に型名がControllerであることを問題とはしない。
+
+### 残す責務と最小の接続例
+
+- Componentをgameへ置き、coreとtuiを組み合わせる責務を与える方針は成立する。Componentがcoreの読み取りと表示値への変換を行い、viewへ描画を委譲すれば役割が明確になる。
+- 既存の所有構造を保つ最小案は、下記のような描画中だけ存在するComponent。Gameがmodelと表示状態を所有し、各Componentはその両方を借用する。自己参照になるため、借用したComponentを同じGame内へ永続保存しない。
+
+```rust
+// 型の形を示す設計例。既存コードへの実装ではない。
+struct SkittleComponent<'a> {
+    api: &'a SkittleApi,
+    view: &'a SkittleView,
+}
+```
+
+- StickComponentとScoreBoardComponentも同じ形で接続できる。apiから得る座標・得点・判定結果は一時データとしてviewへ渡す。viewに保存するのは色・スクロール等の表示固有状態とする。
+- 提示どおり値を所有するComponentを長く保持したい場合は、Componentを状態の正本にし、別のcore::Molkky等を独立した永続状態として重ねて保持しない。coreの集約を一時的に構築するか、集約APIを見直す等の境界が必要になり、描画の分離より変更範囲が広がる。
+- Controllerを導入する場合もgameへ置き、Runtimeが一度読んだイベントを受けて移動等の操作を返す。端末イベントの読み取りや採点・勝敗判定を各Controllerに分散させない。棒の操作は全チーム共通の1つに対応させる。
+- ScoreBoardComponentは1チームのScoreBoardとその表示を組み合わせる。全チームの一覧表の生成・レイアウトとは区別し、採点・履歴・勝敗の規則はcoreの関数やScoreBoard/Molkkyの既存APIを利用する。
+
+### 計測・検証・今後の確認
+
+- 提示された13行の構造体定義について、現在の入力操作ならStickControllerフィールド1行が削減候補。Controller本体・Componentメソッドは未提示なので削減数に含めない。参照への変更はフィールド行数を変えず、同期処理の追加を避ける判断である。
+- 今回はレビュー記録のみ。コード、API、ディレクトリ、テスト、ルールの変更は行わず、cargoテストやRed/Greenは実行しない。文書の差分とgit diff --checkは問題なし。ソース参照4件の存在と提案13行の行番号も確認した。
+- [ ] 実装時は正本を置く場所を決め、共通のField/Stick・各チームの得点が表示へ一貫して渡ることを確認する。
+- [ ] Componentの描画でcoreや乱数源が変わらず、TUIがcore型に依存しないことを確認する。
+- [ ] キーから操作への変換とゲーム更新を検証し、終了後の更新停止を維持する。テストはtests/game/等の対象と同名のファイルへ置く。
+
+net: -1 lines possible.
+
 ## gameがcoreと描画状態のペアを保持する具体案（2026-10-26・設計のみ）
 
 ### 対象・判断・今回の範囲
