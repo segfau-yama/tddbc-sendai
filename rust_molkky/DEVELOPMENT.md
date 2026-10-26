@@ -1,5 +1,126 @@
 # Java版からRust版への移植
 
+## gameがcoreと描画状態のペアを保持する具体案（2026-10-26・設計のみ）
+
+### 対象・判断・今回の範囲
+
+- 入力：前回の代替案Dについて、gameがcoreと描画状態を保持する場合の具体的な設計を説明する依頼。前回の「実装せず設計整理のみ」を引き継ぐ。
+- 対象：[core/molkky.rs](src/core/molkky.rs)、[core/field.rs](src/core/field.rs)、[tui/molkky.rs](src/tui/molkky.rs)、[tui/field.rs](src/tui/field.rs)、[tui/skittle.rs](src/tui/skittle.rs)、[tui/runtime.rs](src/tui/runtime.rs)の所有・生成・更新の関係。
+- 判断：ペアの保持自体が問題なのではなく、座標・得点等を描画側にも永続保存すると同期が必要になる。表示固有の状態を長く保持し、ゲームの値を描画時に渡す形なら、coreの不変性と両立できる。
+- 以下の型・メソッド・ディレクトリはすべて設計案。既存のTUIはcoreを借用する実装のままであり、この形へ変更済みとは扱わない。
+
+### ペアを所有する単位と型の構成
+
+現在のcore::MolkkyがField・Stick・Teamを所有する構造を維持し、game::Gameがcore::Molkkyとtui::MolkkyTuiを所有する。
+
+```text
+game::Game
+├─ model: core::Molkky                 ゲーム状態の正本
+│  ├─ field: core::Field
+│  │  └─ skittles: Vec<core::Skittle>
+│  ├─ stick: core::Stick               全チーム共通
+│  └─ teams: Vec<core::Team>
+│     └─ score_board: core::ScoreBoard
+├─ view: tui::MolkkyTui                長く保持する表示状態
+│  ├─ field: tui::FieldTui
+│  │  ├─ skittles: 番号 → tui::SkittleTui
+│  │  └─ stick: tui::StickTui
+│  └─ scores: 得点表の描画オブジェクト
+│     ├─ teams: Vec<tui::TeamTui>
+│     └─ テーブルの選択・スクロール状態
+└─ active: usize                       現在の手番
+```
+
+GameはUI固有状態を含むアプリケーション全体、core::Molkkyはルールと不変条件を扱うゲームモデルであり、名前が似ていても責務は異なる。
+
+配置候補はsrc/game/game.rsにGame、src/game/presentation.rsに描画部品の組み立て、src/game/runtime.rsに端末イベントループとする。game/mod.rsから起動に必要なものだけを再公開する。
+
+Rustでの型の形を示す概念例（コンパイル検証・プロダクトへの実装は行わない）：
+
+```rust
+// game側：coreとtuiを接続する。
+struct Game {
+    model: core::Molkky,
+    view: tui::MolkkyTui,
+    active: usize,
+}
+
+// tui側：表示固有の状態を長く保持する。coreは参照しない。
+struct SkittleTui {
+    style: Style,
+    selected: bool,
+}
+
+// tui側：gameが現在のcoreから作り、1回の描画に渡す値。
+struct SkittleData {
+    number: i32,
+    position: (i32, i32),
+    fall_probability: f64,
+}
+```
+
+selectedは表示上の選択の例であり、新しい操作や選択機能を実装する決定ではない。アニメーションが必要になった場合は、その進行時間等も表示固有の状態として保持できる。得点表ではRatatuiのTableStateのようなスクロール状態が具体的な保持対象になる。
+
+### 各オブジェクトの対応と生成場所
+
+- gameがcoreの初期状態を作り、その番号・チーム数からtuiのオブジェクトを生成して組み立てる。tuiにcore型を受け取るコンストラクターやFrom実装は置かない。
+- ピンはcoreで一意な番号1〜12をキーとして描画オブジェクトと対応させる。番号は対応付けに使う識別情報であり、更新される座標や得点の複製とは区別する。
+- チームは現状、参加中に並び順が変わらないためインデックスで対応できる。重複可能な名称を識別子にしない。チームの途中参加等を追加する場合に識別子の導入を検討する。
+- Field/Stickは全チーム共通の1組をmodel/view双方の対応する場所に置く。TeamTuiごとに棒や盤面の描画状態を持たせない。
+- gameがcore::Skittleと対応するSkittleTuiを同時に参照して描画値を渡すことで、ピン単位のペアとして扱える。両者を永続的な相互参照で結ぶ必要はない。
+
+### 描画の流れとtrait
+
+1. gameが、同じmodelからピン番号・ゲーム内座標・得点・勝敗等を読み取る。倒れる確率はcore::fall_probabilityを呼び出して取得する。
+2. gameがSkittleData等の一時的な値と、対応するtuiオブジェクトを組み合わせて、1フレーム分の描画部品を作る。
+3. tuiが座標のCanvasへの変換、色・文面・表・レイアウトを決めて描画する。描画中に乱数を引いたり、投てき・採点・勝敗判定を実行したりしない。
+
+永続するSkittleTuiへ毎回座標を書き込むsetterは不要。例えば`tui::SkittleTui::widget(&self, data: SkittleData)`が、表示状態への参照と一時データを持つ小さな描画部品を返す形にできる。この一時的な部品が既存のCanvasDrawを実装すれば、drawの呼び出し形を維持できる。画面全体も同様に、状態と1フレーム分のデータを受け取るWidgetとして描画できる。
+
+これらの一時的な部品は、そのフレームの描画中だけ存在する。Gameの中へ自分自身のmodel/viewを借用する部品を保存せず、自己参照構造を避ける。tuiはプリミティブな表示値とtuiの型だけを受け取り、依存方向はgame→coreとgame→tuiを保つ。
+
+### 更新APIと不変条件
+
+- 操作単位の候補は`Game::throw(self, rng: &mut impl Rng) -> Self`、`Game::move_stick(self, dx: i32, dy: i32) -> Self`、`Game::draw(&self, frame: &mut Frame)`。いずれも設計上のシグネチャであり、今回追加するAPIではない。
+- 投てきでは、gameが現在のmodelを元にcoreの投てき・採点・履歴更新・配置更新を呼び、新しいcore::Molkkyを作る。得点や失格・勝敗の条件はcoreへ集約したままとする。
+- 次にgameが、同じピン番号の表示状態を引き継ぎ、必要な表示効果があれば更新して、新しいmodelとviewを持つGameをまとめて返す。手番も新しいmodelの失格・終了判定に従って進める。
+- 値を消費して新しいGameを返す方式では表示状態を所有権ごと引き継げる。以前のGameも保持するAPIが必要なら、表示状態の複製方針を別途決める。coreへ可変参照を公開する必要はない。
+- スクロール等の表示操作も新しい表示状態を返す形にできる。TableStateの描画後のオフセットを保持する場合は、描画結果として更新した表示状態を返し、gameが次のGameへ組み込むAPIにする。BufferやRatatuiの一時的な状態への可変参照と、coreの更新は区別する。
+- 終了後の投てきはmodel・手番・表示効果を更新しない。画面サイズ変更やスクロール等、表示だけの変更は終了後も可能な別操作として扱う。
+- 再開時はmodelとviewを同時に初期化する。通常の投てきでは番号の集合は変わらず表示状態を再利用できる。構成が変わる操作を公開する場合は、gameが番号・チームとの対応も更新する。
+- ゲーム内座標はmodelに保存し、tuiの選択や画面サイズは投てきの確率・採点へ影響させない。将来アニメーションで表示位置を補間する場合も、表示位置とcoreの位置を明確に分ける。
+
+### 所有するペアを各core型へ増やす案との比較
+
+`game::Skittle { model: core::Skittle, view: tui::SkittleTui }`を12個持つ形も表現できる。しかし現在のcore::FieldもVec<core::Skittle>を所有するため、そのまま両方を保持するとcoreのピンが二重になる。片方の移動だけが更新される問題を避けるには、次のいずれかが必要になる。
+
+- 上記の推奨案のように、所有するペアはゲーム全体に置き、各ピンは番号で対応させる。
+- 各ピンのペアを描画中だけ作り、model/viewを共有参照する。
+- coreの集約構造自体を作り直し、個別の所有するペアを唯一の正本にする。この場合はField/MolkkyのAPIと不変条件の置き場まで再設計する必要があり、今回の責務分離を超える。
+
+現状では最初の案が既存の所有構造を保ちやすい。全core型へのGame版ラッパーや、汎用のEntity<Model, View>、Rc/RefCellは必要ない。
+
+### レビュー上の注意と、実装時の確認項目
+
+- 高：座標・得点・coreのピンを複数箇所で永続所有すると、正本と更新の責任が曖昧になる。現在のMolkkyの所有構造を根拠に、coreの正本を1つに保つ。
+- 高：永続する現在のSkittleTuiにcoreへの参照をそのまま持たせると、Gameが自身のmodelを借用する形になる。coreを参照しない表示状態へ分け、借用は描画中の一時部品に限定する。
+- 中：長く保持する表示状態に実際の用途がなければ、前回のフレームごとに描画オブジェクトを生成する案の方が型と対応管理を減らせる。ペアの保持はスクロールや表示効果等の必要性に応じて選ぶ。
+
+以下は実装する場合のテストリストであり、今回は追加・実行しない。
+
+- [ ] tests/game/game.rsで、投てき後にcoreの座標・履歴と手番が整合し、ピンの表示状態が番号に従って引き継がれることを確認する。
+- [ ] 同じmodelで画面サイズ・選択・スクロール状態を変えても、固定乱数による投てきと得点が変わらないことを確認する。
+- [ ] 再開時にmodelと表示状態が共に初期化され、終了後の投てきではどちらも変わらないことを確認する。
+- [ ] tests/tui/skittle.rs等で、coreを構築せずに表示状態と一時データだけから番号・位置・確率を描画できることを確認する。
+- [ ] 同じ描画入力を繰り返してもゲームの履歴が増えず、乱数を消費しないことを確認する。
+- [ ] core・tuiからgameへの依存、tuiからcoreへの型依存、Game内部への自己参照がないことをレビューする。
+- [ ] テスト本体はtests/以下へ置き、実際に採用する対象ファイル名と一致させる。既存の不変性・採点・失格・共通Field/Stickの検証も維持する。
+
+### 今回の検証
+
+- 現行の所有関係とTUIのcore参照を読み、設計メモだけを追記した。Rustコード・ディレクトリ・テスト・ルールは変更しない。
+- 文書の差分とgit diff --checkは問題なし。ソース参照6件の存在を確認した。実装を行わないためcargoテスト・Red/Green・TUI操作は今回の検証対象にしない。
+
 ## core・tuiの合成をgameへ集約する設計レビュー（2026-10-26・未実装）
 
 ### 対象・前提・今回の完了条件
