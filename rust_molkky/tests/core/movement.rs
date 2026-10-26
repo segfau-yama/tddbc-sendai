@@ -1,8 +1,7 @@
 use rand::{SeedableRng, rngs::StdRng};
 use rust_molkky::{Field, Position, Skittle, Stick, calc_score, relocate_skittles, throw_stick};
 
-mod support;
-use support::ConstantRng;
+use crate::support::ConstantRng;
 
 #[test]
 fn すべてのピンが倒れる乱数なら12点になる() {
@@ -160,5 +159,21 @@ fn 整数の四隅でも隣接する位置へ移動できる() {
         assert!((i64::from(moved.x()) - i64::from(x)).abs() <= 1);
         assert!((i64::from(moved.y()) - i64::from(y)).abs() <= 1);
         assert_eq!(original.skittles()[0].position(), position);
+    }
+}
+
+mod immutability {
+    use super::*;
+
+    #[test]
+    fn ピンの移動でも元の配置は変わらない() {
+        let original = Field::default();
+        let before = original.skittles().to_vec();
+        let updated = relocate_skittles(&original, &mut StdRng::seed_from_u64(42));
+        assert_eq!(original.skittles(), before);
+        for (old, new) in original.skittles().iter().zip(updated.skittles()) {
+            assert_eq!(old.number(), new.number());
+            assert_ne!(old.position(), new.position());
+        }
     }
 }

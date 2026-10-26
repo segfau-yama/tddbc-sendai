@@ -51,3 +51,18 @@ fn 超過しても生の点数を保持して得点は25点になる() {
         &[12, 12, 12, 12, 3]
     );
 }
+
+mod immutability {
+    use super::*;
+
+    #[test]
+    fn チームへの記録でも元のチームは変わらない() {
+        let original = Team::new("赤");
+        let updated =
+            original.with_score_board(original.score_board().add(calc_score(&[Skittle::new(11)])));
+        assert_eq!(original.score_board().value(), 0);
+        assert!(original.score_board().history().is_empty());
+        assert_eq!(updated.score_board().value(), 11);
+        assert_eq!(updated.name(), original.name());
+    }
+}

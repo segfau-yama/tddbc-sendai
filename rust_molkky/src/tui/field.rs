@@ -2,17 +2,17 @@ use std::collections::BTreeMap;
 
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Constraint, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{
-        Block,
+        Block, Table,
         canvas::{Canvas, Line as CanvasLine},
     },
 };
 use rust_molkky::core::{Field, Stick};
 
-use super::{skittle::SkittleTui, stick::StickTui};
+use super::{position::PositionTui, skittle::SkittleTui, stick::StickTui};
 
 pub(super) struct FieldTui<'a> {
     field: &'a Field,
@@ -31,7 +31,7 @@ impl<'a> FieldTui<'a> {
         let mut groups: BTreeMap<(i32, i32), Vec<SkittleTui<'_>>> = BTreeMap::new();
         for pin in self.field.skittles() {
             let position = pin.position();
-            let (x, y) = (f64::from(position.x()), f64::from(position.y()));
+            let (x, y) = PositionTui::new(&position).canvas();
             left = left.min(x);
             right = right.max(x);
             bottom = bottom.min(y);
@@ -81,37 +81,28 @@ impl<'a> FieldTui<'a> {
             });
         frame.render_widget(canvas, area);
     }
+
+    pub(super) fn draw_positions(&self, frame: &mut Frame, area: Rect) {
+        let rows = self
+            .field
+            .skittles()
+            .iter()
+            .map(|pin| SkittleTui::new(pin).position_row(self.stick));
+        frame.render_widget(
+            Table::new(
+                rows,
+                [
+                    Constraint::Length(3),
+                    Constraint::Min(9),
+                    Constraint::Length(6),
+                ],
+            )
+            .block(Block::bordered().title("ピン位置 (x,y) / 確率")),
+            area,
+        );
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::FieldTui;
-    use ratatui::{Terminal, backend::TestBackend};
-    use rust_molkky::core::{Field, Position, Skittle, Stick};
-
-    #[test]
-    fn 同じ位置のピン番号をまとめ棒も描画する() {
-        let field = Field::new(vec![
-            Skittle::new(1),
-            Skittle::new(2),
-            Skittle::new(3).with_position(Position::new(2, 2)),
-        ]);
-        let stick = Stick::new(Position::new(0, -3));
-        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
-        terminal
-            .draw(|frame| {
-                FieldTui::new(&field, &stick).draw(frame, frame.area());
-            })
-            .unwrap();
-        let rendered: String = terminal
-            .backend()
-            .buffer()
-            .content
-            .iter()
-            .map(|cell| cell.symbol())
-            .collect();
-        assert!(rendered.contains("01/02"));
-        assert!(rendered.contains("03"));
-        assert!(rendered.contains('@'));
-    }
-}
+#[path = "../../tests/tui/field.rs"]
+mod tests;

@@ -311,3 +311,42 @@ mod restored_rules {
         assert_eq!(game.teams()[1].score_board().value(), 49);
     }
 }
+
+mod immutability {
+    use super::*;
+    use rust_molkky::{Field, Position, Stick};
+
+    #[test]
+    fn ゲームが共通の配置と棒を所有し更新しても元の状態を保持する() {
+        let pins = vec![Skittle::new(5).with_position(Position::new(3, 4))];
+        let original = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
+        let placed = original.with_field(Field::new(pins.clone()));
+        let aimed = placed.with_stick(Stick::new(Position::new(7, 8)));
+        let scored = aimed.record_point(0, calc_score(&[Skittle::new(5)]));
+        assert_eq!(original.field().skittles().len(), 12);
+        assert_eq!(placed.field().skittles(), pins);
+        assert_eq!(aimed.field().skittles(), pins);
+        assert_eq!(scored.field().skittles(), pins);
+        assert_eq!(placed.stick().position(), Position::new(0, 0));
+        assert_eq!(aimed.stick().position(), Position::new(7, 8));
+        assert_eq!(scored.stick().position(), Position::new(7, 8));
+        assert_eq!(original.stick().position(), Position::new(0, 0));
+        assert_eq!(placed.teams()[0].score_board().value(), 0);
+        assert_eq!(scored.teams()[0].score_board().value(), 5);
+        let reconfigured = scored.with_field(Field::new(vec![]));
+        assert_eq!(scored.field().skittles(), pins);
+        assert!(reconfigured.field().skittles().is_empty());
+        assert_eq!(reconfigured.teams()[0].score_board().value(), 5);
+        assert_eq!(reconfigured.stick().position(), Position::new(7, 8));
+    }
+
+    #[test]
+    fn ゲームへの記録でも元のゲームと他チームは変わらない() {
+        let original = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
+        let updated = original.record_point(0, calc_score(&[Skittle::new(11)]));
+        assert_eq!(original.teams()[0].score_board().value(), 0);
+        assert_eq!(original.teams()[1].score_board().value(), 0);
+        assert_eq!(updated.teams()[0].score_board().value(), 11);
+        assert_eq!(updated.teams()[1].score_board().value(), 0);
+    }
+}

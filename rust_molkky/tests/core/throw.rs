@@ -15,8 +15,7 @@ fn 棒とピンの位置関係から確率を計算する() {
     );
 }
 
-mod support;
-use support::ConstantRng;
+use crate::support::ConstantRng;
 
 #[test]
 fn 投てきは元の配置を変えず倒れたピンを返す() {

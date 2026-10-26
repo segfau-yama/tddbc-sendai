@@ -5,6 +5,8 @@ use ratatui::{
 };
 use rust_molkky::core::Stick;
 
+use super::position::PositionTui;
+
 pub(super) struct StickTui<'a> {
     stick: &'a Stick,
 }
@@ -16,7 +18,11 @@ impl<'a> StickTui<'a> {
 
     pub(super) fn position(&self) -> (f64, f64) {
         let position = self.stick.position();
-        (f64::from(position.x()), f64::from(position.y()))
+        PositionTui::new(&position).canvas()
+    }
+
+    pub(super) fn position_label(&self) -> String {
+        PositionTui::new(&self.stick.position()).label()
     }
 
     pub(super) fn draw(&self, context: &mut Context<'_>) {

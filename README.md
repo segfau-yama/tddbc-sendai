@@ -20,7 +20,8 @@ TUIではSpace / Enterで投てき、矢印キーで投てき位置を移動、R
 
 | 責務 | 型・関数 | 実装 |
 | --- | --- | --- |
-| 番号1〜12と位置を持つピン | `Skittle`, `Position` | `src/core/skittle.rs` |
+| 番号1〜12と位置を持つピン | `Skittle` | `src/core/skittle.rs` |
+| モデル座標と距離 | `Position` | `src/core/position.rs` |
 | 現在のモデルで使う棒の投てき位置 | `Stick` | `src/core/stick.rs` |
 | 倒れたピンの判定 | `throw_stick` | `src/core/throw.rs` |
 | 1投の採点と点数の値 | `calc_score`, `Point` | `src/core/score.rs` |
@@ -32,12 +33,31 @@ TUIではSpace / Enterで投てき、矢印キーで投てき位置を移動、R
 | 棒とピンの位置関係から確率を求める | `fall_probability` | `src/core/throw.rs` |
 | ピン番号と単独ピンの描画 | `SkittleTui` | `src/tui/skittle.rs` |
 | 棒の描画 | `StickTui` | `src/tui/stick.rs` |
-| 盤面・重なったピンの描画 | `FieldTui` | `src/tui/field.rs` |
-| 端末入力と画面全体・プレイ進行 | `Runtime` | `src/tui/runtime.rs` |
+| 盤面・重なったピン・位置/確率一覧の描画 | `FieldTui` | `src/tui/field.rs` |
+| 座標の表記とCanvas用の変換 | `PositionTui` | `src/tui/position.rs` |
+| 点数の表記 | `PointTui` | `src/tui/point.rs` |
+| 得点・直近6投の履歴・補正/失格の説明 | `ScoreBoardTui` | `src/tui/score.rs` |
+| チーム行と投てきメッセージ | `TeamTui` | `src/tui/team.rs` |
+| 画面全体のレイアウトと描画 | `MolkkyTui` | `src/tui/molkky.rs` |
+| 端末入力・ゲーム更新・手番と描画の呼び出し | `Runtime` | `src/tui/runtime.rs` |
 
 TUI用の構造体はcoreの値を共有参照し、描画のためにモデルの状態を二重管理しません。
+Runtimeは描画をMolkkyTuiへ委譲し、MolkkyTuiがTeamTui・FieldTui等を組み合わせます。
 モデル座標のPositionは距離・確率・移動にも使うためcoreに残し、Canvasや端末のレイアウトはtuiで扱います。
 coreからratatuiやtuiへの参照はありません。tuiはバイナリ側の内部モジュールです。
+
+Rustのテスト本体は`tests/core/対象名.rs`・`tests/tui/対象名.rs`に置き、対象ファイルと同じ名前にしています。
+例：`src/tui/team.rs`のテストは`tests/tui/team.rs`です。
+coreのテストは`tests/core.rs`から登録し、TUIのテストは各対象ファイルの`#[cfg(test)]`付きmod宣言から登録します。
+`src/`にはテスト本体を置かず、私有状態を検証するためのAPI公開も行いません。
+APIの利用例は引き続き`tests/api.md`のドキュメントテストで確認します。
+
+```sh
+cargo test --locked --test core               # coreの公開APIテスト
+cargo test --locked --test core score::       # core/score.rsのテスト
+cargo test --locked --bin rust_molkky tui::   # TUIのテスト
+```
+
 
 採点と履歴更新を分離します。`calc_score`は入力だけから`Point`を返す純粋関数です。
 0本なら0点、1本なら番号、複数本なら本数です。`ScoreBoard::add`は元の得点表を変えず、その点数を履歴へ追加した新しい得点表を返します。

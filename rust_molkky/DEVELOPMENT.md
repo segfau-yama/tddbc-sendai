@@ -1,5 +1,43 @@
 # Java版からRust版への移植
 
+## 残りのcore型のTUI化とテスト配置の統一（今回の変更）
+
+### 仕様・責務・境界
+
+- 対象：今回のAGENTS.md参照付き指示、全core構造体、既存のTUIアダプター、Runtimeとテスト。作業開始時の差分はない。
+- MolkkyTui・TeamTui・ScoreBoardTui・PointTui・PositionTuiを追加する。既存のFieldTui・StickTui・SkittleTuiと組み合わせ、core型を共有参照する表示用オブジェクトとして実装する。
+- MolkkyTuiは画面全体と得点表、TeamTuiは各チームの行と投てき結果メッセージ、ScoreBoardTuiは得点・履歴・補正/失格の表示、PointTuiは点数表記、PositionTuiは座標表記とCanvas用座標変換を担当する。
+- FieldTuiは盤面とピン位置/確率の一覧を描画する。SkittleTui/StickTuiはPositionTuiを利用する。Runtimeは端末イベント・ゲーム更新・手番・画面呼び出しを担当し、描画詳細を持たない。
+- coreのルール・不変更新・共通Field/Stick・従来の公開APIは維持する。Positionはcore/position.rsへ独立させ、位置のテストも同名ファイルに対応させる。
+- テスト本体をtests以下へ集約し、対象ファイル名と一致させる。coreの公開APIテストはtests/core/*.rsをエントリーファイルから登録し、TUIの私有状態のテストはsrc内のmod宣言からtests/tui/対象名.rsを登録する。テストのためだけに私有状態を公開しない。
+- 上記テスト配置の方針はAGENTS.mdにも保存する。依存の追加や独自描画トレイトの導入は行わない。
+
+### テスト計画
+
+- [x] 変更前の109件成功を確認する。
+- [x] 既存テストの本数・検証内容を維持してtests/core・tests/tuiへ移し、対象と同じファイル名にする。
+- [x] ScoreBoardTuiが直近6投の0点を含む履歴と補正/失格を表示することを確認する。
+- [x] TeamTuiが勝者・失格・操作対象の行を表示することを確認する。
+- [x] MolkkyTuiとRuntimeが既存の終了表示・共通配置・投てき・手番の検証を維持する。
+- [x] coreがTUIへ依存しないことを確認し、全テスト・build・fmt・Clippy・TUI操作を検証する。
+- [x] READMEと実行記録を更新する。
+
+### Refactor・Red・Greenと最終確認
+
+- 変更前の109件成功を確認し、テストを移した直後も109件成功を確認した。移動自体は既存挙動を確認するRefactorで、新機能のRedとは扱わない。
+- coreの既存公開APIテストはtests/core/に同名ファイルとして移した。横断的だったimmutable_test.rsの5件も対象ごとのファイルに分配し、検証内容は保持した。
+- RuntimeとFieldTuiの既存テストはtests/tui/runtime.rs・field.rsへ移し、src側にはcfg(test)とpath付きのmod宣言だけを残した。テストのための私有状態の公開は行っていない。
+- Positionはcore/position.rsへ移し、coreからの再エクスポートを維持した。既存のPositionの振る舞い・利用側APIは変えていない。
+- Red：ScoreBoardTuiを使う直近6投の履歴表示テストで、型未実装によるE0432を確認した。PointTuiとScoreBoardTuiの表示処理を実装してGreenを確認した。
+- 0点を含む履歴、超過補正と失格の説明、得点0の勝者/失格/操作対象の行、小さい端末での案内表示の計4件を追加した。最初のRed以外の追加ケースは最初から成功した。
+- MolkkyTuiが画面レイアウトと得点表を描き、TeamTuiの行、FieldTuiの盤面/位置一覧を組み合わせる。TeamTuiはPointTuiとScoreBoardTuiを使い、SkittleTui/StickTuiはPositionTuiを使う。新しい型を空のラッパーとして残していない。
+- Runtimeの描画処理はMolkkyTuiへの委譲だけとし、投てきメッセージはTeamTuiへ委譲した。入力・ゲーム更新・手番の制御はRuntimeに維持する。
+- 最終`cargo test --locked`：113件成功（TUI単体9件・core統合81件・ドキュメント23件）。失敗・無視0件。ドキュメントテストは正常利用11件・compile_fail 12件。
+- `cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --all-targets -- -D warnings`・`git diff --check`：成功。
+- src内にtest属性付きのテスト本体がないこと、tests/core・tests/tuiの各rsファイルに同名の対象ファイルが存在すること、coreにratatui/Frame/Canvas/tuiへの参照がないことを確認した。
+- `cargo run --locked -- 赤 青`を対話型端末で起動し、右矢印で位置変更、Spaceで投てきと表示/手番更新、Rで初期化、Qで終了コード0を確認した。
+- 依存・ロックファイル・Java版の変更はない。今回の変更をConventional Commitsでcommitし、mainへ通常のpushを行う。結果とcommit IDはチャットで報告する。
+
 ## coreとtuiの分離・表示用構造体（今回の変更）
 
 ### 仕様と設計

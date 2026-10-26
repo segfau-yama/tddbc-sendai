@@ -230,3 +230,19 @@ mod scoring {
         }
     }
 }
+
+mod immutability {
+    use super::*;
+
+    #[test]
+    fn 点数を追加しても元の得点表の履歴と得点は変わらない() {
+        let five = calc_score(&[Skittle::new(5)]);
+        let eleven = calc_score(&[Skittle::new(11)]);
+        let original = ScoreBoard::new().add(five);
+        let updated = original.add(eleven);
+        assert_eq!(original.history(), &[five]);
+        assert_eq!(original.value(), 5);
+        assert_eq!(updated.history(), &[five, eleven]);
+        assert_eq!(updated.value(), 16);
+    }
+}
