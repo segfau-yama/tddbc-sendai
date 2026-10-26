@@ -39,12 +39,19 @@ TUIではSpace / Enterで投てき、矢印キーで投てき位置を移動、R
 | 得点・直近6投の履歴・補正/失格の説明 | `ScoreBoardTui` | `src/tui/score.rs` |
 | チーム行と投てきメッセージ | `TeamTui` | `src/tui/team.rs` |
 | 画面全体のレイアウトと描画 | `MolkkyTui` | `src/tui/molkky.rs` |
+| Canvas上の文字描画の共通trait | `CanvasDraw` | `src/tui/draw.rs` |
 | 端末入力・ゲーム更新・手番と描画の呼び出し | `Runtime` | `src/tui/runtime.rs` |
 
 TUI用の構造体はcoreの値を共有参照し、描画のためにモデルの状態を二重管理しません。
 Runtimeは描画をMolkkyTuiへ委譲し、MolkkyTuiがTeamTui・FieldTui等を組み合わせます。
 モデル座標のPositionは距離・確率・移動にも使うためcoreに残し、Canvasや端末のレイアウトはtuiで扱います。
 coreからratatuiやtuiへの参照はありません。tuiはバイナリ側の内部モジュールです。
+
+画面領域のMolkkyTui・FieldTuiはRatatui標準の`Widget`を実装し、`frame.render_widget(view, area)`で描画します。
+MolkkyTuiは表示メッセージも描画入力として受け取ります。位置一覧や得点表には既存のTable（Widget/StatefulWidget）を使います。
+Canvasの文字ラベルは描画先が異なるため、SkittleTui・StickTuiが`CanvasDraw::draw(&self, &mut Context)`を実装します。
+画面部品用の独自Drawや描画先を切り替える汎用フレームワークは追加していません。
+
 
 Rustのテスト本体は`tests/core/対象名.rs`・`tests/tui/対象名.rs`に置き、対象ファイルと同じ名前にしています。
 例：`src/tui/team.rs`のテストは`tests/tui/team.rs`です。

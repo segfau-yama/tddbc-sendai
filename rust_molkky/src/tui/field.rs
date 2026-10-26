@@ -1,18 +1,18 @@
 use std::collections::BTreeMap;
 
 use ratatui::{
-    Frame,
+    buffer::Buffer,
     layout::{Constraint, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{
-        Block, Table,
+        Block, Table, Widget,
         canvas::{Canvas, Line as CanvasLine},
     },
 };
 use rust_molkky::core::{Field, Stick};
 
-use super::{position::PositionTui, skittle::SkittleTui, stick::StickTui};
+use super::{draw::CanvasDraw, position::PositionTui, skittle::SkittleTui, stick::StickTui};
 
 pub(super) struct FieldTui<'a> {
     field: &'a Field,
@@ -24,7 +24,26 @@ impl<'a> FieldTui<'a> {
         Self { field, stick }
     }
 
-    pub(super) fn draw(&self, frame: &mut Frame, area: Rect) {
+    pub(super) fn positions_table(&self) -> Table<'_> {
+        let rows = self
+            .field
+            .skittles()
+            .iter()
+            .map(|pin| SkittleTui::new(pin).position_row(self.stick));
+        Table::new(
+            rows,
+            [
+                Constraint::Length(3),
+                Constraint::Min(9),
+                Constraint::Length(6),
+            ],
+        )
+        .block(Block::bordered().title("ピン位置 (x,y) / 確率"))
+    }
+}
+
+impl Widget for FieldTui<'_> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
         let stick = StickTui::new(self.stick);
         let (from_x, from_y) = stick.position();
         let (mut left, mut right, mut bottom, mut top) = (from_x, from_x, from_y, from_y);
@@ -79,27 +98,7 @@ impl<'a> FieldTui<'a> {
                 }
                 stick.draw(context);
             });
-        frame.render_widget(canvas, area);
-    }
-
-    pub(super) fn draw_positions(&self, frame: &mut Frame, area: Rect) {
-        let rows = self
-            .field
-            .skittles()
-            .iter()
-            .map(|pin| SkittleTui::new(pin).position_row(self.stick));
-        frame.render_widget(
-            Table::new(
-                rows,
-                [
-                    Constraint::Length(3),
-                    Constraint::Min(9),
-                    Constraint::Length(6),
-                ],
-            )
-            .block(Block::bordered().title("ピン位置 (x,y) / 確率")),
-            area,
-        );
+        canvas.render(area, buf);
     }
 }
 

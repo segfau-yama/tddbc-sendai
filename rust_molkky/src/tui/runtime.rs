@@ -102,7 +102,10 @@ impl Runtime {
     }
 
     fn render(&self, frame: &mut Frame) {
-        MolkkyTui::new(&self.game, self.active).draw(frame, &self.message);
+        frame.render_widget(
+            MolkkyTui::new(&self.game, self.active, &self.message),
+            frame.area(),
+        );
     }
 }
 

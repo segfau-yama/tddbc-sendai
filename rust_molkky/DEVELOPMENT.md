@@ -1,5 +1,38 @@
 # Java版からRust版への移植
 
+## 描画traitの共通化（今回の変更）
+
+### 目的と最小の設計
+
+- 入力：今回のdraw系メソッドのtrait化とPonytailの指定。対象はMolkkyTui・FieldTui・SkittleTui・StickTuiと呼び出し元。
+- 画面領域を描くMolkkyTui/FieldTuiは、既存依存のratatui::Widgetを実装する。独自のFrame用Drawや描画先のenum/汎用フレームワークは作らない。
+- MolkkyTuiは表示メッセージも描画入力として保持し、Widgetのrender(area, buffer)で描画する。coreの状態は引き続き共有参照とする。
+- FieldTuiの位置一覧とMolkkyTuiの得点表は、既存のTable（Widget/StatefulWidget）を返す部品として扱う。
+- SkittleTui/StickTuiはCanvasのContext::printで文字ラベルを描く。既存のShapeはPainterへ点を描くAPIであり、Contextのprintを同じ形では扱えないため、2型に共通するCanvasDraw::draw(&self, &mut Context)だけを追加する。
+- Point/Position等の文字列やTeamの行を返す処理は、そのまま既存の表のデータとして使う。描画メソッドのない型へ描画traitを強制しない。
+- 今回は描画インターフェースの整理に限定する。前回レビューの得点表の可視性・描画責務の変更は、このtrait化だけで解決したとは扱わない。
+
+### テスト計画
+
+- [x] 変更前の113件成功を確認する。
+- [x] CanvasDrawを介してSkittleTui/StickTuiの両方を描き、ピン番号と棒の表示を確認する。
+- [x] Widget経由でFieldTuiとMolkkyTuiを描き、既存の盤面・重なり・端末サイズ案内・終了表示を維持する。
+- [x] ルール・不変性・公開core APIを維持し、テスト配置と同名ファイルの方針に従う。
+- [x] 全テスト・build・fmt・Clippy・TUI操作を確認し、README/実行記録を更新する。
+
+### Red・Green・Refactorと最終確認
+
+- 変更前の`cargo test --locked`は113件成功。Ratatuiのインストール済みソースでWidget/Shape/Context::printの契約を確認した。ShapeのPainterには文字ラベルのprintがないため、文字ラベルは小さなCanvasDrawへまとめる。
+- Red：tests/tui/draw.rsに同じCanvasDrawインターフェースを通じてピンと棒を描くテストを追加し、trait未実装によるE0432を確認した。
+- Green：CanvasDrawを定義し、SkittleTui/StickTuiの既存のdraw本体を移して同じインターフェースから05と@を描けることを確認した。テストではスタック上のtraitオブジェクト参照を使い、レジストリやBoxの導入はない。
+- Refactor：MolkkyTui/FieldTuiのFrame用drawをWidget::renderへ移した。モデルを共有参照するviewを値として渡すだけで、モデルを消費・更新しない。
+- MolkkyTuiの表示メッセージはviewの入力へ移し、Runtimeはframe.render_widgetを使う。FieldTuiの位置一覧と得点表はTableとして組み立て、標準のWidget/StatefulWidgetで描画する。
+- 最終`cargo test --locked`：114件成功（TUI単体10件・core統合81件・ドキュメント23件）。失敗・無視0件。ドキュメントテストは正常利用11件・compile_fail 12件。
+- `cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --all-targets -- -D warnings`・`git diff --check`：成功。
+- src内にテスト本体がないこと、tests/core・tests/tuiの各rsファイルに同名の対象があることを確認した。core・依存・ロックファイル・Java版は変更していない。
+- `cargo run --locked -- 赤 青`を対話型端末で起動し、右矢印で位置変更、Spaceで投てきと手番更新、Rで初期化、Qで終了コード0を確認した。
+- 今回の変更をConventional Commitsでcommitし、mainへ通常のpushを行う。結果とcommit IDはチャットで報告する。
+
 ## 描画責務と得点表の可視性のレビュー（未修正）
 
 ### 対象と結論

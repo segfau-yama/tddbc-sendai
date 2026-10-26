@@ -13,7 +13,7 @@ fn 同じ位置のピン番号をまとめ棒も描画する() {
     let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
     terminal
         .draw(|frame| {
-            FieldTui::new(&field, &stick).draw(frame, frame.area());
+            frame.render_widget(FieldTui::new(&field, &stick), frame.area());
         })
         .unwrap();
     let rendered: String = terminal

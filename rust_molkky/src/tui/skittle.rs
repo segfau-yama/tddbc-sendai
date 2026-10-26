@@ -5,7 +5,7 @@ use ratatui::{
 };
 use rust_molkky::core::{Skittle, Stick, fall_probability};
 
-use super::position::PositionTui;
+use super::{draw::CanvasDraw, position::PositionTui};
 
 pub(super) struct SkittleTui<'a> {
     skittle: &'a Skittle,
@@ -20,7 +20,17 @@ impl<'a> SkittleTui<'a> {
         format!("{:02}", self.skittle.number())
     }
 
-    pub(super) fn draw(&self, context: &mut Context<'_>) {
+    pub(super) fn position_row(&self, stick: &Stick) -> Row<'static> {
+        Row::new([
+            self.label(),
+            PositionTui::new(&self.skittle.position()).table_label(),
+            format!("{:>5.1}%", fall_probability(stick, self.skittle) * 100.0),
+        ])
+    }
+}
+
+impl CanvasDraw for SkittleTui<'_> {
+    fn draw(&self, context: &mut Context<'_>) {
         let position = self.skittle.position();
         let (x, y) = PositionTui::new(&position).canvas();
         context.print(
@@ -28,13 +38,5 @@ impl<'a> SkittleTui<'a> {
             y,
             Line::from(Span::styled(self.label(), Style::default().fg(Color::Cyan))),
         );
-    }
-
-    pub(super) fn position_row(&self, stick: &Stick) -> Row<'static> {
-        Row::new([
-            self.label(),
-            PositionTui::new(&self.skittle.position()).table_label(),
-            format!("{:>5.1}%", fall_probability(stick, self.skittle) * 100.0),
-        ])
     }
 }

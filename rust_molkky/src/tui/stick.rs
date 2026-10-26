@@ -5,7 +5,7 @@ use ratatui::{
 };
 use rust_molkky::core::Stick;
 
-use super::position::PositionTui;
+use super::{draw::CanvasDraw, position::PositionTui};
 
 pub(super) struct StickTui<'a> {
     stick: &'a Stick,
@@ -24,8 +24,10 @@ impl<'a> StickTui<'a> {
     pub(super) fn position_label(&self) -> String {
         PositionTui::new(&self.stick.position()).label()
     }
+}
 
-    pub(super) fn draw(&self, context: &mut Context<'_>) {
+impl CanvasDraw for StickTui<'_> {
+    fn draw(&self, context: &mut Context<'_>) {
         let (x, y) = self.position();
         context.print(
             x,

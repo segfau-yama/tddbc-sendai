@@ -7,7 +7,7 @@ fn 小さい端末では盤面の代わりに必要サイズを表示する() {
     let game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
     let mut terminal = Terminal::new(TestBackend::new(70, 20)).unwrap();
     terminal
-        .draw(|frame| MolkkyTui::new(&game, 0).draw(frame, "テスト中"))
+        .draw(|frame| frame.render_widget(MolkkyTui::new(&game, 0, "テスト中"), frame.area()))
         .unwrap();
     let text = terminal
         .backend()
