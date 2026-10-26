@@ -1,5 +1,70 @@
 # Java版からRust版への移植
 
+## Componentによるapiの重複保持を避ける所有モデル（2026-10-26・設計のみ）
+
+### 前提と判断
+
+- 入力：Componentによるapiの所有の重なりを回避する方法の説明。Ponytailのentry-ponytailからponytailへ進み、既存構造を保つ最小案を選ぶ。「まだ実装しない」という指定に従い、文書だけを変更する。
+- 根拠：[core::Molkky](src/core/molkky.rs)が共通のField/StickとTeamを所有し、[Field](src/core/field.rs)がSkittleを、[Team](src/core/team.rs)がScoreBoardを所有している。
+- ここでいう重複とは、同じ現在状態を別の場所にも独立した値として保存し、両方を更新対象にすること。Rustが同一の値を通常の所有権で二重所有できる、という意味ではない。Copy/cloneによる複製は別の値であり、それぞれを現在状態として保つ場合に同期が必要になる。過去の不変なスナップショットを意図して保存することとは区別する。
+- 現在の状態の正本はcore::Molkkyに集約する。Componentはその読み取りとviewへの受け渡しを行う。apiは既存core型の呼称であり、新しいApiラッパーは作らない。
+
+### 案A：描画中だけ作る、借用するComponent（推奨）
+
+以下は型の形を示す設計例であり、既存コードへの実装ではない。MolkkyView/SkittleViewも、coreを参照しない表示用の型として想定する。
+
+```rust
+// game側。coreの現在状態と、表示固有状態を所有する。
+struct Game {
+    api: MolkkyApi,
+    view: MolkkyView,
+}
+
+// game側。描画の間だけ作り、両者を借用する。
+struct SkittleComponent<'a> {
+    api: &'a SkittleApi,
+    view: &'a SkittleView,
+}
+```
+
+- gameはgame.api.field().skittles()からピンを借用し、その番号に対応するgame.viewの描画オブジェクトと組み合わせる。構築時にピンや得点表をcloneしない。
+- StickComponentのapiはgame.api.stick()、ScoreBoardComponentのapiはgame.api.teams()[index].score_board()から借用できる。coreの既存の読み取りAPIをそのまま使う。
+- Componentはcoreから番号・座標・確率・得点・判定結果を取得し、一時的な表示値をviewへ渡す。tuiのviewはcoreを保持せず、色・スクロール等の表示固有状態を扱う。
+- 所有するGame自身を借用したComponentはGame内へ永続保存しない。描画関数内で作って使い終えるため、自己参照構造や、更新前のapiへの参照の持ち越しを避けられる。
+
+更新の順序：
+
+1. Runtimeがキー入力を操作へ変換する。Controllerを使う場合も、coreのコピーを更新せず操作を返す。
+2. gameがcoreの既存APIを呼び、新しいMolkkyへ差し替える。更新時には描画用Componentの借用は終了している。
+3. 次の描画で新しいMolkkyからComponentを作る。保持しているviewは引き続き利用し、coreの値を再保存する同期処理は追加しない。
+
+Gameの更新も値として扱うなら、Game::apply(self, action) -> Self等の形を選べる。Componentにapiのsetterを公開せず、coreの集約に対する更新をgameがまとめて行うことで、共通のField/Stickやチームの履歴を個別に複製して更新する経路を増やさない。
+
+### 案B：長く保持するComponentは識別情報とviewを持つ
+
+```rust
+// game側。apiへの参照は保存せず、必要なときに番号で取得する。
+struct SkittleComponent {
+    number: i32,
+    view: SkittleView,
+}
+```
+
+- gameが唯一所有するMolkkyから、numberに対応するSkittleを描画・操作ごとに取得する。Componentのapiフィールド自体をなくすため、永続的な参照の寿命を管理する必要がない。
+- ピンは1〜12の番号で対応付け、チームの得点表はゲーム中に変わらないチームのインデックスで対応付ける。共通のStickは1本なので識別子を追加する必要はない。
+- 再開時や構成の変更時はgameがComponentの対応関係も作り直す。現在の12本の取得には既存スライスの検索で十分であり、専用のレジストリを追加しない。
+- 描画オブジェクトをComponentの中へ長く保持することが要件なら、この案を選ぶ。描画時に組み合わせれば十分な現状では案Aが既存APIをそのまま使いやすい。
+
+両案ともcoreの正本はMolkkyに1つ。所有者が決まっている現状では、Rc/RefCellによる共有可変状態やcoreの集約構造の再設計は必要ない。
+
+### 実装時の確認項目と今回の検証
+
+- [ ] coreの更新後、次の描画で新しい座標・得点・勝敗が渡り、viewの表示固有状態が保たれることを確認する。
+- [ ] 描画ではcoreと乱数源を更新せず、操作では共通のField/Stickと対象チームの履歴を既存API経由で更新することを確認する。
+- [ ] 案Bを採用する場合は、再開・構成変更時に番号やチームとの対応が一貫することを確認する。
+- [ ] テストはtests/以下に置き、実際に採用する対象ファイル名と一致させる。
+- 今回は設計メモだけの変更。Rustコード・テスト・ディレクトリ・ルールの実装は行わず、cargoテストやRed/Greenは実行しない。文書の差分とgit diff --checkは問題なし。ソース参照3件の存在も確認した。
+
 ## Component案のPonytailレビュー（2026-10-26・実装変更なし）
 
 ### 対象・前提
