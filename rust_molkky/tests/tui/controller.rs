@@ -29,7 +29,7 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
         Team::new("青"),
     ])
     .with_field(Field::new(vec![]));
-    runtime.throw();
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert!(runtime.game.teams()[0].score_board().is_disqualified());
     assert!(runtime.game.is_finished());
     assert_eq!(runtime.game.result(), Some(1));
@@ -37,7 +37,7 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
     let pins = runtime.game.field().skittles().to_vec();
     let stick = *runtime.game.stick();
     let layout = runtime.layout.clone();
-    runtime.throw();
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     runtime.move_from(1, 0);
     assert_eq!(runtime.game.teams()[0].score_board().history(), history);
     assert_eq!(runtime.game.field().skittles(), pins);
@@ -55,12 +55,12 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
         Team::new("緑"),
     ])
     .with_field(Field::new(vec![]));
-    runtime.throw();
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert!(!runtime.game.is_finished());
     assert_eq!(runtime.active, 1);
-    runtime.throw();
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.active, 2);
-    runtime.throw();
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.active, 1);
     assert_eq!(runtime.game.teams()[0].score_board().history().len(), 3);
     assert_eq!(runtime.game.teams()[1].score_board().history().len(), 1);
@@ -73,12 +73,12 @@ fn 一チーム開始なら三回連続0点で勝者なし終了する() {
     runtime.game = runtime.game.with_field(Field::new(vec![]));
     assert!(!runtime.game.is_finished());
     for _ in 0..3 {
-        runtime.throw();
+        runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     }
     assert!(runtime.game.is_finished());
     assert_eq!(runtime.game.result(), None);
     assert_eq!(runtime.game.teams()[0].score_board().history().len(), 3);
-    runtime.throw();
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.game.teams()[0].score_board().history().len(), 3);
     assert!(rendered(&runtime).contains("全チームが失格"));
 }

@@ -2,7 +2,20 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## 1か所から使われるラッパーのPonytailレビュー（実装変更なし）
+## ラッパー削除（今回の変更）
+
+- 対象：直前のレビュー候補からController::renderを除いたPointTui、throw_count_label、Controller::throwを削除する。表示内容・投てき動作・coreの公開APIを維持する。
+- PointTuiは標準の整数文字列化へ置換し、投数はTeamTui::rowで文字列化する。通常の投てきは呼び出し側からthrow_with_rngへ乱数源を渡す。Controller::renderは維持する。
+- [x] 変更前の既存テストを確認する。
+- [x] ラッパーと登録・参照を削除し、投数の検証を行描画のテストへ移す。投てきテストの検証内容を維持する。
+- [x] 全テスト・build・fmt・Clippy・差分を確認する。
+- 振る舞いを変えないRefactorとして実施し、新しい振る舞いのRedは要求しない。
+- 変更前後のcargo test --lockedはいずれも119件成功（core74・バイナリ19・doc26）、失敗・無視なし。ログは/tmp/wrapper-baseline.logと/tmp/wrapper-tests.log。
+- cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功。削除した型・メソッドへの参照がsrc/testsにないことを確認した。
+- 投数8の表示はtests/view/team.rsの行描画で確認し、直近6投の書式検証は維持した。旧throwのテスト呼び出し7か所はConstantRngを直接渡すよう変更し、終了後の更新拒否・失格スキップ等のアサーションは維持した。
+- Controller::renderの実装と利用は変更していない。core・依存・Java版も変更していない。今回の削除に対する実端末の手動操作確認は行っていない。
+
+## 1か所から使われるラッパーのPonytailレビュー（当時の記録・上記3件は実装済み）
 
 ### 対象・根拠・数え方
 

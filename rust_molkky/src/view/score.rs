@@ -1,4 +1,4 @@
-use super::{point::PointTui, team::TeamTui};
+use super::team::TeamTui;
 use ratatui::{
     layout::Constraint,
     style::{Color, Style},
@@ -15,13 +15,10 @@ impl ScoreBoardTui {
     pub(crate) fn value_label(&self) -> String {
         format!("{} / {}", self.value, self.target)
     }
-    pub(crate) fn throw_count_label(&self) -> String {
-        self.history.len().to_string()
-    }
     pub(crate) fn recent_points_label(&self) -> String {
         self.history[self.history.len().saturating_sub(6)..]
             .iter()
-            .map(|&point| PointTui::new(point).label())
+            .map(i32::to_string)
             .collect::<Vec<_>>()
             .join(" ")
     }

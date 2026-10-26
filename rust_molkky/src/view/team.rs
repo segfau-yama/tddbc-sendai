@@ -26,7 +26,7 @@ impl TeamTui {
             Cell::from(marker),
             Cell::from(self.name.as_str()),
             Cell::from(self.board.value_label()),
-            Cell::from(self.board.throw_count_label()),
+            Cell::from(self.board.history.len().to_string()),
             Cell::from(self.board.recent_points_label()),
         ])
         .style(if self.winner {

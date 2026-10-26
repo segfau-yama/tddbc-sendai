@@ -2,7 +2,7 @@ use super::TeamTui;
 use crate::view::score::ScoreBoardTui;
 use ratatui::{Terminal, backend::TestBackend, layout::Constraint, widgets::Table};
 #[test]
-fn 得点が零でも勝者と失格と操作対象の行を区別する() {
+fn 得点が零でも勝者と失格と操作対象の行を区別し投数を表示する() {
     let teams: Vec<_> = [
         ("青", 0, false, true, false),
         ("赤", 0, false, false, true),
@@ -14,7 +14,7 @@ fn 得点が零でも勝者と失格と操作対象の行を区別する() {
         board: ScoreBoardTui {
             value,
             target: 50,
-            history: vec![],
+            history: vec![1, 2, 0, 3, 4, 5, 0, 6],
             notice: String::new(),
         },
         active,
@@ -49,7 +49,7 @@ fn 得点が零でも勝者と失格と操作対象の行を区別する() {
         .collect::<String>()
         .split_whitespace()
         .collect();
-    assert!(text.contains("勝青0/50"));
-    assert!(text.contains("失格赤0/50"));
-    assert!(text.contains("▶緑5/50"));
+    assert!(text.contains("勝青0/508"));
+    assert!(text.contains("失格赤0/508"));
+    assert!(text.contains("▶緑5/508"));
 }

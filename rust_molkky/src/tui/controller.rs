@@ -52,7 +52,7 @@ impl Controller {
                 continue;
             }
             match key.code {
-                KeyCode::Enter | KeyCode::Char(' ') => self.throw(),
+                KeyCode::Enter | KeyCode::Char(' ') => self.throw_with_rng(&mut rand::rng()),
                 KeyCode::Left => self.move_from(-1, 0),
                 KeyCode::Right => self.move_from(1, 0),
                 KeyCode::Up => self.move_from(0, 1),
@@ -70,10 +70,6 @@ impl Controller {
         if let Some(position) = self.layout.stick.translated(dx, dy) {
             self.layout.stick = position;
         }
-    }
-
-    fn throw(&mut self) {
-        self.throw_with_rng(&mut rand::rng());
     }
 
     fn throw_with_rng(&mut self, rng: &mut impl rand::Rng) {
