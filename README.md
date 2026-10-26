@@ -4,7 +4,8 @@ TDDBC仙台の備忘録用リポジトリ
 ## Rust演習環境
 
 `rust_molkky`は、Java版を起点にチーム・ゲーム管理と距離に応じた投てきモデルを追加したライブラリとTUIです。
-実装は`src/`、振る舞いのテストは`tests/`にあります。依存取得にはインターネット接続が必要です。
+モデルとルールは`src/core/`、TUIの表示・入力は`src/tui/`、振る舞いのテストは`tests/`にあります。依存取得にはインターネット接続が必要です。
+`rust_molkky::core`からモデルと関数を利用でき、従来の`rust_molkky::Skittle`などの公開名も維持しています。
 
 ```sh
 cd rust_molkky
@@ -17,18 +18,26 @@ cargo run --locked -- 赤チーム 青チーム  # 対話型ターミナルで�
 
 TUIではSpace / Enterで投てき、矢印キーで投てき位置を移動、Rで再開、Q / Escで終了します。
 
-| 責務 | 公開API | 実装 |
+| 責務 | 型・関数 | 実装 |
 | --- | --- | --- |
-| 番号1〜12と位置を持つピン | `Skittle`, `Position` | `src/skittle.rs` |
-| 現在のモデルで使う棒の投てき位置 | `Stick` | `src/stick.rs` |
-| 倒れたピンの判定 | `throw_stick` | `src/throw.rs` |
-| 1投の採点と点数の値 | `calc_score`, `Point` | `src/score.rs` |
-| 1チームの点数履歴と現在得点 | `ScoreBoard` | `src/score.rs` |
-| 名称と得点表 | `Team` | `src/team.rs` |
-| 複数チーム・共通のFieldとStick・終了判定 | `Molkky` | `src/molkky.rs` |
-| ピンの配置 | `Field` | `src/field.rs` |
-| 元の配置を保ち、移動後の配置を返す | `relocate_skittles` | `src/movement.rs` |
-| 棒とピンの位置関係から確率を求める | `fall_probability` | `src/throw.rs` |
+| 番号1〜12と位置を持つピン | `Skittle`, `Position` | `src/core/skittle.rs` |
+| 現在のモデルで使う棒の投てき位置 | `Stick` | `src/core/stick.rs` |
+| 倒れたピンの判定 | `throw_stick` | `src/core/throw.rs` |
+| 1投の採点と点数の値 | `calc_score`, `Point` | `src/core/score.rs` |
+| 1チームの点数履歴と現在得点 | `ScoreBoard` | `src/core/score.rs` |
+| 名称と得点表 | `Team` | `src/core/team.rs` |
+| 複数チーム・共通のFieldとStick・終了判定 | `Molkky` | `src/core/molkky.rs` |
+| ピンの配置 | `Field` | `src/core/field.rs` |
+| 元の配置を保ち、移動後の配置を返す | `relocate_skittles` | `src/core/movement.rs` |
+| 棒とピンの位置関係から確率を求める | `fall_probability` | `src/core/throw.rs` |
+| ピン番号と単独ピンの描画 | `SkittleTui` | `src/tui/skittle.rs` |
+| 棒の描画 | `StickTui` | `src/tui/stick.rs` |
+| 盤面・重なったピンの描画 | `FieldTui` | `src/tui/field.rs` |
+| 端末入力と画面全体・プレイ進行 | `Runtime` | `src/tui/runtime.rs` |
+
+TUI用の構造体はcoreの値を共有参照し、描画のためにモデルの状態を二重管理しません。
+モデル座標のPositionは距離・確率・移動にも使うためcoreに残し、Canvasや端末のレイアウトはtuiで扱います。
+coreからratatuiやtuiへの参照はありません。tuiはバイナリ側の内部モジュールです。
 
 採点と履歴更新を分離します。`calc_score`は入力だけから`Point`を返す純粋関数です。
 0本なら0点、1本なら番号、複数本なら本数です。`ScoreBoard::add`は元の得点表を変えず、その点数を履歴へ追加した新しい得点表を返します。

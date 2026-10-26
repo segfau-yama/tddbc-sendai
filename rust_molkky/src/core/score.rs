@@ -1,4 +1,4 @@
-use crate::{Skittle, skittle::validate_unique_numbers};
+use super::{Skittle, skittle::validate_unique_numbers};
 
 pub const TARGET_SCORE: i32 = 50;
 pub const RESET_SCORE: i32 = 25;

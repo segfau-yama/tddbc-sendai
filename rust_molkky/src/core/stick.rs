@@ -1,4 +1,4 @@
-use crate::Position;
+use super::Position;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stick {

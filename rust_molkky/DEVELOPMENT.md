@@ -1,5 +1,68 @@
 # Java版からRust版への移植
 
+## coreとtuiの分離・表示用構造体（今回の変更）
+
+### 仕様と設計
+
+- 対象：今回のsrc直下へのcore/tui作成指示、既存の全構造体・投てき/採点/移動関数・Runtime・直前のSkittleTui設計レビュー。既存のレビュー追記を保持する。
+- 既存のPosition・Skittle・Stick・Field・ScoreBoard・Point・Team・Molkkyとルール関数はsrc/coreへ移す。モデル座標と距離モデル、共通のField/Stick、得点・失格・残り1チームの勝利は変更しない。
+- src/tuiへRuntimeと表示用のSkittleTui・StickTui・FieldTuiを置く。モデルを共有参照し、番号の表示・棒の描画・Canvas盤面の描画を担当させる。描画ライブラリの型はtui側に限定する。
+- Positionは現在の距離・確率・移動計算に必要なモデル座標としてcoreへ残す。端末のRect/Canvas等への描画はtuiで行う。今回、採点APIや空間モデルの意味を変更しない。
+- coreは公開モジュールとし、従来のcrate直下の公開名も再エクスポートして互換性を保つ。tuiはバイナリ側のモジュールとし、ライブラリのcoreからtuiへの参照を作らない。
+- 同じ位置のピン番号を01/02のようにまとめる表示を維持する。新しい独自Drawトレイトや描画器の差し替え機構は導入しない。
+
+### テスト計画
+
+- [x] 変更前の107件成功を確認する。
+- [x] 振る舞いを変えないフォルダ移動後に既存テストが成功する。
+- [x] 表示用構造体で既存の重なり表示・棒の表示を確認し、Runtimeから盤面描画を移す。
+- [x] coreにratatui/端末描画への依存がなく、既存APIとcore経由のAPIで採点できることを確認する。
+- [x] 共通Field/Stick・不変性・ゲーム終了の既存テストを維持する。
+- [x] 全テスト・build・fmt・Clippy・TUI操作を確認し、READMEと実行記録を更新する。
+
+### Refactor・Red・Greenと最終確認
+
+- 変更前とフォルダ移動直後の`cargo test --locked`は、それぞれ107件成功。フォルダ移動は既存挙動を維持するRefactorであり、新機能のRedとは扱わない。
+- coreへ移した8ファイルについて、元の実装との差分がモジュール内のimport（crateからsuper）だけであることを照合した。
+- Red：新しいFieldTuiを使う描画テストが、型未実装によるE0432で失敗した。SkittleTui・StickTui・FieldTuiとdraw処理を実装してGreenを確認した。
+- SkittleTuiはモデルのSkittleを共有参照し、番号のラベルと単独ピンの描画を担当する。StickTuiはモデルのStickを共有参照して描画用座標を求め、棒を描く。位置を別フィールドへコピーして保持することはしない。
+- FieldTuiはモデルのField/Stickを共有参照し、表示範囲・補助線・同じ位置の番号の集約と盤面描画を担当する。単独の03、同じ位置の01/02、棒の@がTestBackendへ描画されることを確認した。
+- Runtimeの端末入力・得点表・メッセージ・位置と確率の一覧はtui/runtime.rsへ移した。盤面描画はFieldTuiへ委譲する。
+- `rust_molkky::core`からの利用例をドキュメントテストへ追加し、従来のcrate直下のSkittle型と同じ型として利用できることを確認した。
+- 最終`cargo test --locked`：109件成功（TUI単体5件・統合81件・ドキュメント23件）。失敗・無視0件。ドキュメントテストは正常利用11件・compile_fail 12件。
+- `cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --all-targets -- -D warnings`・`git diff --check`：成功。
+- core内にratatui・Frame・Canvas・tuiへの参照がないことを確認した。Cargoパッケージ全体の既存依存は維持し、featuresやcrate分割までは追加していない。
+- `cargo run --locked -- 赤 青`を対話型端末で実行し、起動・右矢印による位置変更・Spaceで投てきと手番更新・Rで初期化・Qで終了コード0を確認した。
+- 依存・ロックファイル・Java版の変更はない。追加のユーザー指示に従い、今後は変更と検証の完了後にcommit・pushまで自動で行う方針をAGENTS.mdへ記録した。今回の分離もConventional Commitsでcommitし、mainへ通常のpushを行う。結果はチャットで報告する。
+
+## SkittleTuiと描画責務の設計レビュー（未実装）
+
+- 対象：今回のSkittleTuiにSkittle・Position・Drawを持たせる提案、現在のSkittle・throw.rs・runtime.rsのCanvas描画。
+- 表示位置や色などの表示専用状態をSkittleと組み合わせるSkittleTuiは、TUI側の表示モデルとして成立する。Skittleは描画ライブラリへ依存させず、DrawはまずSkittleTuiの描画メソッドとして表現する。描画器をデータメンバーとして保持したり、独自のDrawトレイトを先に作る必要は現状ない。
+- 中：現在のPositionは画面座標ではなく、fall_probability・relocate_skittlesに使うモデル座標である。これをSkittleTuiだけへ移すと、空間シミュレーションがTUIの型に依存する。採点から位置を分離するなら、位置を持つ型は表示専用か空間モデルかを意味で分ける。
+- 採点用Skittleを番号だけにし、位置付きのピンを別の型にする案は妥当。そのPositionがモデル座標ならPositionedSkittle等のUIに依存しない型とし、SkittleTuiは必要になった表示位置・見た目・描画を担当する。両方のラッパーを必須とはしない。
+- 低：現在のCanvasは同じ座標のピン番号を集めて「01/02」のように表示する。1ピンずつ独立してdrawする設計へ変える際も、重なりの集約・表示範囲・座標変換は盤面側で担当し、既存の重なり表示を失わないようにする。
+- 名前を含めた推奨：表示専用ならSkittleTuiにSkittle・表示位置・drawメソッドを持たせる。投てきに使う位置の保持が目的なら、その型は空間モデルとして分離する。ゲーム側はSkittleTui・ratatui・Frameへ依存させない。
+- 今回は設計評価の追記だけを行った。実装・テスト・公開APIの変更、テスト実行、commit・pushは行っていない。
+
+## Positionの所有とUI境界の設計レビュー（実装変更なし）
+
+### 対象・根拠・判断
+
+- 入力：今回のPositionとTUI/CUIの質問、Position・Skittle・Stick・Field・Molkky・throw.rs・movement.rs・score.rs・runtime.rs。
+- Positionは現在、端末の行・列ではなく、棒とピンの距離、倒れる確率、ピンの移動に使うモデル座標である。描画前に存在し、画面を描かなくても投てき結果へ影響するため、TUI専用の状態とは判断しない。
+- 画面内の座標・表示範囲・拡大率・選択カーソル等はTUI側の責務である。現在も端末のRect・Layout・Canvasへの投影はruntime.rsに置かれている。
+- 中：採点にはピン番号と倒れた本数しか必要ないが、calc_scoreは位置付きのSkittleを受け取る。またMolkky::newは得点管理だけの用途でもField/Stickを初期化する。採点モデルと空間シミュレーションの結合は残っており、画面がない利用でも座標モデルを持ち込む理由になる。
+- 中：その結合を減らす場合は、採点・履歴・チームの勝敗管理を座標に依存しない入力で利用できるようにし、Position・配置・移動・距離に応じた確率を空間シミュレーションの責務として分ける。現状のPositionをそのままTUIへ移すと、画面を持たないシミュレーションでも必要な距離・確率計算がUIに依存してしまう。
+- 手入力のCUIは倒れたピン番号から採点へ進め、空間モデルを使うTUIやCUIは投てき結果を生成してから同じ採点処理へ進める。利用する画面の種類ではなく、空間モデルを利用するかどうかで必要な入力を決める。
+- 前回の「Molkkyが共通のField/Stickを所有する」実装は空間ゲームとして成立している。採点専用APIの独立性まで保証した設計とは区別する。
+
+### 今回の確認範囲
+
+- 呼び出し元と計算・描画の依存関係をコードで確認した。変更は本レビューの追記のみ。実装・テスト・公開APIの変更、commit・pushは行っていない。
+- テストは今回再実行していない。前回の107件成功を今回の実行結果として扱わない。
+- 将来分離する場合は、端末描画なしの投てき計算、座標なしの採点入力、UIを変えても同じ採点・勝敗になることを既存仕様のテストで確認する。
+
 ## 最後の生存チームの勝利とField・Stickの所有（今回の変更）
 
 ### 仕様と設計

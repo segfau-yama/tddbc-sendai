@@ -237,3 +237,13 @@ use rust_molkky::{Molkky, Position, Stick, Team};
 let mut game = Molkky::new(vec![Team::new("赤")]);
 *game.stick() = Stick::new(Position::new(1, 2));
 ```
+
+## coreモジュールからも同じ公開APIを使える
+
+```rust
+use rust_molkky::core::{ScoreBoard, Skittle, calc_score};
+let pin: rust_molkky::Skittle = Skittle::new(5);
+let point = calc_score(&[pin]);
+let board = ScoreBoard::new().add(point);
+assert_eq!(board.value(), 5);
+```

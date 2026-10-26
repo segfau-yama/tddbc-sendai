@@ -1,4 +1,4 @@
-use crate::{Field, Point, Position, Stick, Team};
+use super::{Field, Point, Position, Stick, Team};
 
 pub struct Molkky {
     teams: Vec<Team>,

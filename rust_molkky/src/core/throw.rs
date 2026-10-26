@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::{Skittle, Stick, skittle::validate_unique_numbers};
+use super::{Skittle, Stick, skittle::validate_unique_numbers};
 
 /// 入力の配置を変えず、倒れたスキットルのコピーを返す。
 /// 乱数源は更新するため、厳密な意味での純粋関数ではない。

@@ -1,4 +1,4 @@
-use crate::ScoreBoard;
+use super::ScoreBoard;
 
 #[derive(Clone)]
 pub struct Team {

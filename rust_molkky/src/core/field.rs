@@ -1,4 +1,4 @@
-use crate::{Position, Skittle, skittle::validate_unique_numbers};
+use super::{Position, Skittle, skittle::validate_unique_numbers};
 
 #[derive(Clone)]
 pub struct Field {

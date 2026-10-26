@@ -1,6 +1,6 @@
 use rand::Rng;
 
-use crate::{Field, Position};
+use super::{Field, Position};
 
 /// 元の配置を保持し、全ピンを隣接マスへ移動した新しいFieldを返す。
 /// 乱数源は更新する。

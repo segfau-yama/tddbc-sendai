@@ -1,4 +1,4 @@
-mod runtime;
+mod tui;
 
 use std::io::{self, IsTerminal};
 
@@ -18,5 +18,5 @@ fn main() -> io::Result<()> {
             "対話型ターミナルでcargo runを実行してください",
         ));
     }
-    ratatui::run(|terminal| runtime::Runtime::new(names).run(terminal))
+    ratatui::run(|terminal| tui::Runtime::new(names).run(terminal))
 }

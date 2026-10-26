@@ -1,4 +1,6 @@
-use std::{collections::BTreeMap, io};
+use super::field::FieldTui;
+
+use std::io;
 
 use ratatui::{
     DefaultTerminal, Frame,
@@ -6,12 +8,9 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, Cell, Paragraph, Row, Table, TableState, Wrap,
-        canvas::{Canvas, Line as CanvasLine},
-    },
+    widgets::{Block, Cell, Paragraph, Row, Table, TableState, Wrap},
 };
-use rust_molkky::{
+use rust_molkky::core::{
     CONSECUTIVE_ZERO_LIMIT, Molkky, Position, RESET_SCORE, Stick, TARGET_SCORE, Team, calc_score,
     fall_probability, relocate_skittles, throw_stick,
 };
@@ -165,7 +164,7 @@ impl Runtime {
         let [board, positions] =
             Layout::horizontal([Constraint::Percentage(62), Constraint::Percentage(38)])
                 .areas(field);
-        self.render_board(frame, board);
+        FieldTui::new(self.game.field(), self.game.stick()).draw(frame, board);
         self.render_positions(frame, positions);
         frame.render_widget(
             Paragraph::new(self.message.as_str()).wrap(Wrap { trim: false }),
@@ -249,69 +248,6 @@ impl Runtime {
         );
     }
 
-    fn render_board(&self, frame: &mut Frame, area: Rect) {
-        let from_x = f64::from(self.game.stick().position().x());
-        let from_y = f64::from(self.game.stick().position().y());
-        let (mut left, mut right, mut bottom, mut top) = (from_x, from_x, from_y, from_y);
-        let mut labels: BTreeMap<(i32, i32), Vec<String>> = BTreeMap::new();
-        for pin in self.game.field().skittles() {
-            let position = pin.position();
-            let x = f64::from(position.x());
-            let y = f64::from(position.y());
-            left = left.min(x);
-            right = right.max(x);
-            bottom = bottom.min(y);
-            top = top.max(y);
-            labels
-                .entry((position.x(), position.y()))
-                .or_default()
-                .push(format!("{:02}", pin.number()));
-        }
-        let canvas = Canvas::default()
-            .block(Block::bordered().title("盤面  番号=ピン  @=投てき位置"))
-            .x_bounds([left - 3.0, right + 3.0])
-            .y_bounds([bottom - 2.0, top + 2.0])
-            .paint(|context| {
-                context.draw(&CanvasLine {
-                    x1: left - 3.0,
-                    y1: from_y,
-                    x2: right + 3.0,
-                    y2: from_y,
-                    color: Color::DarkGray,
-                });
-                context.draw(&CanvasLine {
-                    x1: from_x,
-                    y1: bottom - 2.0,
-                    x2: from_x,
-                    y2: top + 2.0,
-                    color: Color::DarkGray,
-                });
-                for (&(x, y), numbers) in &labels {
-                    context.print(
-                        f64::from(x),
-                        f64::from(y),
-                        Line::from(Span::styled(
-                            numbers.join("/"),
-                            Style::default()
-                                .fg(Color::Cyan)
-                                .add_modifier(Modifier::BOLD),
-                        )),
-                    );
-                }
-                context.print(
-                    from_x,
-                    from_y,
-                    Line::from(Span::styled(
-                        "@",
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    )),
-                );
-            });
-        frame.render_widget(canvas, area);
-    }
-
     fn render_positions(&self, frame: &mut Frame, area: Rect) {
         let rows = self.game.field().skittles().iter().map(|pin| {
             let position = pin.position();
@@ -340,7 +276,7 @@ impl Runtime {
 mod tests {
     use super::*;
     use ratatui::{Terminal, backend::TestBackend};
-    use rust_molkky::{Field, ScoreBoard, Skittle};
+    use rust_molkky::core::{Field, ScoreBoard, Skittle};
 
     fn rendered(runtime: &Runtime) -> String {
         let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
