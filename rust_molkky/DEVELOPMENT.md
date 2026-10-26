@@ -1,5 +1,60 @@
 # Java版からRust版への移植
 
+## APIとViewを表示単位の関数で合成する案（2026-10-26・設計のみ）
+
+### 判断と根拠
+
+- 入力：APIとViewを1対1へ固定せず、関数で合成する提案。前回の「まだ実装しない」を維持し、Ponytailの方針で通常の関数による最小の接続を選ぶ。
+- 判断：今回はこちらを推奨する。coreの各型に対応するComponentを必須とせず、表示単位で必要な複数のcoreの値を読み取ってtuiの部品を構築する。
+- 1対1の関係が成立する表示もあるが、全体に固定する必要はない。現状の[FieldTui](src/tui/field.rs)はFieldとStickから盤面と位置一覧を描画し、[SkittleTuiの確率行](src/tui/skittle.rs)もSkittleとStickを参照する。[得点表](src/tui/molkky.rs)は複数のTeamと手番・勝者の情報を組み合わせる。
+- 前回の借用Component・識別子を持つComponentの案は、Component自体が必要な場合の選択肢として残す。今回の推奨では、接続のためだけのComponentやID対応表を追加しない。
+
+### 配置・入力・出力
+
+coreの正本は引き続きMolkkyが所有する。game/presentation.rs等の通常の関数がcoreを共有参照し、coreに依存しないtuiの表示用オブジェクトを返す。tuiは表示用の値と部品を受け取り、Widget/CanvasDraw等で描画する。
+
+| 合成する入力 | 出力の例 | 関係 |
+| --- | --- | --- |
+| Fieldの全ピンと共通のStick | 盤面、ピン位置・確率一覧 | 同じモデル群から複数の表示を作れる |
+| 複数Teamの名称・ScoreBoardと現在の手番・勝者 | 全チームの得点表 | 複数のモデルと進行状態を1つの表示へまとめる |
+
+型・コンストラクターは設計上の例であり、既存コードのAPIではない。下記はgame側の関数を想定する。
+
+```rust
+fn compose_field(field: &core::Field, stick: &core::Stick) -> tui::FieldView {
+    let pins = field.skittles().iter().map(|pin| {
+        let position = pin.position();
+        tui::SkittleView::new(
+            pin.number(),
+            (position.x(), position.y()),
+            core::fall_probability(stick, pin),
+        )
+    }).collect();
+    let position = stick.position();
+    let stick_view = tui::StickView::new((position.x(), position.y()));
+    tui::FieldView::new(pins, stick_view)
+}
+```
+
+gameは1フレームの同じMolkkyから盤面・一覧・得点表を組み立て、tuiへ渡す。関数の分割は表示の必要に合わせ、全core型に変換関数を一律に増やさない。同じFieldの表示値を盤面と一覧で共有する形でもよい。
+
+### 責務と不変条件
+
+- 合成関数はcoreの値を借用し、表示に必要な数値・文字列・判定結果だけを渡す。新しいcoreの集約を返したり、coreのコピーを別の現在状態として保存したりしない。表示値の一時的なコピーは、状態の正本を増やすこととは異なる。
+- 確率・採点・失格・勝敗等はcoreの関数・読み取りAPIを使う。tuiが確率や勝敗を再計算する形にはしない。関数へ変更するだけで責務や所有が自動的に整理されるわけではない。
+- 合成はモデルを変更せず、乱数・端末・入力の読み取りを行わない値の変換として扱う。実際の描画はBuffer/Contextを更新する別の処理とする。
+- 色・レイアウト・端末座標への変換はtuiが扱う。スクロールやフォーカス等の持続する表示状態はview側の値として別に保持し、関数で合成するたびに初期化しない。coreとの1対1対応を永続保存する必要はない。
+- 入力とゲーム更新はgameの進行処理へ残す。入力から新しいMolkkyを作った後、そのスナップショットから各viewを生成する。
+- 依存方向はgame→coreとgame→tui。汎用Component trait・変換レジストリ・動的な関数登録等は追加しない。
+
+### 実装時の確認項目と今回の検証
+
+- [ ] FieldとStickを組み合わせた盤面・確率一覧が同じ状態を表示し、同じモデルを複数の表示へ渡してもcoreが変わらないことを確認する。
+- [ ] 複数チームの得点・手番・失格・勝者が得点表へ一貫して渡ることを確認する。
+- [ ] 再描画で乱数や履歴を更新せず、持続する表示状態も失われないことを確認する。
+- [ ] 合成関数のテストはtests/game/presentation.rs等の対象と同名ファイルに置き、tuiのテストはcoreを構築せず表示値から描画を検証する。
+- 今回は設計記録のみの変更。Rustコード・テスト・ディレクトリは変更せず、cargoテストやRed/Greenは実行しない。文書の差分とgit diff --checkは問題なし。ソース参照3件の存在も確認した。
+
 ## Componentによるapiの重複保持を避ける所有モデル（2026-10-26・設計のみ）
 
 ### 前提と判断
