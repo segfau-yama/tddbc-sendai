@@ -1,18 +1,19 @@
-mod support;
-
-#[path = "core/field.rs"]
+#[path = "core/models/field.rs"]
 mod field;
-#[path = "core/molkky.rs"]
+#[path = "core/services/judge.rs"]
+mod judge;
+#[path = "core/models/molkky.rs"]
 mod molkky;
-#[path = "core/movement.rs"]
-mod movement;
-#[path = "core/position.rs"]
-mod position;
-#[path = "core/score.rs"]
+#[path = "core/models/score.rs"]
 mod score;
-#[path = "core/skittle.rs"]
+#[path = "core/services/scoring.rs"]
+mod scoring;
+#[path = "core/models/skittle.rs"]
 mod skittle;
-#[path = "core/team.rs"]
+#[path = "core/models/stick.rs"]
+mod stick;
+mod support;
+#[path = "core/models/team.rs"]
 mod team;
-#[path = "core/throw.rs"]
+#[path = "core/services/throw.rs"]
 mod throw;

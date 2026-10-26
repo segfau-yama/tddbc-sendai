@@ -1,18 +1,5 @@
-mod field;
-mod molkky;
-mod movement;
-mod position;
-mod score;
-mod skittle;
-mod stick;
-mod team;
-mod throw;
-pub use field::Field;
-pub use molkky::Molkky;
-pub use movement::relocate_skittles;
-pub use position::Position;
-pub use score::{CONSECUTIVE_ZERO_LIMIT, Point, RESET_SCORE, ScoreBoard, TARGET_SCORE, calc_score};
-pub use skittle::Skittle;
-pub use stick::Stick;
-pub use team::Team;
-pub use throw::{fall_probability, throw_stick};
+pub mod models;
+pub mod services;
+
+pub use models::*;
+pub use services::*;

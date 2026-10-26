@@ -3,9 +3,8 @@ TDDBC仙台の備忘録用リポジトリ
 
 ## Rust演習環境
 
-`rust_molkky`は、Java版を起点にチーム・ゲーム管理と距離に応じた投てきモデルを追加したライブラリとTUIです。
-モデルとルールは`src/core/`、TUIの表示・入力は`src/tui/`、振る舞いのテストは`tests/`にあります。依存取得にはインターネット接続が必要です。
-`rust_molkky::core`からモデルと関数を利用でき、従来の`rust_molkky::Skittle`などの公開名も維持しています。
+rust_molkkyは、モルックの採点・試合管理を行うライブラリとTUIです。
+coreは表示座標を持たず、表示位置を変えても投てきの確率や採点は変わりません。
 
 ```sh
 cd rust_molkky
@@ -13,156 +12,79 @@ cargo test --locked
 cargo build --locked
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
-cargo run --locked -- 赤チーム 青チーム  # 対話型ターミナルで起動
+cargo run --locked -- 赤チーム 青チーム
 ```
 
-TUIではSpace / Enterで投てき、矢印キーで投てき位置を移動、Rで再開、Q / Escで終了します。
+TUIは72列×24行以上の対話型端末で動作します。Space / Enterで投てき、矢印キーで棒の表示位置を移動、Rで再開、Q / Esc / Ctrl+Cで終了します。
 
-| 責務 | 型・関数 | 実装 |
-| --- | --- | --- |
-| 番号1〜12と位置を持つピン | `Skittle` | `src/core/skittle.rs` |
-| モデル座標と距離 | `Position` | `src/core/position.rs` |
-| 現在のモデルで使う棒の投てき位置 | `Stick` | `src/core/stick.rs` |
-| 倒れたピンの判定 | `throw_stick` | `src/core/throw.rs` |
-| 1投の採点と点数の値 | `calc_score`, `Point` | `src/core/score.rs` |
-| 1チームの点数履歴と現在得点 | `ScoreBoard` | `src/core/score.rs` |
-| 名称と得点表 | `Team` | `src/core/team.rs` |
-| 複数チーム・共通のFieldとStick・終了判定 | `Molkky` | `src/core/molkky.rs` |
-| ピンの配置 | `Field` | `src/core/field.rs` |
-| 元の配置を保ち、移動後の配置を返す | `relocate_skittles` | `src/core/movement.rs` |
-| 棒とピンの位置関係から確率を求める | `fall_probability` | `src/core/throw.rs` |
-| ピン番号と単独ピンの描画 | `SkittleTui` | `src/tui/skittle.rs` |
-| 棒の描画 | `StickTui` | `src/tui/stick.rs` |
-| 盤面・重なったピン・位置/確率一覧の描画 | `FieldTui` | `src/tui/field.rs` |
-| 座標の表記とCanvas用の変換 | `PositionTui` | `src/tui/position.rs` |
-| 点数の表記 | `PointTui` | `src/tui/point.rs` |
-| 得点・直近6投の履歴・補正/失格の説明 | `ScoreBoardTui` | `src/tui/score.rs` |
-| チーム行と投てきメッセージ | `TeamTui` | `src/tui/team.rs` |
-| 画面全体のレイアウトと描画 | `MolkkyTui` | `src/tui/molkky.rs` |
-| Canvas上の文字描画の共通trait | `CanvasDraw` | `src/tui/draw.rs` |
-| 端末入力・ゲーム更新・手番と描画の呼び出し | `Runtime` | `src/tui/runtime.rs` |
+| 場所 | 責務 |
+| --- | --- |
+| src/core/models/ | Skittle・Stick・Field・Point・ScoreBoard・Team・Molkky・GameStatusというドメインモデル |
+| src/core/services/ | calc_score（採点）、throw_stick（抽選）、judge_game（勝敗判定） |
+| src/game/ | coreとviewの合成、投てき後の表示上の移動 |
+| src/tui/ | Controllerによる端末入力、操作制御、描画の呼び出し |
+| src/view/ | 表示専用のPosition、描画構造体、Widget・CanvasDraw |
 
-TUI用の構造体はcoreの値を共有参照し、描画のためにモデルの状態を二重管理しません。
-Runtimeは描画をMolkkyTuiへ委譲し、MolkkyTuiがTeamTui・FieldTui等を組み合わせます。
-モデル座標のPositionは距離・確率・移動にも使うためcoreに残し、Canvasや端末のレイアウトはtuiで扱います。
-coreからratatuiやtuiへの参照はありません。tuiはバイナリ側の内部モジュールです。
+core/modelsという名前は、エンティティと値オブジェクトの両方をまとめるためのものです。
+Molkkyは集約ルート役、Teamは参加チーム、PointやScoreBoardは不変な値として扱います。
+モデルの更新は新しい値を返し、乱数源と端末入出力は呼び出し側で扱います。
+viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示値から描画します。
 
-画面領域のMolkkyTui・FieldTuiはRatatui標準の`Widget`を実装し、`frame.render_widget(view, area)`で描画します。
-MolkkyTuiは表示メッセージも描画入力として受け取ります。位置一覧や得点表には既存のTable（Widget/StatefulWidget）を使います。
-Canvasの文字ラベルは描画先が異なるため、SkittleTui・StickTuiが`CanvasDraw::draw(&self, &mut Context)`を実装します。
-画面部品用の独自Drawや描画先を切り替える汎用フレームワークは追加していません。
-
-
-Rustのテスト本体は`tests/core/対象名.rs`・`tests/tui/対象名.rs`に置き、対象ファイルと同じ名前にしています。
-例：`src/tui/team.rs`のテストは`tests/tui/team.rs`です。
-coreのテストは`tests/core.rs`から登録し、TUIのテストは各対象ファイルの`#[cfg(test)]`付きmod宣言から登録します。
-`src/`にはテスト本体を置かず、私有状態を検証するためのAPI公開も行いません。
-APIの利用例は引き続き`tests/api.md`のドキュメントテストで確認します。
-
-```sh
-cargo test --locked --test core               # coreの公開APIテスト
-cargo test --locked --test core score::       # core/score.rsのテスト
-cargo test --locked --bin rust_molkky tui::   # TUIのテスト
-```
-
-
-採点と履歴更新を分離します。`calc_score`は入力だけから`Point`を返す純粋関数です。
-0本なら0点、1本なら番号、複数本なら本数です。`ScoreBoard::add`は元の得点表を変えず、その点数を履歴へ追加した新しい得点表を返します。
+### ライブラリの利用
 
 ```rust
-use rust_molkky::{ScoreBoard, Skittle, calc_score};
+use rust_molkky::core::models::{Molkky, Skittle, Team};
+use rust_molkky::core::services::calc_score;
 
-let first = calc_score(&[Skittle::new(5), Skittle::new(8)]);
-let second = calc_score(&[Skittle::new(11)]);
-let mut board = ScoreBoard::new();
-board = board.add(first);
-board = board.add(second);
-assert_eq!(first.value(), 2);
-assert_eq!(board.value(), 13);
-assert_eq!(board.history(), &[first, second]);
+let original = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
+let updated = original.record_point(0, calc_score(&[Skittle::new(11)]));
+assert_eq!(original.teams()[0].score_board().value(), 0);
+assert_eq!(updated.teams()[0].score_board().value(), 11);
 ```
 
-- `Point`は読み取り専用で、`calc_score`が0〜12の範囲を保証します。
-- `ScoreBoard`の`score_history`は非公開の`Vec<Point>`です。`history()`では読み取り専用のスライスを返します。
-- 履歴は生の点数の順序を保持します。現在得点は投てき順に計算し、50点超過ならその回に25点へ戻ります。
-- `Skittle::new`は番号1〜12を保証します。同じ番号のピンは、位置が違ってもField・投てき対象・採点入力で拒否します。
-- 不正入力は既存方針の`panic!`で拒否します。通常のRustの値・参照・スライスにnullはありません。
+従来のrust_molkky::Skittleやrust_molkky::core::calc_score等の公開名も再公開しています。
+PositionとSkittle/Stickの位置APIはcoreから削除しました。Positionはview内の表示専用型です。
+Fieldは全チーム共通のピン集合として残り、位置を持ちません。Molkkyは共通のFieldとStickを1組だけ所有します。
 
-`throw_stick`は棒と対象のピン、呼び出し側の乱数源を受け取り、倒れたピンのコピーを返します。
-入力のピンは移動しませんが、乱数源は更新するため厳密な純粋関数ではありません。
-`Stick`は現在の距離モデルに必要な位置だけを持ち、速度・角度・衝突モデルは追加していません。
+### 投てきと採点
+
+Stick::new(probability)で倒れる確率を0〜1で指定します。既定値は0.25です。
+throw_stickは各番号を独立して抽選します。これはゲーム用の簡略モデルで、公式の確率や物理シミュレーションではありません。
+範囲外・NaN・無限大の確率、1〜12以外の番号、重複番号を拒否します。
 
 ```rust
-use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Position, Skittle, Stick, throw_stick, calc_score};
-
-let mut rng = StdRng::seed_from_u64(42);
-let targets = [Skittle::new(5).with_position(Position::new(0, 0))];
-let knocked_over = throw_stick(&Stick::new(Position::new(0, 0)), &targets, &mut rng);
-assert_eq!(knocked_over, targets); // 同じ位置のピンは必ず倒れる。
-assert_eq!(calc_score(&knocked_over).value(), 5);
+use rust_molkky::{Skittle, Stick, calc_score, throw_stick};
+let pins = [Skittle::new(5), Skittle::new(8)];
+let knocked = throw_stick(&Stick::new(1.0), &pins, &mut rand::rng());
+assert_eq!(calc_score(&knocked).value(), 2);
 ```
 
-ゲームへは採点済みのPointを記録します。ピンの判定・採点はTeamやMolkkyの責務に含めません。
+0本なら0点、1本なら番号、複数本なら本数です。ScoreBoard::addは履歴を追加した新しい得点表を返します。
+50点超過で25点へ戻し、3回連続0点で失格とします。生の点数履歴は保持します。
+ScoreBoard::is_winnerは既存APIとして50点到達を示し、ゲーム全体の勝者はjudge_game/Molkkyが決めます。
+was_resetは直近の25点補正の説明で引き続き使います。
 
-```rust
-use rust_molkky::{Molkky, Skittle, Team, calc_score};
+### 勝敗判定
 
-let mut game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let twelve = calc_score(&[Skittle::new(12)]);
-for _ in 0..4 { game = game.record_point(0, twelve); }
-game = game.record_point(0, calc_score(&[Skittle::new(3)])); // 48 + 3で25点へ。
-assert_eq!(game.teams()[0].score_board().value(), 25);
-game = game.record_point(0, twelve); // 37点。
-game = game.record_point(0, twelve); // 49点。
-game = game.record_point(0, calc_score(&[Skittle::new(1)]));
-assert_eq!(game.result(), Some(0)); // 50点ちょうどで赤チームの勝利。
-```
+judge_game(&[Team])は失格チームを含む元の参加リストを受け取り、次を返します。
 
-- `Molkky::record_point`は元の値を変えず、点数を記録した新しいゲームを返します。TeamはPointに依存せず、`with_score_board`で得点表を差し替えた新しいTeamを返します。
-- 得点・勝利・直近の超過補正・失格はScoreBoardの`value()`・`is_winner()`・`was_reset()`・`is_disqualified()`で取得します。TUIとMolkkyは採点側の判定を使います。
-- `result()`は50点ちょうどのチーム、または2チーム以上の参加で最後まで失格せず残った1チームをSome(index)で返します。勝者がいなければNoneです。`is_finished()`は勝者がいる場合、または全チームが失格した場合にtrueを返します。
-- 終了後・存在しないチーム・失格チームへの記録は、履歴を変える前に拒否します。`teams()`から直接更新はできません。
-- チームは1件以上必要です。空の名称・同名は許容し、インデックスで識別します。構築時は採点側で履歴を再計算し、25点補正後の得点を検証します。複数勝者、50点到達後や失格後に追加記録がある履歴を拒否します。
-- 1チームが3回連続0点なら失格です。正の点数で連続回数は途切れます。失格した投てきまでの履歴は保持します。2チーム以上で始めたゲームは、残り1チームになればそのチームの勝利です。最初から1チームなら50点を目指し、失格すれば勝者なしで終了します。
-- ライブラリは手番を強制しません。TUIは失格チームを飛ばして手番を切り替え、全チーム失格時には終了を表示します。
+- GameStatus::InProgress：進行中。
+- GameStatus::Won { team_index }：50点到達、または2チーム以上の参加から最後の生存チームになった。
+- GameStatus::FinishedWithoutWinner：全チーム失格で終了。
 
-Molkkyは全チーム共通のFieldとStickを1つずつ所有します。Teamが持つのは名称とScoreBoardです。
-`field()`・`stick()`は読み取り専用で、`with_field`・`with_stick`は元のゲームを変えずに新しいゲームを返します。
-`Molkky::new`はFieldを既定の12本、Stickを原点に初期化します。TUIはこの共通状態だけを参照します。
-投てきの判定と配置の更新は呼び出し側で組み合わせます。`simulation.rs`と`random_throw`は削除しました。
-`relocate_skittles(&Field, &mut impl Rng)`は元の配置を変えず、全ピンを移動した新しいFieldを返します。Fieldは配置と検証だけを担当します。
+Molkky::statusは同じサービスを呼び、result/is_finished/終了後の記録禁止にも同じ判定を使います。
+単独参加は50点で勝ち、3回連続0点なら勝者なしで終了します。
+空の参加者、複数の50点到達チーム、終了・失格後に記録がある不正履歴は拒否します。
+coreの記録APIは任意チームへの入力を許し、TUIのControllerが失格チームを飛ばして手番を進めます。
 
-```rust
-use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Field, Molkky, Position, Stick, Team, calc_score, relocate_skittles, throw_stick};
+### 表示とテスト
 
-let mut rng = StdRng::seed_from_u64(20261024);
-let mut game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let knocked_over = throw_stick(game.stick(), game.field().skittles(), &mut rng);
-let point = calc_score(&knocked_over);
-let next_field = relocate_skittles(game.field(), &mut rng);
-game = game.record_point(1, point).with_field(next_field);
-assert_eq!(game.teams()[1].score_board().history(), &[point]);
-assert_eq!(game.field().skittles().len(), 12);
-```
+初期表示は投てき側から1・2、3・10・4、5・11・12・6、7・9・8の4段です。座標の数値は描画用で、距離の単位ではありません。
+倒れたピンだけを表示上で隣接位置へ移し、立ったピンはそのままにします。共通の表示を次のチームも使います。
 
-- 各ピンの倒れる確率は`1 / (1 + 距離)`です。遠いほど倒れにくくなります。
-- 判定後、倒れなかったピンも含め全ピンを隣接8マスのいずれかへ移動します。整数座標の端でも範囲内へ移動します。
-- `Field::default()`は1〜12番を3列4行（x=-1,0,1、y=3,4,5,6）へ配置します。空・任意配置も指定できます。
-- 同じ座標への配置は許容します。衝突計算はありません。`Skittle::with_position`は元のピンを変えず新しい値を返します。
-- 次回の投てきには返された新しいFieldを使います。同じ初期配置とシードで再現でき、randのバージョン間の同一結果は保証しません。
-
-すべてのドメイン型（Position・Skittle・Stick・Point・ScoreBoard・Team・Molkky・Field）は、非公開フィールドと共有参照のAPIを持ち、既存オブジェクトを書き換えません。
-更新結果は`let updated = original.add(point)`や`game = game.record_point(index, point)`のように受け取ります。
-元の値は引き続き参照でき、更新結果を捨てると`must_use`警告が出ます。
-`fall_probability`はStickとSkittleからその都度計算し、Skittleに確率の状態は保持しません。移動と投てきの乱数源は呼び出し側が渡します。
-TUIは返された最新の値を保持し直します。乱数源と端末I/Oには可変状態があり、プログラム全体が純粋関数だけで構成されているわけではありません。
-
-以前の`Throw`・`Score`・`with_throw`は廃止しました。倒れたピンは`Vec<Skittle>`、採点結果は`Point`、履歴は`ScoreBoard`へ分けています。
-`Molkky::record_throw`は`record_point`へ、`Team::score`は`score_board`へ変更しました。Teamの得点表の差し替えは`with_score_board`を使います。
-APIの使用例と型による制約は`tests/api.md`を通じたドキュメントテストで検証します。
-レビュー・設計・テスト計画は[rust_molkky/DEVELOPMENT.md](rust_molkky/DEVELOPMENT.md)に記録しています。
+tests/core/models・tests/core/services・tests/game・tests/tui・tests/viewにテストを置き、対象ファイルと同じ名前にしています。
+API利用例と型による制約はtests/api.mdのドキュメントテストで確認します。
+レビュー・設計・Red/Green・検証結果は[rust_molkky/DEVELOPMENT.md](rust_molkky/DEVELOPMENT.md)に記録しています。
 
 ## Java演習環境
 

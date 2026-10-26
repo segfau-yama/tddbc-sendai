@@ -1,0 +1,74 @@
+use rust_molkky::{Skittle, calc_score};
+
+mod one_skittle {
+    use super::{Skittle, calc_score};
+
+    #[test]
+    fn 番号5のスキットルを倒すと5点になる() {
+        assert_eq!(calc_score(&[Skittle::new(5)]).value(), 5);
+    }
+
+    #[test]
+    fn 番号1のスキットルを倒すと1点になる() {
+        assert_eq!(calc_score(&[Skittle::new(1)]).value(), 1);
+    }
+
+    #[test]
+    fn 番号12のスキットルを倒すと12点になる() {
+        assert_eq!(calc_score(&[Skittle::new(12)]).value(), 12);
+    }
+}
+
+mod multiple_skittles {
+    use super::{Skittle, calc_score};
+
+    #[test]
+    fn 複数本倒すと倒した本数が点数になる() {
+        assert_eq!(calc_score(&[Skittle::new(5), Skittle::new(8)]).value(), 2);
+    }
+
+    #[test]
+    fn 番号1と5と12の3本を倒すと3点になる() {
+        assert_eq!(
+            calc_score(&[Skittle::new(1), Skittle::new(5), Skittle::new(12)]).value(),
+            3
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "スキットル番号が重複しています: 5")]
+    fn 同じ番号の別スキットルを重複として拒否する() {
+        calc_score(&[Skittle::new(5), Skittle::new(5)]);
+    }
+
+    #[test]
+    #[should_panic(expected = "スキットル番号が重複しています: 5")]
+    fn 同じ番号のコピーを重複として拒否する() {
+        let pin = Skittle::new(5);
+        calc_score(&[pin, pin]);
+    }
+}
+
+mod no_skittles {
+    use super::calc_score;
+
+    #[test]
+    fn 一本も倒さなければ0点になる() {
+        assert_eq!(calc_score(&[]).value(), 0);
+    }
+}
+
+mod immutability {
+    use super::{Skittle, calc_score};
+
+    #[test]
+    fn 元の配列を変更しても点数は変わらない() {
+        let mut skittles = [Skittle::new(5)];
+        let thrown = calc_score(&skittles);
+
+        skittles[0] = Skittle::new(12);
+
+        assert_eq!(skittles[0].number(), 12);
+        assert_eq!(thrown.value(), 5);
+    }
+}

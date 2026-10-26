@@ -96,62 +96,57 @@ game.teams()[0] = game.teams()[0].with_score_board(
 );
 ```
 
-## 配置を変更せず倒れたピンを返す
+## 入力を変更せず倒れたピンを返す
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Position, Skittle, Stick, calc_score, relocate_skittles, throw_stick};
+use rust_molkky::{Skittle, Stick, calc_score, throw_stick};
 let mut rng = StdRng::seed_from_u64(42);
-let position = Position::new(0, 0);
-let targets = [Skittle::new(5).with_position(position)];
-let knocked_over = throw_stick(&Stick::new(position), &targets, &mut rng);
+let targets = [Skittle::new(5)];
+let knocked_over = throw_stick(&Stick::new(1.0), &targets, &mut rng);
 assert_eq!(knocked_over, targets);
 assert_eq!(calc_score(&knocked_over).value(), 5);
-assert_eq!(targets[0].position(), position);
+assert_eq!(targets, [Skittle::new(5)]);
 ```
 
 ## 投てき対象にNoneは指定できない
 
 ```compile_fail
-use rust_molkky::{Position, Stick, throw_stick};
-throw_stick(&Stick::new(Position::new(0, 0)), None, &mut rand::rng());
+use rust_molkky::{Stick, throw_stick};
+throw_stick(&Stick::default(), None, &mut rand::rng());
 ```
 
 ## 外側で投てきと不変な状態の更新を組み合わせる
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Field, Molkky, Position, Stick, Team, calc_score, relocate_skittles, throw_stick};
-let mut rng = StdRng::seed_from_u64(20261024);
-let mut game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let field = Field::default();
-let knocked_over = throw_stick(&Stick::new(Position::new(0, 0)), field.skittles(), &mut rng);
-let original_positions = field.skittles().to_vec();
-let next_field = relocate_skittles(&field, &mut rng);
-assert_eq!(field.skittles(), original_positions);
-assert_ne!(next_field.skittles(), field.skittles());
-let point = calc_score(&knocked_over);
-game = game.record_point(0, point).with_field(next_field);
-assert_eq!(game.teams()[0].score_board().history(), &[point]);
+use rust_molkky::{Field, Molkky, Skittle, Stick, Team, calc_score, throw_stick};
+let original = Molkky::new(vec![Team::new("赤"), Team::new("青")])
+    .with_field(Field::new(vec![Skittle::new(5)]))
+    .with_stick(Stick::new(1.0));
+let mut rng = StdRng::seed_from_u64(42);
+let knocked_over = throw_stick(original.stick(), original.field().skittles(), &mut rng);
+let updated = original.record_point(0, calc_score(&knocked_over));
+assert_eq!(original.teams()[0].score_board().value(), 0);
+assert_eq!(updated.teams()[0].score_board().value(), 5);
+assert_eq!(updated.field().skittles(), original.field().skittles());
 ```
 
-## 座標を指定して配置し距離から倒れる確率を求める
+## 座標なしに棒ごとの確率を指定する
 
 ```rust
-use rust_molkky::{Field, Position, Skittle, Stick, fall_probability};
-let pin = Skittle::new(5).with_position(Position::new(3, 4));
-assert_eq!(pin.position().distance_to(Position::new(0, 0)), 5.0);
-assert_eq!(fall_probability(&Stick::new(Position::new(3, 4)), &pin), 1.0);
-assert!(fall_probability(&Stick::new(Position::new(-3, -4)), &pin) < fall_probability(&Stick::new(Position::new(0, 0)), &pin));
-let field = Field::new(vec![pin]);
-assert_eq!(field.skittles()[0].position(), Position::new(3, 4));
+use rust_molkky::{Skittle, Stick, throw_stick};
+let pins = [Skittle::new(5), Skittle::new(8)];
+assert_eq!(Stick::default().fall_probability(), 0.25);
+assert!(throw_stick(&Stick::new(0.0), &pins, &mut rand::rng()).is_empty());
+assert_eq!(throw_stick(&Stick::new(1.0), &pins, &mut rand::rng()), pins);
 ```
 
-## Fieldの配置を読み取りAPIから書き換えることはできない
+## Fieldのピン集合を読み取りAPIから書き換えることはできない
 
 ```compile_fail
-use rust_molkky::{Field, Position, Skittle, Stick, fall_probability};
-let mut field = Field::default();
+use rust_molkky::{Field, Skittle};
+let field = Field::default();
 field.skittles()[0] = Skittle::new(12);
 ```
 
@@ -213,14 +208,13 @@ assert_eq!(game.teams()[2].score_board().value(), 0);
 ## FieldとStickはゲーム共通で不変に差し替える
 
 ```rust
-use rust_molkky::{Field, Molkky, Position, Skittle, Stick, Team, calc_score};
+use rust_molkky::{Field, Molkky, Skittle, Stick, Team, calc_score};
 let original = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let configured = original
-    .with_field(Field::new(vec![Skittle::new(5)]))
-    .with_stick(Stick::new(Position::new(3, 4)));
+let configured = original.with_field(Field::new(vec![Skittle::new(5)]))
+    .with_stick(Stick::new(0.75));
 let recorded = configured.record_point(1, calc_score(&[Skittle::new(5)]));
 assert_eq!(original.field().skittles().len(), 12);
-assert_eq!(original.stick().position(), Position::new(0, 0));
+assert_eq!(original.stick().fall_probability(), 0.25);
 assert_eq!(recorded.field().skittles(), configured.field().skittles());
 assert_eq!(*recorded.stick(), *configured.stick());
 assert_eq!(recorded.teams()[1].score_board().value(), 5);
@@ -228,22 +222,47 @@ assert_eq!(recorded.teams()[1].score_board().value(), 5);
 
 ```compile_fail
 use rust_molkky::{Field, Molkky, Team};
-let mut game = Molkky::new(vec![Team::new("赤")]);
+let game = Molkky::new(vec![Team::new("赤")]);
 *game.field() = Field::new(vec![]);
 ```
 
 ```compile_fail
-use rust_molkky::{Molkky, Position, Stick, Team};
-let mut game = Molkky::new(vec![Team::new("赤")]);
-*game.stick() = Stick::new(Position::new(1, 2));
+use rust_molkky::{Molkky, Stick, Team};
+let game = Molkky::new(vec![Team::new("赤")]);
+*game.stick() = Stick::new(0.5);
 ```
 
 ## coreモジュールからも同じ公開APIを使える
 
 ```rust
-use rust_molkky::core::{ScoreBoard, Skittle, calc_score};
+use rust_molkky::core::models::{ScoreBoard, Skittle};
+use rust_molkky::core::services::calc_score;
 let pin: rust_molkky::Skittle = Skittle::new(5);
 let point = calc_score(&[pin]);
 let board = ScoreBoard::new().add(point);
 assert_eq!(board.value(), 5);
+```
+
+## ドメインサービスで進行中と勝者なし終了を区別する
+
+```rust
+use rust_molkky::core::models::{GameStatus, Molkky, ScoreBoard, Team};
+use rust_molkky::core::services::{calc_score, judge_game};
+let missed = calc_score(&[]);
+let out = ScoreBoard::new().add(missed).add(missed).add(missed);
+let teams = vec![Team::new("赤").with_score_board(out.clone()), Team::new("青")];
+assert_eq!(judge_game(&teams), GameStatus::Won { team_index: 1 });
+assert_eq!(Molkky::new(teams).status(), GameStatus::Won { team_index: 1 });
+assert_eq!(judge_game(&[Team::new("赤").with_score_board(out)]), GameStatus::FinishedWithoutWinner);
+```
+
+## coreの公開APIに描画座標は含まれない
+
+```compile_fail
+use rust_molkky::core::Position;
+```
+
+```compile_fail
+use rust_molkky::Skittle;
+Skittle::new(5).position();
 ```

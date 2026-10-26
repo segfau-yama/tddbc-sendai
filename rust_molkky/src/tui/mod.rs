@@ -1,12 +1,3 @@
-mod draw;
-mod field;
-mod molkky;
-mod point;
-mod position;
-mod runtime;
-mod score;
-mod skittle;
-mod stick;
-mod team;
+mod controller;
 
-pub(crate) use runtime::Runtime;
+pub(crate) use controller::Controller;
