@@ -9,6 +9,12 @@ pub fn throw_stick(stick: &Stick, target_skittles: &[Skittle], rng: &mut impl Rn
     target_skittles
         .iter()
         .copied()
-        .filter(|skittle| rng.random_bool(skittle.fall_probability(stick.position())))
+        .filter(|skittle| rng.random_bool(fall_probability(stick, skittle)))
         .collect()
+}
+
+/// 投てき条件から倒れる確率を求める。ピンや棒の状態は変更しない。
+pub fn fall_probability(stick: &Stick, skittle: &Skittle) -> f64 {
+    // 距離0でも定義でき、距離が増えるほど倒れにくくなる既存モデル。
+    1.0 / (1.0 + skittle.position().distance_to(stick.position()))
 }

@@ -1,4 +1,4 @@
-use crate::{Point, ScoreBoard};
+use crate::ScoreBoard;
 
 #[derive(Clone)]
 pub struct Team {
@@ -23,10 +23,10 @@ impl Team {
     }
 
     #[must_use]
-    pub fn record_point(&self, point: Point) -> Self {
+    pub fn with_score_board(&self, score_board: ScoreBoard) -> Self {
         Self {
             name: self.name.clone(),
-            score_board: self.score_board.add(point),
+            score_board,
         }
     }
 }

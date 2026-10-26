@@ -36,13 +36,3 @@ fn 位置を指定した新しいスキットルを作り元の位置は変え�
     assert_eq!(moved.position(), Position::new(3, 4));
     assert_eq!(moved.number(), 5);
 }
-
-#[test]
-fn 投てき位置から遠いほど倒れる確率が低くなる() {
-    let pin = Skittle::new(5).with_position(Position::new(3, 4));
-    assert_eq!(pin.fall_probability(Position::new(3, 4)), 1.0);
-    assert!((pin.fall_probability(Position::new(0, 0)) - 1.0 / 6.0).abs() < 1e-12);
-    assert!(
-        pin.fall_probability(Position::new(-3, -4)) < pin.fall_probability(Position::new(0, 0))
-    );
-}

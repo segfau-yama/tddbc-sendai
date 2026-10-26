@@ -11,7 +11,10 @@ use ratatui::{
         canvas::{Canvas, Line as CanvasLine},
     },
 };
-use rust_molkky::{Field, Molkky, Position, Stick, Team, calc_score, throw_stick};
+use rust_molkky::{
+    CONSECUTIVE_ZERO_LIMIT, Molkky, Position, RESET_SCORE, Stick, TARGET_SCORE, Team, calc_score,
+    fall_probability, relocate_skittles, throw_stick,
+};
 
 const MIN_WIDTH: u16 = 72;
 const MIN_HEIGHT: u16 = 24;
@@ -19,8 +22,6 @@ const MIN_HEIGHT: u16 = 24;
 pub struct Runtime {
     names: Vec<String>,
     game: Molkky,
-    field: Field,
-    from: Position,
     active: usize,
     message: String,
 }
@@ -31,8 +32,6 @@ impl Runtime {
         Self {
             names,
             game: Molkky::new(teams),
-            field: Field::default(),
-            from: Position::new(0, 0),
             active: 0,
             message: "Space / Enterで最初の投てき。矢印キーで投てき位置を移動できます。".into(),
         }
@@ -69,14 +68,18 @@ impl Runtime {
     }
 
     fn move_from(&mut self, dx: i32, dy: i32) {
-        if let (Some(x), Some(y)) = (self.from.x().checked_add(dx), self.from.y().checked_add(dy)) {
-            self.from = Position::new(x, y);
+        if self.game.is_finished() {
+            return;
+        }
+        let from = self.game.stick().position();
+        if let (Some(x), Some(y)) = (from.x().checked_add(dx), from.y().checked_add(dy)) {
+            self.game = self.game.with_stick(Stick::new(Position::new(x, y)));
         }
     }
 
     fn throw(&mut self) {
         // 終了後はFieldも動かさないよう、乱数生成より先に確認する。
-        if self.game.result().is_some() {
+        if self.game.is_finished() {
             return;
         }
         let turn = self
@@ -88,24 +91,34 @@ impl Runtime {
             + 1;
         let before = self.game.teams()[self.active].score_board().value();
         let mut rng = rand::rng();
-        let knocked_over = throw_stick(&Stick::new(self.from), self.field.skittles(), &mut rng);
+        let knocked_over = throw_stick(self.game.stick(), self.game.field().skittles(), &mut rng);
         let point = calc_score(&knocked_over);
-        self.game = self.game.record_point(self.active, point);
-        self.field = self.field.relocate(&mut rng);
+        let updated = self.game.record_point(self.active, point);
+        let field = relocate_skittles(updated.field(), &mut rng);
+        self.game = updated.with_field(field);
         let points = point.value();
         let team = &self.game.teams()[self.active];
         let score = team.score_board().value();
-        let reset = if before + points > 50 {
-            "  50点を超過したため25点へ"
+        let reset = if team.score_board().was_reset() {
+            format!("  {TARGET_SCORE}点を超過したため{RESET_SCORE}点へ")
         } else {
-            ""
+            String::new()
+        };
+        let disqualification = if team.score_board().is_disqualified() {
+            format!("  {CONSECUTIVE_ZERO_LIMIT}回連続0点のため失格")
+        } else {
+            String::new()
         };
         self.message = format!(
-            "第{turn}投  {}: {points}点  得点 {before} → {score}{reset}",
+            "第{turn}投  {}: {points}点  得点 {before} → {score}{reset}{disqualification}",
             team.name()
         );
-        if self.game.result().is_none() {
-            self.active = (self.active + 1) % self.game.teams().len();
+        if !self.game.is_finished() {
+            // 失格チームを飛ばす。継続中なので必ず投てき可能なチームが存在する。
+            self.active = (1..=self.game.teams().len())
+                .map(|offset| (self.active + offset) % self.game.teams().len())
+                .find(|&index| !self.game.teams()[index].score_board().is_disqualified())
+                .expect("投てき可能なチームが存在する");
         }
     }
 
@@ -131,6 +144,9 @@ impl Runtime {
                 " MÖLKKY  |  {}の勝利！  Rで新しいゲーム",
                 self.game.teams()[winner].name()
             ),
+            None if self.game.is_finished() => {
+                " MÖLKKY  |  全チームが失格。勝者なし。Rで新しいゲーム".into()
+            }
             None => format!(
                 " MÖLKKY  |  {}の投てき  |  {}チーム",
                 self.game.teams()[self.active].name(),
@@ -168,9 +184,9 @@ impl Runtime {
                     Span::raw(" 終了"),
                 ]),
                 Line::from(format!(
-                    "投てき位置: ({}, {})   50点ぴったりで勝利 / 超過すると25点",
-                    self.from.x(),
-                    self.from.y()
+                    "投てき位置: ({}, {})   {TARGET_SCORE}点ぴったりで勝利 / 超過すると{RESET_SCORE}点",
+                    self.game.stick().position().x(),
+                    self.game.stick().position().y()
                 )),
             ]),
             help,
@@ -188,6 +204,8 @@ impl Runtime {
                 .join(" ");
             let marker = if winner == Some(index) {
                 "勝"
+            } else if team.score_board().is_disqualified() {
+                "失格"
             } else if index == self.active {
                 "▶"
             } else {
@@ -196,7 +214,7 @@ impl Runtime {
             Row::new([
                 Cell::from(marker),
                 Cell::from(team.name()),
-                Cell::from(format!("{} / 50", team.score_board().value())),
+                Cell::from(format!("{} / {TARGET_SCORE}", team.score_board().value())),
                 Cell::from(history.len().to_string()),
                 Cell::from(recent),
             ])
@@ -211,7 +229,7 @@ impl Runtime {
         let table = Table::new(
             rows,
             [
-                Constraint::Length(3),
+                Constraint::Length(5),
                 Constraint::Min(10),
                 Constraint::Length(8),
                 Constraint::Length(5),
@@ -232,11 +250,11 @@ impl Runtime {
     }
 
     fn render_board(&self, frame: &mut Frame, area: Rect) {
-        let from_x = f64::from(self.from.x());
-        let from_y = f64::from(self.from.y());
+        let from_x = f64::from(self.game.stick().position().x());
+        let from_y = f64::from(self.game.stick().position().y());
         let (mut left, mut right, mut bottom, mut top) = (from_x, from_x, from_y, from_y);
         let mut labels: BTreeMap<(i32, i32), Vec<String>> = BTreeMap::new();
-        for pin in self.field.skittles() {
+        for pin in self.game.field().skittles() {
             let position = pin.position();
             let x = f64::from(position.x());
             let y = f64::from(position.y());
@@ -295,12 +313,12 @@ impl Runtime {
     }
 
     fn render_positions(&self, frame: &mut Frame, area: Rect) {
-        let rows = self.field.skittles().iter().map(|pin| {
+        let rows = self.game.field().skittles().iter().map(|pin| {
             let position = pin.position();
             Row::new([
                 format!("{:02}", pin.number()),
                 format!("({:>3},{:>3})", position.x(), position.y()),
-                format!("{:>5.1}%", pin.fall_probability(self.from) * 100.0),
+                format!("{:>5.1}%", fall_probability(self.game.stick(), pin) * 100.0),
             ])
         });
         frame.render_widget(
@@ -315,5 +333,109 @@ impl Runtime {
             .block(Block::bordered().title("ピン位置 (x,y) / 確率")),
             area,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::{Terminal, backend::TestBackend};
+    use rust_molkky::{Field, ScoreBoard, Skittle};
+
+    fn rendered(runtime: &Runtime) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
+        terminal.draw(|frame| runtime.render(frame)).unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>()
+            .split_whitespace()
+            .collect()
+    }
+
+    fn almost_disqualified() -> ScoreBoard {
+        let missed = calc_score(&[]);
+        ScoreBoard::new().add(missed).add(missed)
+    }
+
+    #[test]
+    fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
+        let mut runtime = Runtime::new(vec!["赤".into(), "青".into()]);
+        runtime.game = Molkky::new(vec![
+            Team::new("赤").with_score_board(almost_disqualified()),
+            Team::new("青"),
+        ])
+        .with_field(Field::new(vec![]));
+        runtime.throw();
+        assert!(runtime.game.teams()[0].score_board().is_disqualified());
+        assert!(runtime.game.is_finished());
+        assert_eq!(runtime.game.result(), Some(1));
+        let history = runtime.game.teams()[0].score_board().history().to_vec();
+        let pins = runtime.game.field().skittles().to_vec();
+        let stick = *runtime.game.stick();
+        runtime.throw();
+        runtime.move_from(1, 0);
+        assert_eq!(runtime.game.teams()[0].score_board().history(), history);
+        assert_eq!(runtime.game.field().skittles(), pins);
+        assert_eq!(*runtime.game.stick(), stick);
+        assert!(rendered(&runtime).contains("青の勝利"));
+    }
+
+    #[test]
+    fn 失格チームを飛ばして二チーム以上なら継続する() {
+        let mut runtime = Runtime::new(vec!["赤".into(), "青".into(), "緑".into()]);
+        runtime.game = Molkky::new(vec![
+            Team::new("赤").with_score_board(almost_disqualified()),
+            Team::new("青"),
+            Team::new("緑"),
+        ])
+        .with_field(Field::new(vec![]));
+        runtime.throw();
+        assert!(!runtime.game.is_finished());
+        assert_eq!(runtime.active, 1);
+        runtime.throw();
+        assert_eq!(runtime.active, 2);
+        runtime.throw();
+        assert_eq!(runtime.active, 1);
+        assert_eq!(runtime.game.teams()[0].score_board().history().len(), 3);
+        assert_eq!(runtime.game.teams()[1].score_board().history().len(), 1);
+        assert_eq!(runtime.game.teams()[2].score_board().history().len(), 1);
+    }
+
+    #[test]
+    fn 一チーム開始なら三回連続0点で勝者なし終了する() {
+        let mut runtime = Runtime::new(vec!["赤".into()]);
+        runtime.game = runtime.game.with_field(Field::new(vec![]));
+        assert!(!runtime.game.is_finished());
+        for _ in 0..3 {
+            runtime.throw();
+        }
+        assert!(runtime.game.is_finished());
+        assert_eq!(runtime.game.result(), None);
+        assert_eq!(runtime.game.teams()[0].score_board().history().len(), 3);
+        runtime.throw();
+        assert_eq!(runtime.game.teams()[0].score_board().history().len(), 3);
+        assert!(rendered(&runtime).contains("全チームが失格"));
+    }
+
+    #[test]
+    fn 次のチームも直前の投てきで移動した共通フィールドと棒を使う() {
+        let mut runtime = Runtime::new(vec!["赤".into(), "青".into()]);
+        runtime.game = runtime.game.with_field(Field::new(vec![Skittle::new(5)]));
+        runtime.throw();
+        assert_eq!(runtime.game.teams()[0].score_board().value(), 5);
+        assert_eq!(runtime.active, 1);
+        let moved = runtime.game.field().skittles()[0].position();
+        assert_ne!(moved, Position::new(0, 0));
+        runtime.game = runtime.game.with_stick(Stick::new(moved));
+        runtime.throw();
+        assert_eq!(runtime.game.teams()[1].score_board().value(), 5);
+        assert_ne!(runtime.game.field().skittles()[0].position(), moved);
+        assert_eq!(runtime.game.stick().position(), moved);
+        assert_eq!(runtime.game.teams()[0].score_board().history().len(), 1);
+        assert_eq!(runtime.game.teams()[1].score_board().history().len(), 1);
     }
 }

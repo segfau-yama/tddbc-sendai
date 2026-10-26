@@ -9,11 +9,11 @@ fn 名称を保持し得点は0から始まる() {
 }
 
 #[test]
-fn 採点した点数を得点表に一回だけ記録する() {
+fn 得点表を指定して元のチームを変えずに再構成する() {
     let mut team = Team::new("赤チーム");
     let thrown = calc_score(&[Skittle::new(11)]);
     assert_eq!(thrown.value(), 11);
-    team = team.record_point(thrown);
+    team = team.with_score_board(team.score_board().add(thrown));
     assert_eq!(team.score_board().value(), 11);
     assert_eq!(
         team.score_board()
@@ -36,11 +36,11 @@ fn 超過しても生の点数を保持して得点は25点になる() {
     let mut team = Team::new("赤チーム");
     let twelve = calc_score(&[Skittle::new(12)]);
     for _ in 0..4 {
-        team = team.record_point(twelve);
+        team = team.with_score_board(team.score_board().add(twelve));
     }
     let point = calc_score(&[Skittle::new(3)]);
     assert_eq!(point.value(), 3);
-    team = team.record_point(point);
+    team = team.with_score_board(team.score_board().add(point));
     assert_eq!(team.score_board().value(), 25);
     assert_eq!(
         team.score_board()

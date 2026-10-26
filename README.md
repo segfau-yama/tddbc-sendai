@@ -25,9 +25,10 @@ TUIではSpace / Enterで投てき、矢印キーで投てき位置を移動、R
 | 1投の採点と点数の値 | `calc_score`, `Point` | `src/score.rs` |
 | 1チームの点数履歴と現在得点 | `ScoreBoard` | `src/score.rs` |
 | 名称と得点表 | `Team` | `src/team.rs` |
-| 複数チームと終了判定 | `Molkky` | `src/molkky.rs` |
+| 複数チーム・共通のFieldとStick・終了判定 | `Molkky` | `src/molkky.rs` |
 | ピンの配置 | `Field` | `src/field.rs` |
-| 元の配置を保ち、移動後の配置を返す | `Field::relocate` | `src/field.rs` |
+| 元の配置を保ち、移動後の配置を返す | `relocate_skittles` | `src/movement.rs` |
+| 棒とピンの位置関係から確率を求める | `fall_probability` | `src/throw.rs` |
 
 採点と履歴更新を分離します。`calc_score`は入力だけから`Point`を返す純粋関数です。
 0本なら0点、1本なら番号、複数本なら本数です。`ScoreBoard::add`は元の得点表を変えず、その点数を履歴へ追加した新しい得点表を返します。
@@ -82,28 +83,32 @@ game = game.record_point(0, calc_score(&[Skittle::new(1)]));
 assert_eq!(game.result(), Some(0)); // 50点ちょうどで赤チームの勝利。
 ```
 
-- `Team::record_point`・`Molkky::record_point`は元の値を変えず、点数を記録した新しいチーム・ゲームを返します。補正後の得点は`score_board().value()`で取得します。
-- `result()`は進行中ならNone、50点ちょうどの勝者がいればSome(index)です。
-- 終了後・存在しないチームへの記録は、履歴を変える前に拒否します。`teams()`から直接更新はできません。
-- チームは1件以上必要です。空の名称・同名は許容し、インデックスで識別します。複数勝者の初期状態は拒否します。
-- ライブラリは手番を強制しません。TUIがチームを順番に切り替えます。失投などの未指定ルールは追加していません。
+- `Molkky::record_point`は元の値を変えず、点数を記録した新しいゲームを返します。TeamはPointに依存せず、`with_score_board`で得点表を差し替えた新しいTeamを返します。
+- 得点・勝利・直近の超過補正・失格はScoreBoardの`value()`・`is_winner()`・`was_reset()`・`is_disqualified()`で取得します。TUIとMolkkyは採点側の判定を使います。
+- `result()`は50点ちょうどのチーム、または2チーム以上の参加で最後まで失格せず残った1チームをSome(index)で返します。勝者がいなければNoneです。`is_finished()`は勝者がいる場合、または全チームが失格した場合にtrueを返します。
+- 終了後・存在しないチーム・失格チームへの記録は、履歴を変える前に拒否します。`teams()`から直接更新はできません。
+- チームは1件以上必要です。空の名称・同名は許容し、インデックスで識別します。構築時は採点側で履歴を再計算し、25点補正後の得点を検証します。複数勝者、50点到達後や失格後に追加記録がある履歴を拒否します。
+- 1チームが3回連続0点なら失格です。正の点数で連続回数は途切れます。失格した投てきまでの履歴は保持します。2チーム以上で始めたゲームは、残り1チームになればそのチームの勝利です。最初から1チームなら50点を目指し、失格すれば勝者なしで終了します。
+- ライブラリは手番を強制しません。TUIは失格チームを飛ばして手番を切り替え、全チーム失格時には終了を表示します。
 
+Molkkyは全チーム共通のFieldとStickを1つずつ所有します。Teamが持つのは名称とScoreBoardです。
+`field()`・`stick()`は読み取り専用で、`with_field`・`with_stick`は元のゲームを変えずに新しいゲームを返します。
+`Molkky::new`はFieldを既定の12本、Stickを原点に初期化します。TUIはこの共通状態だけを参照します。
 投てきの判定と配置の更新は呼び出し側で組み合わせます。`simulation.rs`と`random_throw`は削除しました。
-`Field::relocate`は元の配置を変えず、全ピンを移動した新しい配置を返します。
+`relocate_skittles(&Field, &mut impl Rng)`は元の配置を変えず、全ピンを移動した新しいFieldを返します。Fieldは配置と検証だけを担当します。
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Field, Molkky, Position, Stick, Team, calc_score, throw_stick};
+use rust_molkky::{Field, Molkky, Position, Stick, Team, calc_score, relocate_skittles, throw_stick};
 
 let mut rng = StdRng::seed_from_u64(20261024);
 let mut game = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let mut field = Field::default();
-let knocked_over = throw_stick(&Stick::new(Position::new(0, 0)), field.skittles(), &mut rng);
+let knocked_over = throw_stick(game.stick(), game.field().skittles(), &mut rng);
 let point = calc_score(&knocked_over);
-game = game.record_point(1, point);
-field = field.relocate(&mut rng);
+let next_field = relocate_skittles(game.field(), &mut rng);
+game = game.record_point(1, point).with_field(next_field);
 assert_eq!(game.teams()[1].score_board().history(), &[point]);
-assert_eq!(field.skittles().len(), 12);
+assert_eq!(game.field().skittles().len(), 12);
 ```
 
 - 各ピンの倒れる確率は`1 / (1 + 距離)`です。遠いほど倒れにくくなります。
@@ -115,10 +120,11 @@ assert_eq!(field.skittles().len(), 12);
 すべてのドメイン型（Position・Skittle・Stick・Point・ScoreBoard・Team・Molkky・Field）は、非公開フィールドと共有参照のAPIを持ち、既存オブジェクトを書き換えません。
 更新結果は`let updated = original.add(point)`や`game = game.record_point(index, point)`のように受け取ります。
 元の値は引き続き参照でき、更新結果を捨てると`must_use`警告が出ます。
+`fall_probability`はStickとSkittleからその都度計算し、Skittleに確率の状態は保持しません。移動と投てきの乱数源は呼び出し側が渡します。
 TUIは返された最新の値を保持し直します。乱数源と端末I/Oには可変状態があり、プログラム全体が純粋関数だけで構成されているわけではありません。
 
 以前の`Throw`・`Score`・`with_throw`は廃止しました。倒れたピンは`Vec<Skittle>`、採点結果は`Point`、履歴は`ScoreBoard`へ分けています。
-`Team::record_throw`・`Molkky::record_throw`は`record_point`へ、`Team::score`は`score_board`へ変更しました。
+`Molkky::record_throw`は`record_point`へ、`Team::score`は`score_board`へ変更しました。Teamの得点表の差し替えは`with_score_board`を使います。
 APIの使用例と型による制約は`tests/api.md`を通じたドキュメントテストで検証します。
 レビュー・設計・テスト計画は[rust_molkky/DEVELOPMENT.md](rust_molkky/DEVELOPMENT.md)に記録しています。
 

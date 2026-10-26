@@ -21,6 +21,32 @@ fn history(board: &ScoreBoard) -> Vec<i32> {
 }
 
 #[test]
+fn 三回連続0点のチームを失格と判定する() {
+    assert!(!ScoreBoard::new().is_disqualified());
+    let twice = board(&[5, 0, 0]);
+    assert!(!twice.is_disqualified());
+    let third = twice.add(point(0));
+    assert!(third.is_disqualified());
+    assert_eq!(third.value(), 5);
+    assert!(!twice.is_disqualified());
+    assert!(!board(&[0, 0, 1, 0, 0]).is_disqualified());
+}
+
+#[test]
+fn 採点側で直近の超過補正と勝利を判定する() {
+    let original = board(&[12, 12, 12, 12, 1]);
+    assert!(!original.was_reset());
+    assert!(!original.is_winner());
+    assert!(original.add(point(1)).is_winner());
+    let reset = original.add(point(2));
+    assert!(reset.was_reset());
+    assert_eq!(reset.value(), 25);
+    let next = reset.add(point(12));
+    assert!(!next.was_reset());
+    assert_eq!(next.value(), 37);
+}
+
+#[test]
 fn 一回も投てきしていなければ0点になる() {
     let board = ScoreBoard::new();
     assert_eq!(board.value(), 0);

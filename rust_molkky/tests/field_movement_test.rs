@@ -1,5 +1,5 @@
 use rand::{SeedableRng, rngs::StdRng};
-use rust_molkky::{Field, Position, Skittle, Stick, calc_score, throw_stick};
+use rust_molkky::{Field, Position, Skittle, Stick, calc_score, relocate_skittles, throw_stick};
 
 mod support;
 use support::ConstantRng;
@@ -40,8 +40,8 @@ fn 同じシードなら同じ投てきの点数列と配置を再現できる()
         let points = calc_score(&first_knocked).value();
         assert!((0..=12).contains(&points));
         assert_eq!(points, calc_score(&second_knocked).value());
-        first_field = first_field.relocate(&mut first);
-        second_field = second_field.relocate(&mut second);
+        first_field = relocate_skittles(&first_field, &mut first);
+        second_field = relocate_skittles(&second_field, &mut second);
         assert_eq!(first_field.skittles(), second_field.skittles());
     }
 }
@@ -89,7 +89,7 @@ fn 投てき後に全ピンを移動しても番号と本数と点数は保た�
         let before = field.skittles().to_vec();
         let knocked_over =
             throw_stick(&Stick::new(Position::new(0, 0)), field.skittles(), &mut rng);
-        let next = field.relocate(&mut rng);
+        let next = relocate_skittles(&field, &mut rng);
         assert_eq!(field.skittles(), before);
         assert_eq!(calc_score(&knocked_over).value(), 12);
         assert_eq!(next.skittles().len(), 12);
@@ -114,7 +114,7 @@ fn 空のフィールドは何も移動せず0点になる() {
     let field = Field::new(vec![]);
     let mut rng = ConstantRng(0);
     let knocked_over = throw_stick(&Stick::new(Position::new(0, 0)), field.skittles(), &mut rng);
-    let updated = field.relocate(&mut rng);
+    let updated = relocate_skittles(&field, &mut rng);
     assert_eq!(calc_score(&knocked_over).value(), 0);
     assert!(field.skittles().is_empty());
     assert!(updated.skittles().is_empty());
@@ -130,11 +130,11 @@ fn 倒れなかったピンも移動し移動前の投てきの点数は変わ�
         &mut rng,
     );
     assert_eq!(calc_score(&missed).value(), 0);
-    let relocated = original.relocate(&mut rng);
+    let relocated = relocate_skittles(&original, &mut rng);
     let position = relocated.skittles()[0].position();
     assert_ne!(position, Position::new(0, 3));
     let hit = throw_stick(&Stick::new(position), relocated.skittles(), &mut rng);
-    let next = relocated.relocate(&mut rng);
+    let next = relocate_skittles(&relocated, &mut rng);
     assert_ne!(next.skittles(), relocated.skittles());
     assert_eq!(calc_score(&hit).value(), 5);
     assert_eq!(calc_score(&missed).value(), 0);
@@ -153,7 +153,7 @@ fn 整数の四隅でも隣接する位置へ移動できる() {
         let original = Field::new(vec![Skittle::new(5).with_position(position)]);
         let mut rng = ConstantRng(u64::MAX);
         let knocked_over = throw_stick(&Stick::new(position), original.skittles(), &mut rng);
-        let next = original.relocate(&mut rng);
+        let next = relocate_skittles(&original, &mut rng);
         assert_eq!(calc_score(&knocked_over).value(), 5);
         let moved = next.skittles()[0].position();
         assert_ne!(moved, position);

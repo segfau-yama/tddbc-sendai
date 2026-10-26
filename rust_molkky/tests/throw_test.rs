@@ -1,5 +1,19 @@
 use rand::{SeedableRng, rngs::StdRng};
-use rust_molkky::{Field, Position, Skittle, Stick, throw_stick};
+use rust_molkky::{Field, Position, Skittle, Stick, fall_probability, throw_stick};
+
+#[test]
+fn 棒とピンの位置関係から確率を計算する() {
+    let pin = Skittle::new(5).with_position(Position::new(3, 4));
+    assert_eq!(
+        fall_probability(&Stick::new(Position::new(3, 4)), &pin),
+        1.0
+    );
+    assert!((fall_probability(&Stick::new(Position::new(0, 0)), &pin) - 1.0 / 6.0).abs() < 1e-12);
+    assert!(
+        fall_probability(&Stick::new(Position::new(-3, -4)), &pin)
+            < fall_probability(&Stick::new(Position::new(0, 0)), &pin)
+    );
+}
 
 mod support;
 use support::ConstantRng;

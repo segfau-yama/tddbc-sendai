@@ -70,9 +70,4 @@ impl Skittle {
             position,
         }
     }
-
-    pub fn fall_probability(&self, from: Position) -> f64 {
-        // 距離0でも確率が定義でき、距離の増加に応じて単調に下がるモデル。
-        1.0 / (1.0 + self.position.distance_to(from))
-    }
 }
