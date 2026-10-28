@@ -1,16 +1,4 @@
 use super::Id;
-use std::collections::HashSet;
-
-pub(crate) fn validate_unique_ids(skittles: &[Skittle]) {
-    let mut ids = HashSet::new();
-    for skittle in skittles {
-        assert!(
-            ids.insert(skittle.id()),
-            "スキットルIDが重複しています: {}",
-            skittle.id()
-        );
-    }
-}
 
 /// 番号は得点用。同じ番号でも、Idが異なれば別の個体。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

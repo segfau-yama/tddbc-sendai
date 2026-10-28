@@ -2,7 +2,22 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## Teamのturnとチーム参照を返すcore APIへの簡略化（今回の変更）
+## 個体IDの重複検証をMolkkyへ移動（今回の変更）
+
+- 対象：Skittleに同居していたvalidate_unique_ids。単体の状態ではなく個体集合の制約を検証するため、core/services/molkky.rsへ移す。
+- 公開API・重複拒否・同番号の別個体を許可する振る舞いを変えない。ArrayFieldの生成時も同じ検証を使い、servicesからクレート内部にだけ再公開する。
+- [x] 既存テストで変更前の振る舞いを確認する。
+- [x] 関数と参照元を移し、投てき・採点・Field生成の重複拒否を維持する。
+- [x] 既存テスト・build・fmt・Clippy・差分を確認する。
+- 振る舞いを変えない移動のため、新たなRed用テストは追加せず、既存テストで変更前後を確認する。
+
+### Refactorと検証結果
+
+- 関数本体は変更せず移動し、modelsからの再公開を削除した。servicesからの再公開はpub(crate)に限定し、利用者向けAPIやMolkkyのtraitメソッドは増やしていない。
+- 変更前後のcargo test --lockedはともに127件成功、失敗・無視0件。採点・投てき・ArrayField生成での同ID拒否と同番号の別個体の許可を既存テストで確認した（/tmp/id-validation-baseline.log、/tmp/id-validation-final-tests.log）。
+- cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功。関数の配置とimportだけの変更なので、TUIの手動操作は実施していない。テスト・依存関係・得点ルール・モデルの不変性は変更していない。
+
+## Teamのturnとチーム参照を返すcore APIへの簡略化（前回の変更）
 
 - Teamに非公開のturn: boolを追加し、初期値false・turn()/with_turn(bool)で不変に参照/更新する。with_score_boardとcloneでIdとturnを保つ。
 - next_team(&teams)はturn=trueのチームの共有参照を返す。順番の計算・終了/失格判定・更新は行わない。judge_game(&teams)はScoreState::Wonのチームの共有参照を返す。曖昧な複数手番・複数勝者は拒否する。

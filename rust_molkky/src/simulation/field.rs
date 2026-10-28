@@ -1,4 +1,5 @@
-use crate::core::models::{Field, FieldGenerator, Skittle, validate_unique_ids};
+use crate::core::models::{Field, FieldGenerator, Skittle};
+use crate::core::services::validate_unique_ids;
 
 /// 座標を持たない具体的なField。
 #[derive(Clone)]

@@ -1,6 +1,17 @@
-use crate::core::models::{Point, ScoreState, Skittle, Stick, Team, validate_unique_ids};
+use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
 use rand::{Rng, RngCore};
 use std::collections::HashSet;
+
+pub(crate) fn validate_unique_ids(skittles: &[Skittle]) {
+    let mut ids = HashSet::new();
+    for skittle in skittles {
+        assert!(
+            ids.insert(skittle.id()),
+            "スキットルIDが重複しています: {}",
+            skittle.id()
+        );
+    }
+}
 
 /// 投てき・採点・チーム選択のルール。既定メソッドは現在のシンプルなモルックのルールを使う。
 /// 履歴やFieldを所有せず、更新は新しいチーム一覧として返す。
