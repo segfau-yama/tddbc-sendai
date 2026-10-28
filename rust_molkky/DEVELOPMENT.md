@@ -31,7 +31,7 @@
 - 最終cargo test --lockedは127件成功（core63・バイナリ25・CLI1・simulation4・doc34）、失敗・無視0件。従来より19件少ないのは、廃止したcoreの記録/順番計算/終了判定のテストを整理し、新しい契約と使用側の検証へ移した結果であり、ignoreによる減少ではない（/tmp/team-turn-final-tests.log）。
 - cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功。初回Clippyで日本語テスト名中のWonの大文字表記が警告となったため、日本語表記へ直して再確認した。新しい追加確認は実装後に成功したもので、最初のRedとは区別する。
 - 100列×30行の擬似端末で右矢印・Space投てき・R再開・Q終了を実行。第1投・青チームの手番マーカー・25.0%表示、panicなし、終了コード0を確認（/tmp/team-turn-tui.log）。差分描画のため「青の投てき」の全文が再出力されず最初の文字列検証は失敗したが、描画された手番行のマーカーで確認した。製品の不具合とは扱わない。
-- srcにrecord_point・標準入出力・端末依存・must_useがないこと、モデルに可変selfがないこと、Controllerにactiveの重複保存がないこと、テストがtests以下で対象と同名であることを確認した。READMEとAPI例も参照返却・直接の得点更新・明示的な手番設定へ更新した。
+- coreにrecord_point・標準入出力・端末依存・must_useがないこと、モデルに可変selfがないこと、Controllerにactiveの重複保存がないこと、テストがtests以下で対象と同名であることを確認した。READMEとAPI例も参照返却・直接の得点更新・明示的な手番設定へ更新した。
 - ScoreBoardの状態/検証・個体ID・得点ルール・依存/ロック・Javaは変更していない。
 
 ## ScoreBoardの生成時検証・状態保持とGameStatus撤去（前回の実装）
