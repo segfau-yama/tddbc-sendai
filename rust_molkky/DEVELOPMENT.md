@@ -2,6 +2,38 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
+## 現在のMolkkyの設計説明とPonytailレビュー（2026-10-28・実装変更なし）
+
+- 対象：src/core/models/molkky.rs全93行とjudge_game、TUI・presentation側の呼び出し。直前の分離案は未実装であり、現在もteams・field・stickの3メンバを所有する。
+- 役割は「試合の更新入口」と「共通の投てき条件の保管」の兼務。DDDでは試合の集約ルートに近い設計だが、手番はControllerが管理しているため試合進行全体を内包してはいない。
+
+| メソッド | 現在の責務 |
+| --- | --- |
+| new / private from_parts | newで既定Field/Stickを生成し、from_partsでjudge_gameを呼んで全チームの履歴・参加者・勝者の整合性を検証する。判定結果自体は保存しない。 |
+| teams / field / stick | 所有データへの共有参照を返す。呼び出し側へ可変参照を公開しない。 |
+| with_field / with_stick | 指定した値を差し替えた新しいMolkkyを返す。履歴やFieldのコピー処理を伴う。既存チームは変えず、from_partsの再検証は行わない。 |
+| status | judge_gameを呼んで現在のGameStatusを導出する。 |
+| result | statusから勝者のインデックスだけをOptionへ変換する。Noneは進行中と勝者なし終了の両方を含む。 |
+| is_finished | statusがInProgress以外かを問い合わせる。 |
+| record_point | 終了後・存在しないチーム・失格チームへの記録を拒否し、対象のScoreBoardへ追加した新しいチーム一覧を作ってfrom_partsで再構築する。 |
+
+- 採点はcalc_score、履歴追加・合計値・補正はScoreBoard、チーム一覧からの勝敗判定はjudge_gameが担う。Molkkyのrecord_pointはそれらの計算を重複実装せず、試合単位の更新制約を守る入口である。ScoreBoard::addと役割が異なるため、単に重複メソッドとはいえない。
+- 現在はrecord_pointに任意のteam_indexを渡せる。TUIのactive・次チーム選択・失格スキップはController側にあり、Molkky単独では手番を保証しない。これは現在の責務分担の説明であり、今回のバグ指摘や仕様変更ではない。
+
+### 簡略化候補（優先度順・未実装）
+
+- 中・molkky.rs:L6: shrink: Field/Stickの保管と差し替えを試合ルールから分離する。投てき方式を選ぶapplication/simulation側へ所有を移し、Molkkyはチームと試合の制約を扱う。移動先のコードは必要なのでファイル単体の減少を全体の純減とは数えない。
+- 低・molkky.rs:L79: shrink: 全チームをenumerate/map/分岐で作り直す処理。既存のインデックス検証を残してVecをcloneし、対象要素だけ代入する。局所変数のmutは元のselfを変更しないため、外から見た不変更新は維持できる。現在12行の構築部分はおおむね3行に短縮可能。
+- 低・molkky.rs:L55: shrink: result/status/is_finishedは同じ判定の別表現。中心をstatusに据え、presentationでstatusを一度受け取って勝者とバナーへ利用できる。公開APIや利用箇所があるため、短いメソッドという理由だけで3つすべてを削除することは勧めない。
+- new/from_partsの分離は検証入口を共有する目的があり、削除自体を目標にしない。Field/Stickを外した後、teamsだけを受け取る検証済みコンストラクタへ統合する余地はある。判定フラグのキャッシュや汎用traitを追加する必要はない。
+
+### 検証・変更範囲
+
+- コード・テスト・依存は変更していない。静的な責務と呼び出し関係の確認のみで、テスト・buildは再実行しない。文書のgit diff --checkを行い、AGENTS.mdに従って記録のみcommit/pushする。
+- 削減見積もりはrecord_point内の局所的な書き換えだけを対象とした概算。Field/Stickの移動や公開API削除による行数変化は含めない。
+
+net: -9 lines possible.
+
 ## 複数UI・物理シミュレーションに向けたドメイン設計レビュー（2026-10-28・設計のみ）
 
 ### 対象・結論
