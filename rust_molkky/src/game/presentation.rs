@@ -30,6 +30,7 @@ pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
 pub(crate) fn compose_game(
     rules: &dyn Molkky,
     teams: &[Team],
+    throw_counts: &[usize],
     field: &dyn Field,
     stick: &Stick,
     layout: &FieldLayout,
@@ -57,9 +58,11 @@ pub(crate) fn compose_game(
     };
     let teams = teams
         .iter()
-        .map(|team| TeamTui {
+        .enumerate()
+        .map(|(i, team)| TeamTui {
             name: team.name().as_str().to_owned(),
             board: compose_score(team.score_board()),
+            throw_count: throw_counts[i],
             active: team.turn(),
             winner: winner.is_some_and(|winner| winner.id() == team.id()),
             disqualified: team.score_board().state() == ScoreState::Disqualified,

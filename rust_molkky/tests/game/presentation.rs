@@ -20,7 +20,15 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
     layout
         .positions
         .insert(field.skittles()[2].id(), Position::new(2, 3));
-    let view = compose_game(&SimpleMolkky, &model, &field, &stick, &layout, "テスト中");
+    let view = compose_game(
+        &SimpleMolkky,
+        &model,
+        &[0, 0],
+        &field,
+        &stick,
+        &layout,
+        "テスト中",
+    );
     assert_eq!(view.field.pins.len(), 3);
     assert_eq!(view.field.pins[1].number, 12);
     assert_eq!(view.field.pins[2].number, 12);
@@ -34,7 +42,7 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
     assert_eq!(view.field.pins[0].probability, 0.25);
     layout.stick = Position::new(i32::MAX, i32::MIN);
     assert_eq!(
-        compose_game(&SimpleMolkky, &model, &field, &stick, &layout, "")
+        compose_game(&SimpleMolkky, &model, &[0, 0], &field, &stick, &layout, "")
             .field
             .pins[0]
             .probability,
@@ -90,7 +98,15 @@ fn 三チームでも勝者の得点行が見える() {
     terminal
         .draw(|frame| {
             frame.render_widget(
-                compose_game(&SimpleMolkky, &game, &field, &Stick::default(), &layout, ""),
+                compose_game(
+                    &SimpleMolkky,
+                    &game,
+                    &[0, 3, 3],
+                    &field,
+                    &Stick::default(),
+                    &layout,
+                    "",
+                ),
                 frame.area(),
             )
         })
@@ -122,7 +138,15 @@ fn 表示合成でも渡されたルールの判定を利用する() {
     ];
     let field = StandardFieldGenerator.generate();
     let layout = FieldLayout::new(field.skittles());
-    let view = compose_game(&BlueWins, &teams, &field, &Stick::default(), &layout, "");
+    let view = compose_game(
+        &BlueWins,
+        &teams,
+        &[0, 0],
+        &field,
+        &Stick::default(),
+        &layout,
+        "",
+    );
     assert!(view.banner.contains("青の勝利"));
     assert!(view.teams[1].winner);
     assert!(!view.teams[0].winner);

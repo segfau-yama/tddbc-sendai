@@ -35,7 +35,7 @@ fn 同名でも異なるチームを作成できる() {
 }
 
 #[test]
-fn 超過しても生の点数を保持して得点は25点になる() {
+fn 超過したチームの得点と履歴を25点に戻す() {
     let mut team = Team::new(Name::new("赤チーム").unwrap());
     let twelve = SimpleMolkky.calc_score(&[Skittle::new(12)]);
     for _ in 0..4 {
@@ -51,7 +51,7 @@ fn 超過しても生の点数を保持して得点は25点になる() {
             .iter()
             .map(|point| point.value())
             .collect::<Vec<_>>(),
-        &[12, 12, 12, 12, 3]
+        &[25]
     );
 }
 

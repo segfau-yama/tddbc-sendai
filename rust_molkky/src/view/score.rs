@@ -36,7 +36,7 @@ pub(crate) fn scores_table(teams: &[TeamTui]) -> Table<'_> {
         ],
     )
     .header(
-        Row::new(["", "チーム", "得点", "投数", "直近の点数"])
+        Row::new(["", "チーム", "得点", "投数", "得点履歴"])
             .style(Style::default().fg(Color::Cyan)),
     )
     .block(Block::bordered().title("得点表"))

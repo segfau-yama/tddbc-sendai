@@ -223,3 +223,25 @@ fn 使用側で超過補正を表示し次の手番を設定する() {
     assert_eq!(runtime.teams.iter().filter(|team| team.turn()).count(), 1);
     assert!(rendered(&runtime).contains("25点へ"));
 }
+
+#[test]
+fn 履歴を圧縮しても投てき番号とチームの投数は巻き戻らない() {
+    let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
+    runtime.field = ArrayField::new(vec![Skittle::new(12)]);
+    runtime.layout = FieldLayout::new(runtime.field.skittles());
+    runtime.stick = Stick::new(1.0);
+    for _ in 0..4 {
+        runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
+    }
+    runtime.field = ArrayField::new(vec![Skittle::new(3)]);
+    runtime.layout = FieldLayout::new(runtime.field.skittles());
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
+    assert_eq!(runtime.teams[0].score_board().total(), 25);
+    assert_eq!(runtime.teams[0].score_board().history().len(), 1);
+    assert!(runtime.message.contains("第5投"));
+    assert!(rendered(&runtime).contains("赤25/50525"));
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
+    assert_eq!(runtime.teams[0].score_board().total(), 28);
+    assert!(runtime.message.contains("第6投"));
+    assert!(rendered(&runtime).contains("赤28/506253"));
+}

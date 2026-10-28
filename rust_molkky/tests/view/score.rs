@@ -1,6 +1,6 @@
 use super::ScoreBoardTui;
 #[test]
-fn 得点と直近六投を表示値から作る() {
+fn 得点と直近六件の履歴を表示値から作る() {
     let board = ScoreBoardTui {
         value: 21,
         target: 50,

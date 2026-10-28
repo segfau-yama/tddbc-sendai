@@ -17,6 +17,7 @@ fn 得点が零でも勝者と失格と操作対象の行を区別し投数を�
             history: vec![1, 2, 0, 3, 4, 5, 0, 6],
             notice: String::new(),
         },
+        throw_count: 10,
         active,
         winner,
         disqualified,
@@ -49,7 +50,7 @@ fn 得点が零でも勝者と失格と操作対象の行を区別し投数を�
         .collect::<String>()
         .split_whitespace()
         .collect();
-    assert!(text.contains("勝青0/508"));
-    assert!(text.contains("失格赤0/508"));
-    assert!(text.contains("▶緑5/508"));
+    assert!(text.contains("勝青0/5010"));
+    assert!(text.contains("失格赤0/5010"));
+    assert!(text.contains("▶緑5/5010"));
 }

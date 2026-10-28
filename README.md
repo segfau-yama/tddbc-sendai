@@ -90,10 +90,13 @@ SkittleはIdと得点用の番号を持ち、同じ12番を2本置けます。�
 0本なら0点、1本なら番号、複数本なら本数です。13本以上の変則構成も本数で採点します。
 ScoreBoard::new(history)は生成時に履歴を検証し、Calculated・Reset・Disqualified・Wonの状態を保持します。
 ScoreBoard::default()は空履歴・0点・Calculatedです。addは履歴を追加した新しい得点表を同じ生成経路で作ります。
-公開する問い合わせはhistory()（共有スライス）、total()（補正済み合計を履歴から計算）、state()（状態）です。
+公開する問い合わせはhistory()（共有スライス）、total()（正規化済み履歴の合計）、state()（状態）です。
 50点超過で25点となりReset、50点ちょうどでWon、3回連続0点でDisqualifiedになります。
+超過時は履歴を[25]へ置き換え、その後の得点を追記します。25は補正後の基準値であり、1投の得点ではありません。
+history()は直近の補正以降の計算用履歴です。投数や全投てきの記録は呼び出し側で管理します。
 Resetは次の通常投てきでCalculatedへ戻ります。Won/Disqualifiedに達した後の追加履歴は生成・追加時に拒否します。
-value・公開is_winner/is_disqualified/was_reset・evaluate_total・validate_for_gameは廃止しました。
+履歴だけからnewで生成し直す場合、[25]だけでは直前の補正を復元できずCalculatedとなります。得点・連続0点・勝利/失格の判定は維持します。
+is_resetは内部の超過判定です。apply_point・was_resetは削除しました。
 
 ### 採点・試合ルールのデフォルト実装
 
@@ -114,6 +117,7 @@ next_teamは失格や終了を見て手番を推測・変更しません。
 利用側はScoreBoard::addで得点表を作り、Team::with_score_boardでチームを更新します。
 TUI側で終了後の投てきを停止し、投てき後に次の失格していないチームへwith_turnで手番を設定します。
 終了時は全チームの手番を解除します。activeインデックスはControllerに重複保存しません。
+TUIの投数はチームごとに保持し、得点履歴が[25]へ圧縮されても投てき番号と投数表示を維持します。
 
 既存アプリの「複数参加から最後の生存者が勝つ」ルールはgame/progress.rsのwinning_teamで扱います。
 coreのWon検索と組み合わせますが、得点0の生存者のScoreStateをWonへ書き換えません。

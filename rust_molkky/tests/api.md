@@ -47,7 +47,7 @@ use rust_molkky::Point;
 Point(99);
 ```
 
-## 50点超過では履歴を残して25点へ戻す
+## 50点超過では履歴を25点の基準値へ置き換える
 
 ```rust
 use rust_molkky::ScoreState;
@@ -60,11 +60,11 @@ board = board.add(three);
 assert_eq!(board.total(), 25);
 assert!(matches!(board.state(), ScoreState::Reset));
 assert!(!matches!(board.state(), ScoreState::Won));
-assert_eq!(board.history(), &[twelve, twelve, twelve, twelve, three]);
+assert_eq!(board.history().iter().map(|point| point.value()).collect::<Vec<_>>(), [25]);
 board = board.add(twelve);
 assert_eq!(board.total(), 37);
 assert!(!matches!(board.state(), ScoreState::Reset));
-assert_eq!(board.history(), &[twelve, twelve, twelve, twelve, three, twelve]);
+assert_eq!(board.history().iter().map(|point| point.value()).collect::<Vec<_>>(), [25, 12]);
 ```
 
 ## 使用側で得点を更新しWonのチームを受け取る

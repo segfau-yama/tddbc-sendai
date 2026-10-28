@@ -2,13 +2,7 @@ pub const TARGET_SCORE: i32 = 50;
 pub const RESET_SCORE: i32 = 25;
 pub const CONSECUTIVE_ZERO_LIMIT: usize = 3;
 
-fn apply_point(total: i32, point: Point) -> (i32, bool) {
-    let next = i64::from(total) + i64::from(point.value());
-    let reset = ScoreBoard::was_reset(next);
-    (if reset { RESET_SCORE } else { next as i32 }, reset)
-}
-
-/// 1回の投てきの非負の点数。変則構成では倒れた本数が12を超えることもある。
+/// 非負の点数。投てきの得点に加え、履歴中では超過補正後の25点も表す。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Point(i32);
 
@@ -47,14 +41,15 @@ impl Default for ScoreBoard {
 impl ScoreBoard {
     /// 履歴の途中で終了した後の追加記録も、生成時に拒否する。
     pub fn new(score_history: Vec<Point>) -> Self {
-        let mut total = 0;
+        let mut total = 0_i64;
         let mut consecutive_zeros = 0;
         let mut state = ScoreState::Calculated;
-        for &point in &score_history {
+        let mut history = Vec::new();
+        for point in score_history {
             assert!(state != ScoreState::Won, "50点到達後に記録があります");
             assert!(state != ScoreState::Disqualified, "失格後に記録があります");
-            let (next, reset) = apply_point(total, point);
-            total = next;
+            total += i64::from(point.value());
+            history.push(point);
             consecutive_zeros = if point.value() == 0 {
                 consecutive_zeros + 1
             } else {
@@ -64,14 +59,16 @@ impl ScoreBoard {
                 ScoreState::Disqualified
             } else if Self::is_winner(total) {
                 ScoreState::Won
-            } else if reset {
+            } else if Self::is_reset(total) {
+                total = i64::from(RESET_SCORE);
+                history = vec![Point::new(RESET_SCORE)];
                 ScoreState::Reset
             } else {
                 ScoreState::Calculated
             };
         }
         Self {
-            score_history,
+            score_history: history,
             state,
         }
     }
@@ -83,28 +80,27 @@ impl ScoreBoard {
         Self::new(history)
     }
 
+    /// 直近の超過補正で[25]へ置き換えた計算用履歴。全投てきの記録ではない。
     pub fn history(&self) -> &[Point] {
         &self.score_history
     }
 
-    /// 各投てきの25点補正を反映して履歴から合計を算出する。
+    /// 生成時に補正した履歴から合計を算出する。
     pub fn total(&self) -> i32 {
-        self.score_history
-            .iter()
-            .fold(0, |total, &point| apply_point(total, point).0)
+        self.score_history.iter().map(Point::value).sum()
     }
 
     pub fn state(&self) -> ScoreState {
         self.state
     }
 
-    fn is_winner(total: i32) -> bool {
-        total == TARGET_SCORE
+    fn is_winner(total: i64) -> bool {
+        total == i64::from(TARGET_SCORE)
     }
     fn is_disqualified(consecutive_zeros: usize) -> bool {
         consecutive_zeros >= CONSECUTIVE_ZERO_LIMIT
     }
-    fn was_reset(total: i64) -> bool {
+    fn is_reset(total: i64) -> bool {
         total > i64::from(TARGET_SCORE)
     }
 }

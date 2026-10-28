@@ -16,6 +16,7 @@ pub struct Controller {
     names: Vec<Name>,
     rules: SimpleMolkky,
     teams: Vec<Team>,
+    throw_counts: Vec<usize>,
     field: ArrayField,
     stick: Stick,
     layout: FieldLayout,
@@ -24,6 +25,7 @@ pub struct Controller {
 
 impl Controller {
     pub fn new(names: Vec<Name>) -> Self {
+        let throw_counts = vec![0; names.len()];
         let teams = names
             .iter()
             .cloned()
@@ -36,6 +38,7 @@ impl Controller {
             names,
             rules: SimpleMolkky,
             teams,
+            throw_counts,
             field,
             stick: Stick::default(),
             layout,
@@ -100,17 +103,13 @@ impl Controller {
             .iter()
             .position(|team| team.id() == current.id())
             .unwrap();
-        let turn = self
-            .teams
-            .iter()
-            .map(|team| team.score_board().history().len())
-            .sum::<usize>()
-            + 1;
         let before = self.teams[active].score_board().total();
         let knocked_over = self.rules.throw(&self.stick, self.field.skittles(), rng);
         let point = self.rules.calc_score(&knocked_over);
         let board = self.teams[active].score_board().add(point);
         self.teams[active] = self.teams[active].with_score_board(board);
+        self.throw_counts[active] += 1;
+        let turn = self.throw_counts.iter().sum();
         self.layout = relocate_skittles(&self.layout, &knocked_over, rng);
         self.message = throw_message(&self.teams[active], turn, before, point);
         let next = if winning_team(&self.rules, &self.teams).is_some() {
@@ -133,6 +132,7 @@ impl Controller {
             compose_game(
                 &self.rules,
                 &self.teams,
+                &self.throw_counts,
                 &self.field,
                 &self.stick,
                 &self.layout,

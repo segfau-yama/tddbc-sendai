@@ -7,6 +7,7 @@ use ratatui::{
 pub(crate) struct TeamTui {
     pub(crate) name: String,
     pub(crate) board: ScoreBoardTui,
+    pub(crate) throw_count: usize,
     pub(crate) active: bool,
     pub(crate) winner: bool,
     pub(crate) disqualified: bool,
@@ -26,7 +27,7 @@ impl TeamTui {
             Cell::from(marker),
             Cell::from(self.name.as_str()),
             Cell::from(self.board.value_label()),
-            Cell::from(self.board.history.len().to_string()),
+            Cell::from(self.throw_count.to_string()),
             Cell::from(self.board.recent_points_label()),
         ])
         .style(if self.winner {
