@@ -8,7 +8,7 @@ use rust_molkky::simulation::{ArrayField, StandardFieldGenerator};
 fn 複数モデルから表示を組み立てても得点や配置は変わらない() {
     let model = vec![
         Team::new(Name::new("赤").unwrap()),
-        Team::new(Name::new("青").unwrap()),
+        Team::new(Name::new("青").unwrap()).with_turn(true),
     ];
     let field = ArrayField::new(vec![Skittle::new(5), Skittle::new(12), Skittle::new(12)]);
     let stick = Stick::default();
@@ -20,15 +20,7 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
     layout
         .positions
         .insert(field.skittles()[2].id(), Position::new(2, 3));
-    let view = compose_game(
-        &SimpleMolkky,
-        &model,
-        &field,
-        &stick,
-        &layout,
-        1,
-        "テスト中",
-    );
+    let view = compose_game(&SimpleMolkky, &model, &field, &stick, &layout, "テスト中");
     assert_eq!(view.field.pins.len(), 3);
     assert_eq!(view.field.pins[1].number, 12);
     assert_eq!(view.field.pins[2].number, 12);
@@ -42,7 +34,7 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
     assert_eq!(view.field.pins[0].probability, 0.25);
     layout.stick = Position::new(i32::MAX, i32::MIN);
     assert_eq!(
-        compose_game(&SimpleMolkky, &model, &field, &stick, &layout, 1, "")
+        compose_game(&SimpleMolkky, &model, &field, &stick, &layout, "")
             .field
             .pins[0]
             .probability,
@@ -98,15 +90,7 @@ fn 三チームでも勝者の得点行が見える() {
     terminal
         .draw(|frame| {
             frame.render_widget(
-                compose_game(
-                    &SimpleMolkky,
-                    &game,
-                    &field,
-                    &Stick::default(),
-                    &layout,
-                    2,
-                    "",
-                ),
+                compose_game(&SimpleMolkky, &game, &field, &Stick::default(), &layout, ""),
                 frame.area(),
             )
         })
@@ -128,8 +112,8 @@ fn 三チームでも勝者の得点行が見える() {
 fn 表示合成でも渡されたルールの判定を利用する() {
     struct BlueWins;
     impl Molkky for BlueWins {
-        fn judge_game(&self, _: &[Team]) -> Option<usize> {
-            Some(1)
+        fn judge_game<'a>(&self, teams: &'a [Team]) -> Option<&'a Team> {
+            Some(&teams[1])
         }
     }
     let teams = [
@@ -138,7 +122,7 @@ fn 表示合成でも渡されたルールの判定を利用する() {
     ];
     let field = StandardFieldGenerator.generate();
     let layout = FieldLayout::new(field.skittles());
-    let view = compose_game(&BlueWins, &teams, &field, &Stick::default(), &layout, 0, "");
+    let view = compose_game(&BlueWins, &teams, &field, &Stick::default(), &layout, "");
     assert!(view.banner.contains("青の勝利"));
     assert!(view.teams[1].winner);
     assert!(!view.teams[0].winner);

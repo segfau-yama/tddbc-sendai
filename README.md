@@ -20,10 +20,10 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 | 場所 | 責務 |
 | --- | --- |
 | src/core/models/ | Skittle・Stick・Point・ScoreBoard・Team・Id・Name・ScoreState、Field/FieldGeneratorのtrait |
-| src/core/services/ | Molkkyの既定ルール（投てき・採点・勝敗・次チーム・記録） |
+| src/core/services/ | Molkkyの既定ルール（投てき・採点・Won/手番のチーム選択） |
 | src/simulation/ | ArrayField、標準Field生成 |
-| src/game/ | coreとviewの合成、投てき後の表示上の移動 |
-| src/tui/ | Controllerによる端末入力、操作制御、描画の呼び出し |
+| src/game/ | coreとviewの合成、表示上の移動、アプリの終了条件 |
+| src/tui/ | 端末入力、得点表の更新と手番設定、描画の呼び出し |
 | src/view/ | 表示専用のPosition、描画構造体、Widget・CanvasDraw |
 
 core/modelsという名前は、エンティティと値オブジェクトの両方をまとめるためのものです。
@@ -34,20 +34,21 @@ viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示�
 ### ライブラリの利用
 
 ```rust
-use rust_molkky::core::models::{Name, ScoreState, Skittle, Team};
+use rust_molkky::core::models::{Name, Skittle, Team};
 use rust_molkky::core::services::{Molkky, SimpleMolkky};
 
 let rules = SimpleMolkky;
 let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
-let updated = rules.record_point(&original, 0, rules.calc_score(&[Skittle::new(11)]));
+let board = original[0].score_board().add(rules.calc_score(&[Skittle::new(11)]));
+let updated = original[0].with_score_board(board);
 assert_eq!(original[0].score_board().value(), 0);
 assert_eq!(updated[0].score_board().value(), 11);
-assert_eq!(rules.judge_game(&updated), None);
-assert_eq!(updated[0].score_board().state(), ScoreState::Calculated);
+assert!(rules.judge_game(&[updated]).is_none());
+
 ```
 
 MolkkyとSimpleMolkkyはcrate直下・core直下・core/servicesから公開します。
-calc_score・judge_game・next_team・record_pointの自由関数は廃止し、Molkkyのメソッドへ統合しました。
+calc_score・judge_game・next_teamはMolkkyのメソッドです。record_pointは廃止し、得点表の更新は利用側が行います。
 PositionとSkittle/Stickの位置APIはcoreから削除しました。Positionはview内の表示専用型です。
 coreのFieldはピン集合を参照するtraitです。位置や世界状態は具体的なField実装が持てます。
 TUIのControllerはチーム一覧と配列Field・確率設定Stickを個別に保持します。gameがピンのIdと表示座標を対応づけます。
@@ -60,7 +61,8 @@ IdはUUID v4で生成し、同名でも別チームは別IDです。cloneや得�
 文字数はRustのcharsによるUnicodeスカラー値の数です（表示幅や書記素クラスタの数ではありません）。
 Name::newはNameErrorを返し、TUIでは不正な名前を端末初期化前に入力エラーとして報告します。
 team.id()で一覧内の順番や名前に依存せず検索できます。同じIDの二重登録はjudge_gameが拒否します。
-既存の手番・勝者・記録APIのindexは一覧内の位置として維持しています。
+Teamはturn: boolを保持し、turn()/with_turn(bool)で参照・不変更新します。初期値はfalseです。
+手番の初期設定・循環・失格者のスキップ・終了時の解除は使用側が行います。
 
 ### Field生成・投てき・採点
 
@@ -95,26 +97,27 @@ value・公開is_winner/is_disqualified/was_reset・evaluate_total・validate_fo
 
 ### 採点・試合ルールのデフォルト実装
 
-core/services/molkky.rsのMolkky traitへ、throw・calc_score・judge_game・next_team・record_pointを直接実装しています。
+core/services/molkky.rsのMolkky traitへ、throw・calc_score・judge_game・next_teamを直接実装しています。
 SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
 得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
-next_teamはself.judge_gameを、record_pointはself.next_teamを呼び、同じ実装で継続可否を判定します。
-TUIはSimpleMolkkyを保持し、その参照を表示用合成にも渡します。
+next_teamは手番フラグの検索だけを行い、順番の計算・失格スキップ・終了判定を行いません。
+TUIはSimpleMolkkyを保持し、その参照を表示用合成にも渡します。coreには端末入出力やゲームの操作ループを置きません。
 Field生成・描画はこのtraitには含めません。
 
-### 勝敗判定
+### チーム選択と使用側の進行
 
-GameStatusとgame_status.rsを廃止し、ScoreBoardの状態から試合を判定します。
-Molkky::judge_game(&teams)は失格チームを含む元の参加リストを受け取り、勝者がいればSome(index)、いなければNoneを返します。
-Molkky::next_team(&teams, current)は失格者を飛ばした次のインデックスを返し、勝者あり・全員失格ならNoneです。
-勝者がいない継続中と全失格での終了は、next_teamで区別します。
+Molkky::judge_game(&teams)はScoreState::Wonのチームを共有参照で返します。WonがなければNoneです。
+Molkky::next_team(&teams)はturn=trueのチームを共有参照で返します。フラグがなければNoneです。
+複数勝者・チームIDの重複・複数手番は拒否します。judge_gameは空の参加者も拒否します。
+next_teamは失格や終了を見て手番を推測・変更しません。
 
-ScoreState::Wonは50点到達を表します。2チーム以上の参加から最後の生存者になったチームも試合には勝ちますが、そのScoreStateをWonへ書き換えません。
-単独参加は50点で勝ち、3回連続0点なら勝者なしで終了します。
-空の参加者・チームIDの重複・複数の50点到達チームはjudge_gameが拒否します。
-履歴の検証はScoreBoard生成時に完了しており、judge_gameで再検証しません。
-record_pointは終了後・失格チーム・範囲外への記録を拒否し、新しいチーム一覧を返します。
-任意のチームへの記録は許容し、利用側がnext_teamの結果を手番として保持します。
+利用側はScoreBoard::addで得点表を作り、Team::with_score_boardでチームを更新します。
+TUI側で終了後の投てきを停止し、投てき後に次の失格していないチームへwith_turnで手番を設定します。
+終了時は全チームの手番を解除します。activeインデックスはControllerに重複保存しません。
+
+既存アプリの「複数参加から最後の生存者が勝つ」ルールはgame/progress.rsのwinning_teamで扱います。
+coreのWon検索と組み合わせますが、得点0の生存者のScoreStateをWonへ書き換えません。
+単独参加・全失格・50点到達の振る舞いは維持します。
 
 ### 表示とテスト
 

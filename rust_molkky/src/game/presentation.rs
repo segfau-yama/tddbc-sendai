@@ -1,4 +1,4 @@
-use super::FieldLayout;
+use super::{FieldLayout, winning_team};
 use crate::view::{
     field::FieldTui, molkky::MolkkyTui, score::ScoreBoardTui, skittle::SkittleTui, stick::StickTui,
     team::TeamTui,
@@ -33,32 +33,35 @@ pub(crate) fn compose_game(
     field: &dyn Field,
     stick: &Stick,
     layout: &FieldLayout,
-    active: usize,
     message: &str,
 ) -> MolkkyTui {
-    let winner = rules.judge_game(teams);
+    let winner = winning_team(rules, teams);
+    let current = rules.next_team(teams);
+    let active = current
+        .and_then(|current| teams.iter().position(|team| team.id() == current.id()))
+        .unwrap_or(0);
     let banner = match winner {
-        Some(team_index) => format!(
-            " MÖLKKY  |  {}の勝利！  Rで新しいゲーム",
-            teams[team_index].name()
-        ),
-        None if rules.next_team(teams, active).is_none() => {
+        Some(team) => format!(" MÖLKKY  |  {}の勝利！  Rで新しいゲーム", team.name()),
+        None if teams
+            .iter()
+            .all(|team| team.score_board().state() == ScoreState::Disqualified) =>
+        {
             " MÖLKKY  |  全チームが失格。勝者なし。Rで新しいゲーム".into()
         }
-        None => format!(
+        None if current.is_some() => format!(
             " MÖLKKY  |  {}の投てき  |  {}チーム",
             teams[active].name(),
             teams.len()
         ),
+        None => " MÖLKKY  |  手番が未設定です".into(),
     };
     let teams = teams
         .iter()
-        .enumerate()
-        .map(|(index, team)| TeamTui {
+        .map(|team| TeamTui {
             name: team.name().as_str().to_owned(),
             board: compose_score(team.score_board()),
-            active: index == active,
-            winner: winner == Some(index),
+            active: team.turn(),
+            winner: winner.is_some_and(|winner| winner.id() == team.id()),
             disqualified: team.score_board().state() == ScoreState::Disqualified,
         })
         .collect();

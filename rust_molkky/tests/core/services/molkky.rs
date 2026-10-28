@@ -1,595 +1,102 @@
-use rust_molkky::{Molkky, Name, ScoreState, Skittle, Team};
+use rust_molkky::{Molkky, Name, ScoreBoard, ScoreState, SimpleMolkky, Skittle, Team};
+
+fn team(name: &str, points: &[i32]) -> Team {
+    let history = points
+        .iter()
+        .map(|&n| {
+            if n == 0 {
+                SimpleMolkky.calc_score(&[])
+            } else {
+                SimpleMolkky.calc_score(&[Skittle::new(n)])
+            }
+        })
+        .collect();
+    Team::new(Name::new(name).unwrap()).with_score_board(ScoreBoard::new(history))
+}
 
 #[test]
-fn 空の実装でも現在の採点と失格と最後の生存チームの勝利を使える() {
+fn 手番が立ったチームそのものを返し並び順や得点では選ばない() {
+    let teams = [
+        team("赤", &[]),
+        team("青", &[0, 0, 0]).with_turn(true),
+        team("緑", &[10; 5]),
+    ];
+    let rules: &dyn Molkky = &SimpleMolkky;
+    let selected = rules.next_team(&teams).unwrap();
+    assert!(std::ptr::eq(selected, &teams[1]));
+    assert_eq!(selected.score_board().state(), ScoreState::Disqualified);
+    assert!(selected.turn());
+}
+
+#[test]
+fn 手番がなければ空や勝者の有無にかかわらず返さない() {
+    assert!(SimpleMolkky.next_team(&[]).is_none());
+    assert!(SimpleMolkky.next_team(&[team("赤", &[])]).is_none());
+    assert!(SimpleMolkky.next_team(&[team("赤", &[10; 5])]).is_none());
+}
+
+#[test]
+#[should_panic(expected = "手番のチームが複数います")]
+fn 複数の手番を拒否する() {
+    SimpleMolkky.next_team(&[
+        team("赤", &[]).with_turn(true),
+        team("青", &[]).with_turn(true),
+    ]);
+}
+
+#[test]
+fn 勝利状態のチームそのものを返し手番には依存しない() {
+    let teams = [team("赤", &[]).with_turn(true), team("青", &[10; 5])];
+    let winner = SimpleMolkky.judge_game(&teams).unwrap();
+    assert!(std::ptr::eq(winner, &teams[1]));
+    assert_eq!(winner.score_board().state(), ScoreState::Won);
+    assert!(!winner.turn());
+}
+
+#[test]
+fn 勝利状態でなければ最後の生存者や全失格でも勝者を返さない() {
+    for teams in [
+        vec![team("赤", &[])],
+        vec![team("赤", &[0; 3]), team("青", &[])],
+        vec![team("赤", &[0; 3])],
+    ] {
+        assert!(SimpleMolkky.judge_game(&teams).is_none());
+    }
+}
+
+#[test]
+#[should_panic(expected = "勝者が複数います")]
+fn 複数の勝利状態を拒否する() {
+    SimpleMolkky.judge_game(&[team("赤", &[10; 5]), team("青", &[10; 5])]);
+}
+
+#[test]
+#[should_panic(expected = "チームIDが重複しています")]
+fn 同じチームの二重登録を拒否する() {
+    let first = team("赤", &[]);
+    SimpleMolkky.judge_game(&[first.clone(), first]);
+}
+
+#[test]
+#[should_panic(expected = "チームは1件以上必要です")]
+fn 空の参加者で勝敗を判定できない() {
+    SimpleMolkky.judge_game(&[]);
+}
+
+#[test]
+fn 空の実装を使い使用側で得点表を更新できる() {
     struct Rules;
     impl Molkky for Rules {}
-    let rules = Rules;
-    assert_eq!(rules.calc_score(&[Skittle::new(12)]).value(), 12);
-    assert_eq!(
-        rules
-            .calc_score(&[Skittle::new(12), Skittle::new(12)])
-            .value(),
-        2
+    let original = team("赤", &[]).with_turn(true);
+    let scored = original.with_score_board(
+        original
+            .score_board()
+            .add(Rules.calc_score(&[Skittle::new(12)])),
     );
-    let mut teams = vec![
-        Team::new(Name::new("赤").unwrap()),
-        Team::new(Name::new("青").unwrap()),
-    ];
-    assert_eq!(rules.judge_game(&teams), None);
-    assert_eq!(rules.next_team(&teams, 0), Some(1));
-    for _ in 0..3 {
-        teams = rules.record_point(&teams, 0, rules.calc_score(&[]));
-    }
-    assert_eq!(rules.judge_game(&teams), Some(1));
-    assert_eq!(rules.next_team(&teams, 0), None);
-}
-
-#[test]
-fn 上書きした判定を次チームと記録の既定実装が利用する() {
-    struct Finished;
-    impl Molkky for Finished {
-        fn judge_game(&self, _: &[Team]) -> Option<usize> {
-            Some(0)
-        }
-    }
-    let rules: &dyn Molkky = &Finished;
-    let teams = vec![Team::new(Name::new("赤").unwrap())];
-    assert_eq!(rules.next_team(&teams, 0), None);
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| rules.record_point(
-            &teams,
-            0,
-            rules.calc_score(&[])
-        )))
-        .is_err()
-    );
-    assert!(teams[0].score_board().history().is_empty());
-}
-
-mod judging {
-    use rust_molkky::Name;
-    use rust_molkky::{Molkky, ScoreBoard, ScoreState, SimpleMolkky, Skittle, Team};
-
-    fn team(name: &str, points: &[i32]) -> Team {
-        let board = points.iter().fold(ScoreBoard::default(), |board, &number| {
-            let pins = if number == 0 {
-                vec![]
-            } else {
-                vec![Skittle::new(number)]
-            };
-            board.add(SimpleMolkky.calc_score(&pins))
-        });
-        Team::new(Name::new(name).unwrap()).with_score_board(board)
-    }
-
-    #[test]
-    fn 五十点に到達したチームを勝者とする() {
-        assert_eq!(
-            SimpleMolkky.judge_game(&[team("赤", &[]), team("青", &[10; 5])]),
-            Some(1)
-        );
-    }
-
-    #[test]
-    fn 元の参加者が複数なら最後の生存チームが零点でも勝つ() {
-        let teams = [team("赤", &[0; 3]), team("青", &[]), team("緑", &[0; 3])];
-        assert_eq!(SimpleMolkky.judge_game(&teams), Some(1));
-        assert_eq!(teams[1].score_board().total(), 0);
-        assert_eq!(teams[1].score_board().state(), ScoreState::Calculated);
-    }
-
-    #[test]
-    fn 単独参加は五十点まで進行し失格なら勝者なしで終わる() {
-        assert_eq!(SimpleMolkky.judge_game(&[team("赤", &[])]), None);
-        assert_eq!(SimpleMolkky.judge_game(&[team("赤", &[0; 3])]), None);
-        assert_eq!(SimpleMolkky.judge_game(&[team("赤", &[10; 5])]), Some(0));
-    }
-
-    #[test]
-    fn 複数チームが残る間は進行し全員失格なら勝者なしになる() {
-        assert_eq!(
-            SimpleMolkky.judge_game(&[team("赤", &[0; 3]), team("青", &[12; 4]), team("緑", &[])]),
-            None
-        );
-        assert_eq!(
-            SimpleMolkky.judge_game(&[team("赤", &[0; 3]), team("青", &[0; 3])]),
-            None
-        );
-        assert_eq!(
-            SimpleMolkky.judge_game(&[team("赤", &[12, 12, 12, 12, 3]), team("青", &[])]),
-            None
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "チームは1件以上必要です")]
-    fn 空の入力を拒否する() {
-        SimpleMolkky.judge_game(&[]);
-    }
-
-    #[test]
-    #[should_panic(expected = "勝者が複数います")]
-    fn 複数の五十点到達チームを拒否する() {
-        SimpleMolkky.judge_game(&[team("赤", &[10; 5]), team("青", &[10; 5])]);
-    }
-
-    #[test]
-    fn 不正な履歴のチームを生成できない() {
-        for points in [&[0, 0, 0, 1][..], &[10, 10, 10, 10, 10, 1][..]] {
-            assert!(
-                std::panic::catch_unwind(|| SimpleMolkky.judge_game(&[team("赤", points)]))
-                    .is_err()
-            );
-        }
-    }
-
-    #[test]
-    fn 次チーム判定は失格者を飛ばし終了後は返さない() {
-        let teams = [team("赤", &[0; 3]), team("青", &[]), team("緑", &[])];
-        assert_eq!(SimpleMolkky.next_team(&teams, 2), Some(1));
-        assert_eq!(SimpleMolkky.next_team(&[team("赤", &[])], 0), Some(0));
-        assert_eq!(
-            SimpleMolkky.next_team(&[team("赤", &[0; 3]), team("青", &[])], 0),
-            None
-        );
-    }
-
-    #[test]
-    fn 記録関数は元の履歴を変えず失格と勝者を判定できる() {
-        let original = [team("赤", &[0, 0]), team("青", &[])];
-        let updated = SimpleMolkky.record_point(&original, 0, SimpleMolkky.calc_score(&[]));
-        assert_eq!(SimpleMolkky.judge_game(&updated), Some(1));
-        assert_eq!(original[0].score_board().history().len(), 2);
-    }
-
-    #[test]
-    fn 複数チームを保持し開始時は進行中になる() {
-        let game = vec![
-            Team::new(Name::new("赤").unwrap()),
-            Team::new(Name::new("青").unwrap()),
-        ];
-        assert_eq!(game.len(), 2);
-        assert_eq!(game[0].name().as_str(), "赤");
-        assert_eq!(game[1].name().as_str(), "青");
-        assert_eq!(SimpleMolkky.judge_game(&game), None);
-    }
-
-    #[test]
-    fn 同名のチームでも指定したチームだけに記録する() {
-        let mut game = vec![
-            Team::new(Name::new("同じ名前").unwrap()),
-            Team::new(Name::new("同じ名前").unwrap()),
-        ];
-        let point = SimpleMolkky.calc_score(&[Skittle::new(5)]);
-        assert_eq!(point.value(), 5);
-        game = SimpleMolkky.record_point(&game, 1, point);
-        assert_eq!(game[0].score_board().total(), 0);
-        assert!(game[0].score_board().history().is_empty());
-        assert_eq!(game[1].score_board().total(), 5);
-        assert_eq!(
-            game[1]
-                .score_board()
-                .history()
-                .iter()
-                .map(|point| point.value())
-                .collect::<Vec<_>>(),
-            &[5]
-        );
-    }
-
-    fn game_at_forty_nine() -> Vec<Team> {
-        let mut game = vec![
-            Team::new(Name::new("赤").unwrap()),
-            Team::new(Name::new("青").unwrap()),
-        ];
-        let twelve = SimpleMolkky.calc_score(&[Skittle::new(12)]);
-        for _ in 0..4 {
-            game = SimpleMolkky.record_point(&game, 1, twelve);
-        }
-        game = SimpleMolkky.record_point(&game, 1, SimpleMolkky.calc_score(&[Skittle::new(1)]));
-        game
-    }
-
-    mod invalid_operations {
-        use super::*;
-        use std::panic::{AssertUnwindSafe, catch_unwind};
-
-        #[test]
-        fn 五十点到達後の追加記録はチームを生成する前に拒否する() {
-            let ten = SimpleMolkky.calc_score(&[Skittle::new(10)]);
-            let mut board = rust_molkky::ScoreBoard::default();
-            for _ in 0..5 {
-                board = board.add(ten);
-            }
-            for point in [
-                SimpleMolkky.calc_score(&[]),
-                SimpleMolkky.calc_score(&[Skittle::new(1)]),
-            ] {
-                assert!(
-                    catch_unwind(|| {
-                        let invalid =
-                            Team::new(Name::new("赤").unwrap()).with_score_board(board.add(point));
-                        SimpleMolkky.judge_game(&[invalid]);
-                    })
-                    .is_err()
-                );
-            }
-            assert_eq!(board.total(), 50);
-            assert_eq!(board.history().len(), 5);
-        }
-
-        #[test]
-        #[should_panic(expected = "チームは1件以上必要です")]
-        fn チームが空の試合は判定できない() {
-            SimpleMolkky.judge_game(&[]);
-        }
-
-        #[test]
-        #[should_panic(expected = "勝者が複数います")]
-        fn 勝者が複数いる状態は判定時に拒否する() {
-            let mut red = Team::new(Name::new("赤").unwrap());
-            let mut blue = Team::new(Name::new("青").unwrap());
-            let ten = SimpleMolkky.calc_score(&[Skittle::new(10)]);
-            for _ in 0..5 {
-                red = red.with_score_board(red.score_board().add(ten));
-                blue = blue.with_score_board(blue.score_board().add(ten));
-            }
-            SimpleMolkky.judge_game(&[red, blue]);
-        }
-
-        #[test]
-        fn 存在しないチームへの記録を拒否して得点を保つ() {
-            let mut game = vec![
-                Team::new(Name::new("赤").unwrap()),
-                Team::new(Name::new("青").unwrap()),
-            ];
-            game = SimpleMolkky.record_point(&game, 0, SimpleMolkky.calc_score(&[Skittle::new(5)]));
-            for index in [2, usize::MAX] {
-                let failed = catch_unwind(AssertUnwindSafe(|| {
-                    game = SimpleMolkky.record_point(
-                        &game,
-                        index,
-                        SimpleMolkky.calc_score(&[Skittle::new(12)]),
-                    );
-                }));
-                assert!(failed.is_err());
-                assert_eq!(
-                    game[0]
-                        .score_board()
-                        .history()
-                        .iter()
-                        .map(|point| point.value())
-                        .collect::<Vec<_>>(),
-                    &[5]
-                );
-                assert!(game[1].score_board().history().is_empty());
-                assert_eq!(SimpleMolkky.judge_game(&game), None);
-            }
-        }
-
-        #[test]
-        fn 終了後はどのチームへの記録も拒否して履歴と勝者を保つ() {
-            let mut game = game_at_forty_nine();
-            game = SimpleMolkky.record_point(&game, 1, SimpleMolkky.calc_score(&[Skittle::new(1)]));
-            for index in [0, 1] {
-                let failed = catch_unwind(AssertUnwindSafe(|| {
-                    game = SimpleMolkky.record_point(
-                        &game,
-                        index,
-                        SimpleMolkky.calc_score(&[Skittle::new(12)]),
-                    );
-                }));
-                assert!(failed.is_err());
-                assert!(game[0].score_board().history().is_empty());
-                assert_eq!(
-                    game[1]
-                        .score_board()
-                        .history()
-                        .iter()
-                        .map(|point| point.value())
-                        .collect::<Vec<_>>(),
-                    &[12, 12, 12, 12, 1, 1]
-                );
-                assert_eq!(game[1].score_board().total(), 50);
-                assert_eq!(SimpleMolkky.judge_game(&game), Some(1));
-            }
-        }
-    }
-
-    mod target_score {
-        use super::*;
-
-        #[test]
-        fn 四十九点ではゲームは終了しない() {
-            let game = game_at_forty_nine();
-            assert_eq!(game[1].score_board().total(), 49);
-            assert_eq!(SimpleMolkky.judge_game(&game), None);
-        }
-
-        #[test]
-        fn 五十点ちょうどで該当チームの勝利になる() {
-            let mut game = game_at_forty_nine();
-            game = SimpleMolkky.record_point(&game, 1, SimpleMolkky.calc_score(&[Skittle::new(1)]));
-            assert_eq!(game[1].score_board().total(), 50);
-            assert_eq!(SimpleMolkky.judge_game(&game), Some(1));
-        }
-
-        #[test]
-        fn 超過時は25点に戻してゲームを継続する() {
-            let mut game = game_at_forty_nine();
-            let point = SimpleMolkky.calc_score(&[Skittle::new(2)]);
-            assert_eq!(point.value(), 2);
-            game = SimpleMolkky.record_point(&game, 1, point);
-            assert_eq!(game[1].score_board().total(), 25);
-            assert_eq!(SimpleMolkky.judge_game(&game), None);
-            game =
-                SimpleMolkky.record_point(&game, 1, SimpleMolkky.calc_score(&[Skittle::new(12)]));
-            assert_eq!(game[1].score_board().total(), 37);
-            game = SimpleMolkky.record_point(&game, 0, SimpleMolkky.calc_score(&[Skittle::new(5)]));
-            assert_eq!(game[0].score_board().total(), 5);
-            game =
-                SimpleMolkky.record_point(&game, 1, SimpleMolkky.calc_score(&[Skittle::new(12)]));
-            game = SimpleMolkky.record_point(&game, 1, SimpleMolkky.calc_score(&[Skittle::new(1)]));
-            assert_eq!(game[1].score_board().total(), 50);
-            assert_eq!(SimpleMolkky.judge_game(&game), Some(1));
-        }
-    }
-
-    #[test]
-    fn 一チームのゲームと既に勝者がいるゲームも表現できる() {
-        assert_eq!(
-            SimpleMolkky.judge_game(&[Team::new(Name::new("赤").unwrap())]),
-            None
-        );
-        let mut winner = Team::new(Name::new("赤").unwrap());
-        let ten = SimpleMolkky.calc_score(&[Skittle::new(10)]);
-        for _ in 0..5 {
-            winner = winner.with_score_board(winner.score_board().add(ten));
-        }
-        assert_eq!(SimpleMolkky.judge_game(&[winner]), Some(0));
-    }
-
-    mod restored_rules {
-        use super::*;
-        use rust_molkky::ScoreBoard;
-        use std::panic::catch_unwind;
-
-        fn team_with_points(name: &str, points: &[i32]) -> Team {
-            let mut board = ScoreBoard::default();
-            for &number in points {
-                let point = if number == 0 {
-                    SimpleMolkky.calc_score(&[])
-                } else {
-                    SimpleMolkky.calc_score(&[Skittle::new(number)])
-                };
-                board = board.add(point);
-            }
-            Team::new(Name::new(name).unwrap()).with_score_board(board)
-        }
-
-        #[test]
-        fn 複数チームから残り一チームになったら勝利する() {
-            let game = vec![
-                team_with_points("赤", &[0, 0, 0]),
-                Team::new(Name::new("青").unwrap()),
-            ];
-            assert_eq!(SimpleMolkky.judge_game(&game), Some(1));
-            assert!(SimpleMolkky.next_team(&game, 0).is_none());
-            assert_eq!(game[1].score_board().total(), 0);
-            assert!(
-                catch_unwind(|| SimpleMolkky.record_point(
-                    &game,
-                    1,
-                    SimpleMolkky.calc_score(&[Skittle::new(1)])
-                ))
-                .is_err()
-            );
-        }
-
-        #[test]
-        fn 記録で残り一チームになった時点で終了し元のゲームは変わらない() {
-            let game = vec![
-                team_with_points("赤", &[0, 0]),
-                Team::new(Name::new("青").unwrap()),
-            ];
-            assert!(!SimpleMolkky.next_team(&game, 0).is_none());
-            let finished = SimpleMolkky.record_point(&game, 0, SimpleMolkky.calc_score(&[]));
-            assert!(SimpleMolkky.next_team(&finished, 0).is_none());
-            assert_eq!(SimpleMolkky.judge_game(&finished), Some(1));
-            assert_eq!(finished[1].score_board().total(), 0);
-            assert!(!SimpleMolkky.next_team(&game, 0).is_none());
-            assert_eq!(SimpleMolkky.judge_game(&game), None);
-            assert_eq!(game[0].score_board().history().len(), 2);
-            assert!(
-                catch_unwind(|| SimpleMolkky.record_point(
-                    &finished,
-                    1,
-                    SimpleMolkky.calc_score(&[Skittle::new(1)])
-                ))
-                .is_err()
-            );
-        }
-
-        #[test]
-        fn 超過した履歴は25点補正後の得点で判定する() {
-            let game = vec![team_with_points("赤", &[12, 12, 12, 12, 3])];
-            assert_eq!(game[0].score_board().total(), 25);
-            assert_eq!(SimpleMolkky.judge_game(&game), None);
-            assert!(!SimpleMolkky.next_team(&game, 0).is_none());
-        }
-
-        #[test]
-        fn 失格チームがいても二チーム以上残っていれば継続する() {
-            let game = vec![
-                team_with_points("赤", &[0, 0, 0]),
-                Team::new(Name::new("青").unwrap()),
-                Team::new(Name::new("緑").unwrap()),
-            ];
-            assert!(matches!(
-                game[0].score_board().state(),
-                ScoreState::Disqualified
-            ));
-            assert!(!SimpleMolkky.next_team(&game, 0).is_none());
-            assert_eq!(SimpleMolkky.judge_game(&game), None);
-            let updated =
-                SimpleMolkky.record_point(&game, 1, SimpleMolkky.calc_score(&[Skittle::new(5)]));
-            assert_eq!(updated[1].score_board().total(), 5);
-            assert_eq!(game[1].score_board().total(), 0);
-        }
-
-        #[test]
-        fn 失格後の追加記録はチームを生成する前に拒否する() {
-            let disqualified = team_with_points("赤", &[5, 0, 0, 0]);
-            for point in [
-                SimpleMolkky.calc_score(&[]),
-                SimpleMolkky.calc_score(&[Skittle::new(1)]),
-            ] {
-                assert!(
-                    catch_unwind(|| {
-                        let invalid =
-                            disqualified.with_score_board(disqualified.score_board().add(point));
-                        SimpleMolkky.judge_game(&[invalid]);
-                    })
-                    .is_err()
-                );
-            }
-            assert_eq!(disqualified.score_board().total(), 5);
-            assert_eq!(disqualified.score_board().history().len(), 4);
-        }
-
-        #[test]
-        fn 三回目の0点で失格にし失格チームへの記録だけを拒否する() {
-            let game = vec![
-                team_with_points("赤", &[5, 0, 0]),
-                Team::new(Name::new("青").unwrap()),
-                Team::new(Name::new("緑").unwrap()),
-            ];
-            let disqualified = SimpleMolkky.record_point(&game, 0, SimpleMolkky.calc_score(&[]));
-            assert!(matches!(
-                disqualified[0].score_board().state(),
-                ScoreState::Disqualified
-            ));
-            assert!(!SimpleMolkky.next_team(&disqualified, 0).is_none());
-            assert!(
-                catch_unwind(|| SimpleMolkky.record_point(
-                    &disqualified,
-                    0,
-                    SimpleMolkky.calc_score(&[Skittle::new(1)])
-                ))
-                .is_err()
-            );
-            let continued = SimpleMolkky.record_point(
-                &disqualified,
-                1,
-                SimpleMolkky.calc_score(&[Skittle::new(11)]),
-            );
-            assert_eq!(continued[1].score_board().total(), 11);
-            assert_eq!(
-                continued[0].score_board().history(),
-                disqualified[0].score_board().history()
-            );
-            assert!(!matches!(
-                game[0].score_board().state(),
-                ScoreState::Disqualified
-            ));
-            assert_eq!(game[0].score_board().history().len(), 3);
-        }
-
-        #[test]
-        fn 全チーム失格なら勝者なしで終了して記録を拒否する() {
-            let game = vec![
-                team_with_points("赤", &[0, 0, 0]),
-                team_with_points("青", &[1, 0, 0, 0]),
-            ];
-            assert!(SimpleMolkky.next_team(&game, 0).is_none());
-            assert_eq!(SimpleMolkky.judge_game(&game), None);
-            for index in [0, 1] {
-                assert!(
-                    catch_unwind(|| SimpleMolkky.record_point(
-                        &game,
-                        index,
-                        SimpleMolkky.calc_score(&[])
-                    ))
-                    .is_err()
-                );
-            }
-            assert_eq!(game[0].score_board().total(), 0);
-            assert_eq!(game[1].score_board().total(), 1);
-        }
-
-        #[test]
-        fn 正の点数で連続0点の回数がリセットされる() {
-            let game = vec![team_with_points("赤", &[0, 0, 1, 0, 0])];
-            assert!(!matches!(
-                game[0].score_board().state(),
-                ScoreState::Disqualified
-            ));
-            assert!(!SimpleMolkky.next_team(&game, 0).is_none());
-            let updated = SimpleMolkky.record_point(&game, 0, SimpleMolkky.calc_score(&[]));
-            assert!(matches!(
-                updated[0].score_board().state(),
-                ScoreState::Disqualified
-            ));
-            assert!(SimpleMolkky.next_team(&updated, 0).is_none());
-        }
-
-        #[test]
-        fn 二チーム以上残っていても50点到達で勝利する() {
-            let game = vec![
-                team_with_points("赤", &[0, 0, 0]),
-                team_with_points("青", &[12, 12, 12, 12, 1]),
-                Team::new(Name::new("緑").unwrap()),
-            ];
-            assert!(!SimpleMolkky.next_team(&game, 0).is_none());
-            let won =
-                SimpleMolkky.record_point(&game, 1, SimpleMolkky.calc_score(&[Skittle::new(1)]));
-            assert!(SimpleMolkky.next_team(&won, 0).is_none());
-            assert_eq!(SimpleMolkky.judge_game(&won), Some(1));
-            assert_eq!(SimpleMolkky.judge_game(&game), None);
-            assert_eq!(game[1].score_board().total(), 49);
-        }
-    }
-
-    mod immutability {
-        use super::*;
-        #[test]
-        fn ゲームへの記録でも元のゲームと他チームは変わらない() {
-            let original = vec![
-                Team::new(Name::new("赤").unwrap()),
-                Team::new(Name::new("青").unwrap()),
-            ];
-            let updated = SimpleMolkky.record_point(
-                &original,
-                0,
-                SimpleMolkky.calc_score(&[Skittle::new(11)]),
-            );
-            assert_eq!(original[0].score_board().total(), 0);
-            assert_eq!(original[1].score_board().total(), 0);
-            assert_eq!(updated[0].score_board().total(), 11);
-            assert_eq!(updated[0].id(), original[0].id());
-            assert_eq!(updated[1].score_board().total(), 0);
-        }
-    }
-
-    #[test]
-    fn 次チーム判定は無効なインデックスを拒否し勝者なし終了でも返さない() {
-        let teams = [team("赤", &[]), team("青", &[])];
-        for current in [2, usize::MAX] {
-            assert!(std::panic::catch_unwind(|| SimpleMolkky.next_team(&teams, current)).is_err());
-        }
-        assert_eq!(SimpleMolkky.next_team(&[team("赤", &[0; 3])], 0), None);
-        assert_eq!(SimpleMolkky.next_team(&[team("赤", &[10; 5])], 0), None);
-        assert_eq!(SimpleMolkky.next_team(&teams, 0), Some(1));
-        assert_eq!(SimpleMolkky.next_team(&teams, 1), Some(0));
-    }
-
-    #[test]
-    #[should_panic(expected = "チームIDが重複しています")]
-    fn 同じidのチームを二重登録できない() {
-        let first = team("赤", &[]);
-        SimpleMolkky.judge_game(&[first.clone(), first]);
-    }
+    assert_eq!(original.score_board().total(), 0);
+    assert_eq!(scored.score_board().total(), 12);
+    assert_eq!(scored.id(), original.id());
+    assert!(scored.turn());
 }
 
 mod scoring {
@@ -771,17 +278,4 @@ mod throwing {
         let pin = Skittle::new(5);
         SimpleMolkky.throw(&Stick::default(), &[pin, pin], &mut ConstantRng(0));
     }
-}
-
-#[test]
-fn 勝者なしの継続と全失格終了は次チームで区別できる() {
-    use rust_molkky::{ScoreBoard, SimpleMolkky};
-    let live = [Team::new(Name::new("赤").unwrap())];
-    let lost = [live[0].with_score_board(ScoreBoard::new(vec![SimpleMolkky.calc_score(&[]); 3]))];
-    assert_eq!(SimpleMolkky.judge_game(&live), None);
-    assert_eq!(SimpleMolkky.judge_game(&lost), None);
-    assert_eq!(SimpleMolkky.next_team(&live, 0), Some(0));
-    assert_eq!(SimpleMolkky.next_team(&lost, 0), None);
-    assert_eq!(live[0].score_board().state(), ScoreState::Calculated);
-    assert_eq!(lost[0].score_board().state(), ScoreState::Disqualified);
 }

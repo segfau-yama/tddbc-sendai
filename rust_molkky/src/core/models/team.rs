@@ -5,6 +5,7 @@ pub struct Team {
     id: Id,
     name: Name,
     score_board: ScoreBoard,
+    turn: bool,
 }
 
 impl Team {
@@ -13,6 +14,7 @@ impl Team {
             id: Id::new(),
             name,
             score_board: ScoreBoard::default(),
+            turn: false,
         }
     }
 
@@ -28,11 +30,23 @@ impl Team {
         &self.score_board
     }
 
+    pub fn turn(&self) -> bool {
+        self.turn
+    }
+
+    pub fn with_turn(&self, turn: bool) -> Self {
+        Self {
+            turn,
+            ..self.clone()
+        }
+    }
+
     pub fn with_score_board(&self, score_board: ScoreBoard) -> Self {
         Self {
             id: self.id,
             name: self.name.clone(),
             score_board,
+            turn: self.turn,
         }
     }
 }

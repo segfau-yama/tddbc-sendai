@@ -98,3 +98,21 @@ fn 同名でも別チームのidは異なりcloneと得点更新ではidを維�
         "同じ名前"
     );
 }
+
+#[test]
+fn 手番の更新でも元のチームとidを保ち得点更新でも手番を維持する() {
+    let original = Team::new(Name::new("赤").unwrap());
+    assert!(!original.turn());
+    let active = original.with_turn(true);
+    assert!(active.turn());
+    assert!(!original.turn());
+    assert_eq!(active.id(), original.id());
+    let scored = active.with_score_board(
+        active
+            .score_board()
+            .add(SimpleMolkky.calc_score(&[Skittle::new(5)])),
+    );
+    assert!(scored.turn());
+    assert_eq!(scored.clone().id(), active.id());
+    assert_eq!(scored.score_board().total(), 5);
+}

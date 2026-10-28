@@ -2,7 +2,39 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## ScoreBoardの生成時検証・状態保持とGameStatus撤去（今回の実装）
+## Teamのturnとチーム参照を返すcore APIへの簡略化（今回の変更）
+
+- Teamに非公開のturn: boolを追加し、初期値false・turn()/with_turn(bool)で不変に参照/更新する。with_score_boardとcloneでIdとturnを保つ。
+- next_team(&teams)はturn=trueのチームの共有参照を返す。順番の計算・終了/失格判定・更新は行わない。judge_game(&teams)はScoreState::Wonのチームの共有参照を返す。曖昧な複数手番・複数勝者は拒否する。
+- record_pointを削除し、利用側がScoreBoard::addとTeam::with_score_boardを直接利用する。手番の切り替えはTUI側へ移し、activeインデックスの重複保存を廃止する。coreへ入出力・描画・制御ループは置かない。
+- 既存の最後の生存者の勝利はcoreのWon検索から分離し、呼び出し側のgameで維持する。ScoreStateをWonへ書き換えない。
+- [x] 変更前の全テストを確認する。
+- [x] Teamのturnと、手番/勝者のチーム参照を返すAPIのRedを確認する。
+- [x] coreと利用側を更新し、手番循環・失格スキップ・終了後の操作停止・得点更新を確認する。
+- [x] README/API例とテスト配置を更新し、test/build/fmt/Clippy・TUI操作・差分を確認する。
+
+### 実装と責務
+
+- Team::turn()はboolを返し、with_turnは新しいTeamを返す。ID・名前・得点表を保ち、with_score_boardもturnを保つ。複数のチームを並べたときの手番初期化は使用側が行う。
+- Molkky::next_team(&[Team]) -> Option<&Team>はturnだけを検索する。失格・Won・並び順を見ず、入力を書き換えない。フラグがなければNone、複数なら拒否する。judge_gameも共有参照を返し、Wonの検索に限定する。チームID重複・複数Won・空の参加者の検証は従来どおり維持した。
+- record_pointと互換ラッパーを撤去した。TUIは選択されたTeamのScoreBoard::addとwith_score_boardを直接呼び、投てき後の循環・失格者のスキップを行ってwith_turnで全フラグを更新する。終了時は全フラグをfalseにする。Controllerのactiveフィールドは廃止し、描画用の位置だけを必要時にIDから導出する。
+- game/progress.rsのwinning_teamは呼び出し側アプリの終了条件として、coreのWon検索と従来の最後の生存者の勝利を組み合わせる。coreのjudge_gameがCalculatedの生存者を返すことはなく、ScoreBoardの状態も変更しない。
+- coreへ入出力・端末・操作ループを追加していない。次チームの計算や終了後の入力停止は呼び出し側へ移した。フラグ選択であるnext_teamのNoneを、coreが判定した試合終了と同一視しない。
+
+### Red・Green・最終確認
+
+- 変更前のcargo test --lockedは146件成功（/tmp/team-turn-baseline.log）。
+- Red：Team::turn/with_turn未実装のE0599を確認（/tmp/team-turn-red.log）。チーム参照の取得テストを先に書き、next_teamの引数変更のE0061と戻り値の型不一致E0308も確認した（/tmp/team-selection-red.log）。
+- Green：フラグ選択・Won検索・返却参照の同一性・同名チームのID保持・フラグ/得点表の不変更新・複数手番/勝者の拒否を検証した。デフォルト実装・採点・投てきの既存検証は維持した。
+- 廃止したrecord_pointや「現在indexから次を計算する」APIに対するテストは、現行core契約に合わせて整理した。範囲外indexの拒否など存在しなくなった入力の検証は削除し、得点履歴・補正・失格・終端後の追加拒否・不変性はScoreBoard/Teamの既存テストで維持した。coreの手番から終了を推測するケースはフラグ選択の検証へ変更した。
+- 呼び出し側では、既存TUIテストの循環・失格スキップ・全失格・最後の生存者・共有Field・終了後の操作停止を維持した。新たに50点勝利後の停止/手番解除、25点補正後の次手番と通知も検証した。game/progress.rsで単独参加・複数生存・全失格・最後の生存者・50点到達を確認した。
+- 最終cargo test --lockedは127件成功（core63・バイナリ25・CLI1・simulation4・doc34）、失敗・無視0件。従来より19件少ないのは、廃止したcoreの記録/順番計算/終了判定のテストを整理し、新しい契約と使用側の検証へ移した結果であり、ignoreによる減少ではない（/tmp/team-turn-final-tests.log）。
+- cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功。初回Clippyで日本語テスト名中のWonの大文字表記が警告となったため、日本語表記へ直して再確認した。新しい追加確認は実装後に成功したもので、最初のRedとは区別する。
+- 100列×30行の擬似端末で右矢印・Space投てき・R再開・Q終了を実行。第1投・青チームの手番マーカー・25.0%表示、panicなし、終了コード0を確認（/tmp/team-turn-tui.log）。差分描画のため「青の投てき」の全文が再出力されず最初の文字列検証は失敗したが、描画された手番行のマーカーで確認した。製品の不具合とは扱わない。
+- srcにrecord_point・標準入出力・端末依存・must_useがないこと、モデルに可変selfがないこと、Controllerにactiveの重複保存がないこと、テストがtests以下で対象と同名であることを確認した。READMEとAPI例も参照返却・直接の得点更新・明示的な手番設定へ更新した。
+- ScoreBoardの状態/検証・個体ID・得点ルール・依存/ロック・Javaは変更していない。
+
+## ScoreBoardの生成時検証・状態保持とGameStatus撤去（前回の実装）
 
 - ScoreState（Calculated/Reset/Disqualified/Won）をScoreBoardに保持する。new(history)で履歴を先頭から検証・状態判定し、addも同じ経路を通す。history/total/stateを公開し、is_winner/is_disqualified/was_resetは内部判定とする。evaluate_total/validate_for_gameは削除する。
 - 追記に合わせGameStatusとgame_status.rsを廃止する。judge_gameは勝者のOption<usize>を返し、next_teamは勝者あり・全失格ならNoneで終了を示す。チーム単位のScoreStateへ、最後の生存による試合勝利を書き戻さない。
