@@ -2,7 +2,46 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## 超過時に得点履歴を25点へ圧縮（今回の変更）
+## fallの命名とStick/Fieldの合成案（今回の設計レビュー・未実装）
+
+- 対象と入力：Molkky::throwをfallへ改名し、Stick/FieldはIdだけを持ち、速度・確率・タイルマップ・3D物理世界は別の構造体で合成する案。現行のcore/services/molkky.rs、core/models/{stick,field}.rs、simulation/field.rs、gameの配置/表示合成、TUIの呼び出しを照合した。独立したthrow.rsは存在せず、対象はmolkky.rsのthrowメソッド。
+- [x] 現行の投てき・棒・盤面・表示合成と参照元を確認する。
+- [x] 命名・識別子の必要性・合成時の責務と所有を整理する。
+- [x] レビュー記録だけを変更し、差分とgit diff --checkを確認する。
+
+### 指摘（過度な抽象化・責務の観点）
+
+- core/models/stick.rs:L3: shrink: 中・Stickが確率設定の入れ物になっている。確率をsimulation側の設定へ分離し、棒の同一性とは独立に扱う。速度・質量も物理シミュレーション側に置く。
+- src/tui/controller.rs:L21: yagni: 中・現行の棒/盤面にはID照合の利用箇所がない。Idだけのcoreモデルの先行追加を見送り、持ち替え・保存/復元・複数盤面の対応付けなど、同じ個体を追跡する要件ができた時点で追加する。
+- core/services/molkky.rs:L20: shrink: 低・現在は運動や投てき操作を扱わず、独立抽選で倒れる個体を返す。fallへの改名は妥当。StickがIdだけになった後も、未使用のStick引数を残さない。
+- core/models/field.rs:L4: yagni: 中・FieldをIdだけの構造体に置き換える際、盤面の共通traitを別名で再建しない。採点には既存の&[Skittle]を渡し、個体集合・配置・生成は具体的なシミュレーション側で保持する。
+
+### 提案する境界と合成
+
+- 合成の方向には賛成する。DDDのEntityは同一性の継続が必要な対象であり、Idだけの型でも成立し得るが、名前が現実の物体であることだけではcoreへEntityを置く理由にならない。現在の得点/勝敗判定は棒や盤面のIdを参照していない。
+- fallは「倒れる個体を決定する」操作として扱う。throw(stick, skittles)がスキットルを投げるという意味になるわけではないが、現状の抽選だけを表す命名としてfallが合う。物理エンジンで棒を発射する操作まで実装する場合、その操作にはthrowという名前を使える。
+- 確率モデルの現在の最小形はfall(skittles, probability, rng)で足りる。これは概念上の引数であり実装変更ではない。確率の0〜1・NaN/無限大の拒否は、既存Stickから移した設定の生成境界に残す。Idから確率を導出する処理や、使わない棒の参照は追加しない。
+- 速度・質量・衝突判定・確率モデルはsimulation、TUIの表示座標や描画はview、両者の接続はgameが担当する。3Dの物理座標と描画座標は区別する。GUIかTUIかによって物理方式を決めず、同じシミュレーション結果を別の描画へ渡せるようにする。
+- 同一性が必要になった場合の合成例（概念のみ）は以下。TileFieldとPhysicsFieldは異なる実装の例であり、今から両方を作る提案ではない。
+
+```text
+simulation::StickBody    { stick: core::Stick, velocity, mass }
+simulation::RandomFall   { probability }
+simulation::TileField    { field: core::Field, skittles, tile_map }
+simulation::PhysicsField { field: core::Field, skittles, physics_world }
+```
+
+- 合成により全ドメインモデルを各描画オブジェクトへ複製しない。Skittle集合は選択した実装/セッションが一度だけ所有し、物理ボディや複数の表示状態は既存のSkittle::id()で対応付ける。現行FieldをIdだけへ置換しても、Field::skittles()の役割を消失させず、合成側の個体集合から採点対象を取得する。
+- 現在の確率方式と未実装の物理方式を束ねる汎用trait・巨大な引数enum・共通Worldは追加しない。必要になった具体的な方式を実装し、倒れたSkittleを既存calc_scoreへ渡す。物理世界の姿勢/速度などの更新はその実装側が保持し、得点サービスへ持ち込まない。
+
+### 記録と検証範囲
+
+- 今回は設計レビューのみ。ソース・テスト・APIの変更、fallへの改名、ID追加、設定型や物理世界の実装は行っていない。レビュー記録だけをgit diff --checkで確認するため、Rustの再テストは実施しない。
+- 行数削減が確定する変更は今回ない。命名変更と責務の移動を削減に数えず、未追加の型を見送る分も既存行数の削減には含めない。
+
+net: -0 lines possible.
+
+## 超過時に得点履歴を25点へ圧縮（前回の変更）
 
 - 要求：apply_pointを削除し、was_resetをis_resetへ改名する。生成時のelse if Self::is_reset(total)で50点超過を判定し、履歴を[25]へ置き換える。
 - 不変条件：50点ちょうどで勝利、超過で25点、3連続0点で失格。履歴の途中で勝利/失格になった後の記録を拒否し、addは元の得点表を変更しない。newに渡した全記録は順に検証し、補正後も残りの記録を処理する。
