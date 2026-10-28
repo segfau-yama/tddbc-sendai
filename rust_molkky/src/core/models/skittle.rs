@@ -1,19 +1,21 @@
+use super::Id;
 use std::collections::HashSet;
 
-pub(crate) fn validate_unique_numbers(skittles: &[Skittle]) {
-    let mut numbers = HashSet::new();
+pub(crate) fn validate_unique_ids(skittles: &[Skittle]) {
+    let mut ids = HashSet::new();
     for skittle in skittles {
-        // ピンは番号で識別する。同じ番号は重複になる。
         assert!(
-            numbers.insert(skittle.number()),
-            "スキットル番号が重複しています: {}",
-            skittle.number()
+            ids.insert(skittle.id()),
+            "スキットルIDが重複しています: {}",
+            skittle.id()
         );
     }
 }
 
+/// 番号は得点用。同じ番号でも、Idが異なれば別の個体。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Skittle {
+    id: Id,
     number: i32,
 }
 
@@ -25,7 +27,14 @@ impl Skittle {
             (1..=12).contains(&number),
             "スキットル番号は1〜12です: {number}"
         );
-        Self { number }
+        Self {
+            id: Id::new(),
+            number,
+        }
+    }
+
+    pub fn id(&self) -> Id {
+        self.id
     }
 
     pub fn number(&self) -> i32 {

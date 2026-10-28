@@ -1,4 +1,4 @@
-use rust_molkky::core::models::Stick;
+use rust_molkky::simulation::Stick;
 #[test]
 fn 座標を使わず確率の境界と既定値を保持する() {
     assert_eq!(Stick::default().fall_probability(), 0.25);

@@ -1,10 +1,8 @@
 use crate::{
-    game::{compose_game, relocate_skittles, throw_message},
-    view::{
-        field::FieldLayout,
-        molkky::{MIN_HEIGHT, MIN_WIDTH},
-    },
+    game::{FieldLayout, compose_game, relocate_skittles, throw_message},
+    view::molkky::{MIN_HEIGHT, MIN_WIDTH},
 };
+use rust_molkky::simulation::{ArrayField, RandomThrow, StandardFieldGenerator, Stick};
 use std::io;
 
 use ratatui::{
@@ -12,14 +10,14 @@ use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
 };
 use rust_molkky::core::{
-    Field, GameStatus, Name, Stick, Team, calc_score, judge_game, next_team, record_point,
+    Field, FieldGenerator, GameStatus, Name, Team, calc_score, judge_game, next_team, record_point,
     throw_stick,
 };
 
 pub struct Controller {
     names: Vec<Name>,
     teams: Vec<Team>,
-    field: Field,
+    field: ArrayField,
     stick: Stick,
     layout: FieldLayout,
     active: usize,
@@ -29,12 +27,14 @@ pub struct Controller {
 impl Controller {
     pub fn new(names: Vec<Name>) -> Self {
         let teams = names.iter().cloned().map(Team::new).collect();
+        let field = StandardFieldGenerator.generate();
+        let layout = FieldLayout::new(field.skittles());
         Self {
             names,
             teams,
-            field: Field::default(),
+            field,
             stick: Stick::default(),
-            layout: FieldLayout::default(),
+            layout,
             active: 0,
             message: "Space / Enterで最初の投てき。矢印キーで棒の表示位置を移動できます（確率は変わりません）。".into(),
         }
@@ -91,11 +91,13 @@ impl Controller {
             .sum::<usize>()
             + 1;
         let before = self.teams[self.active].score_board().value();
-        let knocked_over = throw_stick(&self.stick, self.field.skittles(), rng);
+        let outcome = throw_stick(&self.field, &mut RandomThrow::new(&self.stick, rng)).unwrap();
+        let (field, knocked_over) = outcome.into_parts();
         let point = calc_score(&knocked_over);
         let updated = record_point(&self.teams, self.active, point);
         self.layout = relocate_skittles(&self.layout, &knocked_over, rng);
         self.teams = updated;
+        self.field = field;
         self.message = throw_message(&self.teams[self.active], turn, before, point);
         if let Some(next) = next_team(&self.teams, self.active) {
             self.active = next;

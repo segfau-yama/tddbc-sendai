@@ -2,21 +2,35 @@ use super::*;
 use crate::view::position::Position;
 use ratatui::{Terminal, backend::TestBackend};
 use rust_molkky::Name;
-use rust_molkky::core::{Field, Skittle, calc_score};
+use rust_molkky::core::{Field, FieldGenerator, Skittle, calc_score};
+use rust_molkky::simulation::{ArrayField, StandardFieldGenerator};
 #[test]
 fn 複数モデルから表示を組み立てても得点や配置は変わらない() {
     let model = vec![
         Team::new(Name::new("赤").unwrap()),
         Team::new(Name::new("青").unwrap()),
     ];
-    let field = Field::new(vec![Skittle::new(5)]);
+    let field = ArrayField::new(vec![Skittle::new(5), Skittle::new(12), Skittle::new(12)]);
     let stick = Stick::default();
-    let mut layout = FieldLayout::default();
-    layout.stick = layout.positions[&5];
+    let mut layout = FieldLayout::new(field.skittles());
+    layout.stick = layout.positions[&field.skittles()[0].id()];
+    layout
+        .positions
+        .insert(field.skittles()[1].id(), Position::new(0, 3));
+    layout
+        .positions
+        .insert(field.skittles()[2].id(), Position::new(2, 3));
     let view = compose_game(&model, &field, &stick, &layout, 1, "テスト中");
-    assert_eq!(view.field.pins.len(), 1);
+    assert_eq!(view.field.pins.len(), 3);
+    assert_eq!(view.field.pins[1].number, 12);
+    assert_eq!(view.field.pins[2].number, 12);
+    assert_eq!(view.field.pins[1].position, Position::new(0, 3));
+    assert_eq!(view.field.pins[2].position, Position::new(2, 3));
     assert_eq!(view.field.pins[0].number, 5);
-    assert_eq!(view.field.pins[0].position, layout.positions[&5]);
+    assert_eq!(
+        view.field.pins[0].position,
+        layout.positions[&field.skittles()[0].id()]
+    );
     assert_eq!(view.field.pins[0].probability, 0.25);
     layout.stick = Position::new(i32::MAX, i32::MIN);
     assert_eq!(
@@ -67,18 +81,13 @@ fn 三チームでも勝者の得点行が見える() {
         Team::new(Name::new("OUT_A").unwrap()).with_score_board(disqualified.clone()),
         Team::new(Name::new("OUT_B").unwrap()).with_score_board(disqualified),
     ];
+    let field = StandardFieldGenerator.generate();
+    let layout = FieldLayout::new(field.skittles());
     let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
     terminal
         .draw(|frame| {
             frame.render_widget(
-                compose_game(
-                    &game,
-                    &Field::default(),
-                    &Stick::default(),
-                    &FieldLayout::default(),
-                    2,
-                    "",
-                ),
+                compose_game(&game, &field, &Stick::default(), &layout, 2, ""),
                 frame.area(),
             )
         })

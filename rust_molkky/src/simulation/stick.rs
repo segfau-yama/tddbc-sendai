@@ -1,4 +1,4 @@
-/// 投てき条件。位置は表示側が管理する。
+/// 確率方式の投てき条件。物理エンジンの棒の状態とは独立して扱う。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stick {
     fall_probability: f64,

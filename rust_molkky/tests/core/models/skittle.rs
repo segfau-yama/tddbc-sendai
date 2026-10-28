@@ -27,3 +27,13 @@ fn 番号13のスキットルは生成時に拒否する() {
 fn 複数本に範囲外の番号が含まれると生成時に拒否する() {
     calc_score(&[Skittle::new(1), Skittle::new(13)]);
 }
+
+#[test]
+fn 同じ番号でも別個体は別idでコピーはidを保つ() {
+    let first = Skittle::new(12);
+    let second = Skittle::new(12);
+    assert_ne!(first.id(), second.id());
+    let copied = first;
+    assert_eq!(copied.id(), first.id());
+    assert_eq!(calc_score(&[first, second]).value(), 2);
+}

@@ -1,15 +1,13 @@
+use super::FieldLayout;
 use crate::view::{
-    field::{FieldLayout, FieldTui},
-    molkky::MolkkyTui,
-    score::ScoreBoardTui,
-    skittle::SkittleTui,
-    stick::StickTui,
+    field::FieldTui, molkky::MolkkyTui, score::ScoreBoardTui, skittle::SkittleTui, stick::StickTui,
     team::TeamTui,
 };
 use rust_molkky::core::{
-    CONSECUTIVE_ZERO_LIMIT, Field, GameStatus, Point, RESET_SCORE, ScoreBoard, Stick, TARGET_SCORE,
-    Team, judge_game,
+    CONSECUTIVE_ZERO_LIMIT, Field, GameStatus, Point, RESET_SCORE, ScoreBoard, TARGET_SCORE, Team,
+    judge_game,
 };
+use rust_molkky::simulation::Stick;
 
 pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
     let mut notice = String::new();
@@ -31,7 +29,7 @@ pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
 
 pub(crate) fn compose_game(
     teams: &[Team],
-    field: &Field,
+    field: &dyn Field,
     stick: &Stick,
     layout: &FieldLayout,
     active: usize,
@@ -75,7 +73,7 @@ pub(crate) fn compose_game(
             .iter()
             .map(|pin| SkittleTui {
                 number: pin.number(),
-                position: layout.positions[&pin.number()],
+                position: layout.positions[&pin.id()],
                 probability: stick.fall_probability(),
             })
             .collect(),

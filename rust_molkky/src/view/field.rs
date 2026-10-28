@@ -11,39 +11,6 @@ use ratatui::{
     },
 };
 
-/// 表示状態。ピンの座標は採点や抽選に影響しない。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct FieldLayout {
-    pub(crate) positions: BTreeMap<i32, Position>,
-    pub(crate) stick: Position,
-}
-impl Default for FieldLayout {
-    fn default() -> Self {
-        // 投てき側から2・3・4・3本の並び。数値は描画用で、メートルではない。
-        let rows = [
-            (1, -1, 3),
-            (2, 1, 3),
-            (3, -2, 4),
-            (10, 0, 4),
-            (4, 2, 4),
-            (5, -3, 5),
-            (11, -1, 5),
-            (12, 1, 5),
-            (6, 3, 5),
-            (7, -2, 6),
-            (9, 0, 6),
-            (8, 2, 6),
-        ];
-        Self {
-            positions: rows
-                .into_iter()
-                .map(|(n, x, y)| (n, Position::new(x, y)))
-                .collect(),
-            stick: Position::new(0, 0),
-        }
-    }
-}
-
 pub(crate) struct FieldTui {
     pub(crate) pins: Vec<SkittleTui>,
     pub(crate) stick: StickTui,

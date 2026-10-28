@@ -1,26 +1,33 @@
-use rust_molkky::{Field, Skittle};
-#[test]
-fn 座標なしで指定したピン集合を保持する() {
-    let pins = vec![Skittle::new(5), Skittle::new(8)];
-    assert_eq!(Field::new(pins.clone()).skittles(), pins);
+use rust_molkky::{Field, FieldGenerator, Skittle};
+
+#[derive(Clone)]
+struct CoordinateField {
+    pins: Vec<Skittle>,
+    positions: Vec<(f64, f64)>,
 }
-#[test]
-#[should_panic(expected = "スキットル番号が重複しています: 5")]
-fn 同じ番号のピンを二本持てない() {
-    Field::new(vec![Skittle::new(5); 2]);
+impl Field for CoordinateField {
+    fn skittles(&self) -> &[Skittle] {
+        &self.pins
+    }
 }
-#[test]
-fn 既定のピン集合は一から十二番を一つずつ持つ() {
-    assert_eq!(
-        Field::default()
-            .skittles()
-            .iter()
-            .map(Skittle::number)
-            .collect::<Vec<_>>(),
-        (1..=12).collect::<Vec<_>>()
-    );
+struct DuplicateTwelves;
+impl FieldGenerator for DuplicateTwelves {
+    type Field = CoordinateField;
+    fn generate(&self) -> CoordinateField {
+        CoordinateField {
+            pins: vec![Skittle::new(12), Skittle::new(12)],
+            positions: vec![(0.0, 0.0), (1.0, 0.0)],
+        }
+    }
 }
+
 #[test]
-fn 空のピン集合も表せる() {
-    assert!(Field::new(vec![]).skittles().is_empty());
+fn 生成方法で座標付きの独自fieldを返し同番号の別個体を配置できる() {
+    let generator: &dyn FieldGenerator<Field = CoordinateField> = &DuplicateTwelves;
+    let field = generator.generate();
+    assert_eq!(field.skittles().len(), 2);
+    assert_ne!(field.skittles()[0].id(), field.skittles()[1].id());
+    assert_eq!(field.positions, [(0.0, 0.0), (1.0, 0.0)]);
+    let erased: &dyn Field = &field;
+    assert_eq!(erased.skittles(), field.skittles());
 }

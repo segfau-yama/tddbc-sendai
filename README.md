@@ -19,8 +19,9 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 
 | 場所 | 責務 |
 | --- | --- |
-| src/core/models/ | Skittle・Stick・Field・Point・ScoreBoard・Team・Id・Name・GameStatusというドメインモデル |
-| src/core/services/ | calc_score（採点）、throw_stick（抽選）、judge_game（継続・勝敗判定）、next_team（次チーム）、record_point（記録制約と不変更新） |
+| src/core/models/ | Skittle・Point・ScoreBoard・Team・Id・Name・GameStatus、Field/FieldGeneratorのtrait |
+| src/core/services/ | calc_score（採点）、ThrowStrategy/ThrowOutcome・throw_stick（投てきの契約と結果検証）、judge_game（継続・勝敗判定）、next_team（次チーム）、record_point（記録制約と不変更新） |
+| src/simulation/ | ArrayField、標準Field生成、確率投てきRandomThrowと確率設定Stick |
 | src/game/ | coreとviewの合成、投てき後の表示上の移動 |
 | src/tui/ | Controllerによる端末入力、操作制御、描画の呼び出し |
 | src/view/ | 表示専用のPosition、描画構造体、Widget・CanvasDraw |
@@ -45,7 +46,8 @@ assert_eq!(judge_game(&updated), GameStatus::InProgress);
 
 従来のrust_molkky::Skittleやrust_molkky::core::calc_score等の公開名も再公開しています。
 PositionとSkittle/Stickの位置APIはcoreから削除しました。Positionはview内の表示専用型です。
-Fieldは全チーム共通のピン集合として残り、位置を持ちません。TUIのControllerがチーム一覧と共通のField・Stickを個別に保持します。
+coreのFieldはピン集合を参照するtraitです。位置や世界状態は具体的なField実装が持てます。
+TUIのControllerはチーム一覧と配列Field・確率設定Stickを個別に保持します。gameがピンのIdと表示座標を対応づけます。
 
 ### チームの識別子と名前
 
@@ -57,23 +59,37 @@ Name::newはNameErrorを返し、TUIでは不正な名前を端末初期化前�
 team.id()で一覧内の順番や名前に依存せず検索できます。同じIDの二重登録はjudge_gameが拒否します。
 既存の手番・勝者・記録APIのindexは一覧内の位置として維持しています。
 
-### 投てきと採点
+### Field生成・投てき・採点
 
-Stick::new(probability)で倒れる確率を0〜1で指定します。既定値は0.25です。
-throw_stickは各番号を独立して抽選します。これはゲーム用の簡略モデルで、公式の確率や物理シミュレーションではありません。
-範囲外・NaN・無限大の確率、1〜12以外の番号、重複番号を拒否します。
+coreにはField・FieldGenerator・ThrowStrategyの契約のみを定義します。
+FieldGenerator::generateが関連型のFieldを生成し、throw_stickは選択されたStrategyへ一投全体を委譲します。
+投てきはResult<ThrowOutcome<F>, Error>で新しいFieldと倒れた個体を返し、入力Fieldは変更しません。
+物理エンジンの状態・位置・投てき条件・失敗の型は実装側で定義できます。
+物理エンジンそのものは未実装です。配列以外のFieldとの接続は座標付きのテスト実装とAPI例で確認しています。
 
 ```rust
-use rust_molkky::{Skittle, Stick, calc_score, throw_stick};
-let pins = [Skittle::new(5), Skittle::new(8)];
-let knocked = throw_stick(&Stick::new(1.0), &pins, &mut rand::rng());
-assert_eq!(calc_score(&knocked).value(), 2);
+use rust_molkky::{Field, FieldGenerator, calc_score, throw_stick};
+use rust_molkky::simulation::{StandardFieldGenerator, RandomThrow, Stick};
+let field = StandardFieldGenerator.generate();
+let stick = Stick::new(1.0);
+let mut rng = rand::rng();
+let mut strategy = RandomThrow::new(&stick, &mut rng);
+let result = throw_stick(&field, &mut strategy).unwrap();
+assert_eq!(result.knocked_over(), field.skittles());
+assert_eq!(calc_score(result.knocked_over()).value(), 12);
 ```
 
-0本なら0点、1本なら番号、複数本なら本数です。ScoreBoard::addは履歴を追加した新しい得点表を返します。
-50点超過で25点へ戻し、3回連続0点で失格とします。生の点数履歴は保持します。
-ScoreBoard::is_winnerは既存APIとして50点到達を示し、ゲーム全体の勝者はjudge_gameが決めます。
-was_resetは直近の25点補正の説明で引き続き使います。
+StandardFieldGeneratorは1〜12を各1本生成し、ArrayFieldは任意の個体集合を保持します。
+SkittleはIdと得点用の番号を持ち、同じ12番を2本置けます。同じIDの二重登録・二重採点は拒否します。
+RandomThrowは各個体を独立抽選します。Stick::new(probability)は0〜1の確率設定で、既定値は0.25です。
+これはゲーム用の簡略モデルで、公式の確率や物理シミュレーションではありません。
+範囲外・NaN・無限大の確率、1〜12以外の番号を拒否します。
+投てき後の個体集合の変更、対象外個体、結果内の同ID重複も共通の入口で拒否します。
+
+0本なら0点、1本なら番号、複数本なら本数です。13本以上の変則構成も本数で採点します。
+ScoreBoard::addは履歴を追加した新しい得点表を返し、50点超過で25点、3回連続0点で失格とします。
+ScoreBoard::is_winnerは50点到達を示し、ゲーム全体の勝者はjudge_gameが決めます。
+was_resetは直近の25点補正の説明に使います。
 
 ### 勝敗判定
 

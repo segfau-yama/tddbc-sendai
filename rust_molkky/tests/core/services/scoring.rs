@@ -36,14 +36,13 @@ mod multiple_skittles {
     }
 
     #[test]
-    #[should_panic(expected = "スキットル番号が重複しています: 5")]
-    fn 同じ番号の別スキットルを重複として拒否する() {
-        calc_score(&[Skittle::new(5), Skittle::new(5)]);
+    fn 同じ番号の別スキットルは本数で採点する() {
+        assert_eq!(calc_score(&[Skittle::new(5), Skittle::new(5)]).value(), 2);
     }
 
     #[test]
-    #[should_panic(expected = "スキットル番号が重複しています: 5")]
-    fn 同じ番号のコピーを重複として拒否する() {
+    #[should_panic(expected = "スキットルIDが重複しています")]
+    fn 同じ個体のコピーを重複として拒否する() {
         let pin = Skittle::new(5);
         calc_score(&[pin, pin]);
     }
@@ -71,4 +70,11 @@ mod immutability {
         assert_eq!(skittles[0].number(), 12);
         assert_eq!(thrown.value(), 5);
     }
+}
+
+#[test]
+fn 標準の十二本に別個体の十二番を追加した十三本を採点できる() {
+    let mut pins: Vec<_> = (1..=12).map(Skittle::new).collect();
+    pins.push(Skittle::new(12));
+    assert_eq!(calc_score(&pins).value(), 13);
 }

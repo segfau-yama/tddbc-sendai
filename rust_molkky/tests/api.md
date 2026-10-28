@@ -94,57 +94,71 @@ let borrowed: &[Team] = &teams;
 borrowed[0] = record_point(borrowed, 0, calc_score(&[])).remove(0);
 ```
 
-## 入力を変更せず倒れたピンを返す
+## Strategyから入力を変更せず投てき結果を得る
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Skittle, Stick, calc_score, throw_stick};
+use rust_molkky::{Field, Skittle, calc_score, throw_stick};
+use rust_molkky::simulation::{ArrayField, RandomThrow, Stick};
 let mut rng = StdRng::seed_from_u64(42);
-let targets = [Skittle::new(5)];
-let knocked_over = throw_stick(&Stick::new(1.0), &targets, &mut rng);
-assert_eq!(knocked_over, targets);
-assert_eq!(calc_score(&knocked_over).value(), 5);
-assert_eq!(targets, [Skittle::new(5)]);
+let pin = Skittle::new(5);
+let field = ArrayField::new(vec![pin]);
+let stick = Stick::new(1.0);
+let outcome = throw_stick(&field, &mut RandomThrow::new(&stick, &mut rng)).unwrap();
+assert_eq!(outcome.knocked_over(), [pin]);
+assert_eq!(calc_score(outcome.knocked_over()).value(), 5);
+assert_eq!(field.skittles(), [pin]);
+assert_eq!(outcome.field().skittles(), [pin]);
 ```
 
 ## 投てき対象にNoneは指定できない
 
 ```compile_fail
-use rust_molkky::{Stick, throw_stick};
-throw_stick(&Stick::default(), None, &mut rand::rng());
+use rust_molkky::throw_stick;
+use rust_molkky::simulation::{RandomThrow, Stick};
+let stick = Stick::default();
+let mut rng = rand::rng();
+let mut strategy = RandomThrow::new(&stick, &mut rng);
+throw_stick(None, &mut strategy);
 ```
 
-## 外側で投てきと不変な状態の更新を組み合わせる
+## 投てき結果から採点と不変な状態の更新を組み合わせる
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Name, Field, Skittle, Stick, Team, calc_score, record_point, throw_stick};
+use rust_molkky::{Name, Field, Skittle, Team, calc_score, record_point, throw_stick};
+use rust_molkky::simulation::{ArrayField, RandomThrow, Stick};
 let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
-let field = Field::new(vec![Skittle::new(5)]);
+let pin = Skittle::new(5);
+let field = ArrayField::new(vec![pin]);
 let stick = Stick::new(1.0);
 let mut rng = StdRng::seed_from_u64(42);
-let knocked_over = throw_stick(&stick, field.skittles(), &mut rng);
-let updated = record_point(&original, 0, calc_score(&knocked_over));
+let outcome = throw_stick(&field, &mut RandomThrow::new(&stick, &mut rng)).unwrap();
+let updated = record_point(&original, 0, calc_score(outcome.knocked_over()));
 assert_eq!(original[0].score_board().value(), 0);
 assert_eq!(updated[0].score_board().value(), 5);
-assert_eq!(field.skittles(), [Skittle::new(5)]);
+assert_eq!(field.skittles(), [pin]);
 ```
 
-## 座標なしに棒ごとの確率を指定する
+## 確率方式を具体的なStrategyとして選択する
 
 ```rust
-use rust_molkky::{Skittle, Stick, throw_stick};
-let pins = [Skittle::new(5), Skittle::new(8)];
+use rust_molkky::{Field, Skittle, throw_stick};
+use rust_molkky::simulation::{ArrayField, RandomThrow, Stick};
+let field = ArrayField::new(vec![Skittle::new(5), Skittle::new(8)]);
 assert_eq!(Stick::default().fall_probability(), 0.25);
-assert!(throw_stick(&Stick::new(0.0), &pins, &mut rand::rng()).is_empty());
-assert_eq!(throw_stick(&Stick::new(1.0), &pins, &mut rand::rng()), pins);
+let zero = throw_stick(&field, &mut RandomThrow::new(&Stick::new(0.0), &mut rand::rng())).unwrap();
+let all = throw_stick(&field, &mut RandomThrow::new(&Stick::new(1.0), &mut rand::rng())).unwrap();
+assert!(zero.knocked_over().is_empty());
+assert_eq!(all.knocked_over(), field.skittles());
 ```
 
-## Fieldのピン集合を読み取りAPIから書き換えることはできない
+## Fieldの共有参照からピン集合を書き換えることはできない
 
 ```compile_fail
-use rust_molkky::{Field, Skittle};
-let field = Field::default();
+use rust_molkky::{Field, FieldGenerator, Skittle};
+use rust_molkky::simulation::StandardFieldGenerator;
+let field = StandardFieldGenerator.generate();
 field.skittles()[0] = Skittle::new(12);
 ```
 
@@ -198,18 +212,17 @@ assert_eq!(next_team(&teams, 1), None);
 assert_eq!(teams[2].score_board().value(), 0);
 ```
 
-## FieldとStickは採点データと独立して保持する
+## 同番号の別個体を配置し採点できる
 
 ```rust
-use rust_molkky::{Name, Field, Skittle, Stick, Team, calc_score, record_point};
-let teams = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
-let field = Field::new(vec![Skittle::new(5)]);
-let stick = Stick::new(0.75);
-let recorded = record_point(&teams, 1, calc_score(&[Skittle::new(5)]));
-assert_eq!(field.skittles(), [Skittle::new(5)]);
-assert_eq!(stick.fall_probability(), 0.75);
-assert_eq!(teams[1].score_board().value(), 0);
-assert_eq!(recorded[1].score_board().value(), 5);
+use rust_molkky::{Field, Skittle, calc_score};
+use rust_molkky::simulation::ArrayField;
+let first = Skittle::new(12);
+let second = Skittle::new(12);
+assert_ne!(first.id(), second.id());
+let field = ArrayField::new(vec![first, second]);
+assert_eq!(calc_score(field.skittles()).value(), 2);
+assert_eq!(calc_score(&[first]).value(), 12);
 ```
 
 ## Pointの記録結果を破棄できない
@@ -302,4 +315,36 @@ Name(String::new());
 ```compile_fail
 use rust_molkky::Id;
 Id(uuid::Uuid::nil());
+```
+
+## 座標付きFieldと独自の一投をStrategyとして実装する
+
+```rust
+use rust_molkky::{Field, FieldGenerator, Skittle, ThrowOutcome, ThrowStrategy, throw_stick};
+#[derive(Clone)]
+struct Board { pins: Vec<Skittle>, x: f64 }
+impl Field for Board {
+    fn skittles(&self) -> &[Skittle] { &self.pins }
+}
+struct Setup;
+impl FieldGenerator for Setup {
+    type Field = Board;
+    fn generate(&self) -> Board { Board { pins: vec![Skittle::new(12), Skittle::new(12)], x: 0.0 } }
+}
+// 座標更新の接続例であり、物理シミュレーションではない。
+struct Move;
+impl ThrowStrategy<Board> for Move {
+    type Error = std::convert::Infallible;
+    fn throw(&mut self, field: &Board) -> Result<ThrowOutcome<Board>, Self::Error> {
+        let mut updated = field.clone();
+        updated.x += 1.0;
+        Ok(ThrowOutcome::new(updated, vec![field.pins[0]]))
+    }
+}
+let field = Setup.generate();
+let strategy: &mut dyn ThrowStrategy<Board, Error = std::convert::Infallible> = &mut Move;
+let result = throw_stick(&field, strategy).unwrap();
+assert_eq!(result.field().x, 1.0);
+assert_eq!(field.x, 0.0);
+assert_eq!(result.knocked_over(), [field.pins[0]]);
 ```

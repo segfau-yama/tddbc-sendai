@@ -2,6 +2,41 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
+## Skittleの個体識別とField・投てきのStrategy化（今回の変更）
+
+- Skittleに既存Idを追加し、番号は得点用として扱う。同番号の別個体は許可し、同IDの二重登録・二重採点は拒否する。番号範囲1〜12は維持する。
+- coreにはField（ピン集合への参照）、FieldGenerator（関連型のField生成）、ThrowStrategy（任意のFieldから一投の結果を生成）の契約を置く。座標型や物理エンジンへの依存は置かない。
+- 投てき結果は新しいFieldと倒れたピンを返す。入力Fieldは共有参照とし、物理世界の位置更新も新しいスナップショットで返せるようにする。乱数源はStrategy内部で更新する。エンジンの失敗は関連Error型のResultで返す。
+- 現在の配列Field・標準生成・確率投てき・確率設定Stickはsimulationへ移す。実物の物理エンジンは今回追加せず、座標付きFieldと決定的な投てきのテスト実装で差し替えを検証する。
+- 表示上の位置対応は番号からIdへ変更し、coreとviewを接続するgameで管理する。同じ12番が2本あっても別々に配置・移動できるようにする。
+- [x] 変更前の全テストを確認する。
+- [x] 同番号の別個体と同ID拒否、新しいStrategy APIのRedを確認する。
+- [x] 配列・座標付きFieldとStrategyの交換、入力不変性、失敗伝播・不正結果拒否を確認する。
+- [x] TUI・ドキュメント・既存テストを更新し、全チェックと対話操作を確認する。
+
+### 公開API・不変条件
+
+- Field::skittlesは共有スライスを返すだけの契約。FieldGeneratorは関連型Fieldとgenerateを持ち、具体的な配列・座標・世界状態を強制しない。生成Strategyの設定は実装側で保持する。
+- ThrowStrategy<F>::throw(&mut self, &F) -> Result<ThrowOutcome<F>, Error>で一投全体を計算する。Trait自体はFieldのCloneを要求しない。確率実装RandomThrowだけが入力の状態を複製するためCloneを要求する。
+- throw_stick(&field, &mut strategy)は入力と出力FieldのID重複、出力個体集合の変更、倒れた個体の二重カウントと対象外個体を検証する。失敗はエンジンの関連Error型をそのまま伝播し、実装が契約に違反する不正な個体集合は既存APIの検証方針と同じpanicで拒否する。
+- ThrowOutcomeはFieldと倒れた個体を非公開フィールドに持つ。field()/knocked_over()で参照し、into_partsで所有権を利用側へ移す。物理結果を採点する際もSkittleのIDを作り直さない。
+- 同じField型に対するStrategyはdyn ThrowStrategy<F, Error = E>でも切り替え可能。異なるField型の選択は関連型・ジェネリクスを使う利用側で行う。TUIのモード切り替え画面や物理エンジン本体は追加していない。
+- StandardFieldGenerator/ArrayField/RandomThrow/Stickの具体実装はsimulationへ分離した。旧Field構造体とcore::Stick、旧throw_stickの3引数APIは廃止しており、READMEと実行可能なAPI例を更新した。
+- 変則構成で13本以上になることに対応し、Pointは非負の得点とした。複数本の点数はi32へのチェック付き変換を行い、合計加算はi64で行って50点超過の25点補正を維持する。ピンの番号そのものは1〜12を維持する。
+
+### Red・Green・最終確認
+
+- 変更前のcargo test --lockedは133件成功（/tmp/strategies-baseline.log）。
+- Red：Skittle::idを使う同番号の別個体のテストを先に追加しE0599を確認（/tmp/strategies-id-red.log）。FieldGeneratorと独自の座標付きFieldを使うテストで未実装のE0432/E0404を確認（/tmp/strategies-api-red.log）。その他のStrategy検証は実装後に追加して成功したものであり、事前のRed確認済みとは数えない。
+- Green：同番号の別個体は採点可能とし、既存の同番号拒否テストを新仕様へ更新した。同じ個体をコピーした重複は引き続き拒否する。UUID導入後の等値検証は入力の個体または番号の一覧を使い、毎回新規生成した別個体と比較しない形へ更新した。
+- 配列Fieldの4テストと確率・設定のテストはtests/simulationへ移した。入力重複拒否は独自Fieldにも適用するcore/services/throwのテストで維持した。標準配置の表示テストは位置対応の移動先に合わせてtests/game/placementへ移した。無視・空のテストは追加していない。
+- 座標付きFieldの生成とdyn FieldGenerator、座標更新を返すdyn ThrowStrategyを検証した。これは接続用の決定的な代用品であり、実際の衝突計算を検証したものではない。失敗の伝播、入力不変、対象外・二重カウント・追加/消失/作り直した個体の拒否も確認した。
+- 表示位置をgame::FieldLayoutへ移し、Idをキーにした。別個体の12番2本を片方だけ移動し、異なる位置で描画データへ合成できることを確認した。viewにはcoreへの依存を追加していない。
+- 最終cargo test --lockedは140件成功（core77・バイナリ19・CLI1・simulation11・doc32）、失敗・無視0件。cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功。ログ：/tmp/strategies-final-tests.log。
+- coreに乱数・simulation・Position・端末への依存がないこと、viewにcore依存がないこと、モデルに可変selfがないこと、テスト本体がtests以下で対象と同じファイル名であることを確認した。
+- 100列×30行の擬似端末で右矢印・Space投てき・R再開・Q終了を実行。第1投・確率25.0%の表示、panicなし、終了コード0を確認（/tmp/strategies-tui.log）。
+- 依存関係・ロック・Javaは未変更。物理エンジンの具体実装、任意の得点ルールの差し替え、番号範囲自体の拡張は今回の範囲外。
+
 ## TeamのUUID識別子と名前の値オブジェクト（今回の変更）
 
 - 要求：チーム一覧で個体を識別するUUIDのId型と、文字入力制約を持つName型を導入する。両型はcore/modelsに置き、Teamの非公開フィールドとして保持する。

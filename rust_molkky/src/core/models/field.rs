@@ -1,23 +1,12 @@
-use super::{Skittle, validate_unique_numbers};
+use super::Skittle;
 
-/// 全チーム共通のピン集合。表示位置は持たない。
-#[derive(Clone)]
-pub struct Field {
-    skittles: Vec<Skittle>,
+/// 配列・座標・物理世界など、Fieldの表現に依存しない採点対象。
+pub trait Field {
+    fn skittles(&self) -> &[Skittle];
 }
 
-impl Default for Field {
-    fn default() -> Self {
-        Self::new((1..=12).map(Skittle::new).collect())
-    }
-}
-
-impl Field {
-    pub fn new(skittles: Vec<Skittle>) -> Self {
-        validate_unique_numbers(&skittles);
-        Self { skittles }
-    }
-    pub fn skittles(&self) -> &[Skittle] {
-        &self.skittles
-    }
+/// ルールや用途に応じた具体的なFieldを生成するStrategy。
+pub trait FieldGenerator {
+    type Field: Field;
+    fn generate(&self) -> Self::Field;
 }

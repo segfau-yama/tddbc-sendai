@@ -3,18 +3,18 @@ pub const RESET_SCORE: i32 = 25;
 pub const CONSECUTIVE_ZERO_LIMIT: usize = 3;
 
 fn apply_point(total: i32, point: Point) -> (i32, bool) {
-    let next = total + point.value();
-    let reset = next > TARGET_SCORE;
-    (if reset { RESET_SCORE } else { next }, reset)
+    let next = i64::from(total) + i64::from(point.value());
+    let reset = next > i64::from(TARGET_SCORE);
+    (if reset { RESET_SCORE } else { next as i32 }, reset)
 }
 
-/// 1回の投てきの点数。calc_scoreが0〜12の範囲を保証する。
+/// 1回の投てきの非負の点数。変則構成では倒れた本数が12を超えることもある。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Point(i32);
 
 impl Point {
     pub(crate) fn new(value: i32) -> Self {
-        assert!((0..=12).contains(&value), "点数は0〜12です");
+        assert!(value >= 0, "点数は0以上です");
         Self(value)
     }
 
