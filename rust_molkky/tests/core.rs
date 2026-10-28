@@ -2,8 +2,6 @@
 mod field;
 #[path = "core/services/judge.rs"]
 mod judge;
-#[path = "core/models/molkky.rs"]
-mod molkky;
 #[path = "core/models/score.rs"]
 mod score;
 #[path = "core/services/scoring.rs"]

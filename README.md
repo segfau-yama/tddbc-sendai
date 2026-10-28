@@ -19,32 +19,33 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 
 | 場所 | 責務 |
 | --- | --- |
-| src/core/models/ | Skittle・Stick・Field・Point・ScoreBoard・Team・Molkky・GameStatusというドメインモデル |
-| src/core/services/ | calc_score（採点）、throw_stick（抽選）、judge_game（勝敗判定） |
+| src/core/models/ | Skittle・Stick・Field・Point・ScoreBoard・Team・GameStatusというドメインモデル |
+| src/core/services/ | calc_score（採点）、throw_stick（抽選）、judge_game（継続・勝敗判定）、next_team（次チーム）、record_point（記録制約と不変更新） |
 | src/game/ | coreとviewの合成、投てき後の表示上の移動 |
 | src/tui/ | Controllerによる端末入力、操作制御、描画の呼び出し |
 | src/view/ | 表示専用のPosition、描画構造体、Widget・CanvasDraw |
 
 core/modelsという名前は、エンティティと値オブジェクトの両方をまとめるためのものです。
-Molkkyは集約ルート役、Teamは参加チーム、PointやScoreBoardは不変な値として扱います。
+Teamは参加チーム、PointやScoreBoardは不変な値として扱います。試合を包むMolkky構造体は廃止し、チーム一覧から状態を導出します。
 モデルの更新は新しい値を返し、乱数源と端末入出力は呼び出し側で扱います。
 viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示値から描画します。
 
 ### ライブラリの利用
 
 ```rust
-use rust_molkky::core::models::{Molkky, Skittle, Team};
-use rust_molkky::core::services::calc_score;
+use rust_molkky::core::models::{GameStatus, Skittle, Team};
+use rust_molkky::core::services::{calc_score, judge_game, record_point};
 
-let original = Molkky::new(vec![Team::new("赤"), Team::new("青")]);
-let updated = original.record_point(0, calc_score(&[Skittle::new(11)]));
-assert_eq!(original.teams()[0].score_board().value(), 0);
-assert_eq!(updated.teams()[0].score_board().value(), 11);
+let original = vec![Team::new("赤"), Team::new("青")];
+let updated = record_point(&original, 0, calc_score(&[Skittle::new(11)]));
+assert_eq!(original[0].score_board().value(), 0);
+assert_eq!(updated[0].score_board().value(), 11);
+assert_eq!(judge_game(&updated), GameStatus::InProgress);
 ```
 
 従来のrust_molkky::Skittleやrust_molkky::core::calc_score等の公開名も再公開しています。
 PositionとSkittle/Stickの位置APIはcoreから削除しました。Positionはview内の表示専用型です。
-Fieldは全チーム共通のピン集合として残り、位置を持ちません。Molkkyは共通のFieldとStickを1組だけ所有します。
+Fieldは全チーム共通のピン集合として残り、位置を持ちません。TUIのControllerがチーム一覧と共通のField・Stickを個別に保持します。
 
 ### 投てきと採点
 
@@ -61,7 +62,7 @@ assert_eq!(calc_score(&knocked).value(), 2);
 
 0本なら0点、1本なら番号、複数本なら本数です。ScoreBoard::addは履歴を追加した新しい得点表を返します。
 50点超過で25点へ戻し、3回連続0点で失格とします。生の点数履歴は保持します。
-ScoreBoard::is_winnerは既存APIとして50点到達を示し、ゲーム全体の勝者はjudge_game/Molkkyが決めます。
+ScoreBoard::is_winnerは既存APIとして50点到達を示し、ゲーム全体の勝者はjudge_gameが決めます。
 was_resetは直近の25点補正の説明で引き続き使います。
 
 ### 勝敗判定
@@ -69,13 +70,15 @@ was_resetは直近の25点補正の説明で引き続き使います。
 judge_game(&[Team])は失格チームを含む元の参加リストを受け取り、次を返します。
 
 - GameStatus::InProgress：進行中。
-- GameStatus::Won { team_index }：50点到達、または2チーム以上の参加から最後の生存チームになった。
-- GameStatus::FinishedWithoutWinner：全チーム失格で終了。
+- GameStatus::Finished { winner: Some(index) }：終了し、指定チームが勝利。50点到達、または2チーム以上の参加から最後の生存チームになった。
+- GameStatus::Finished { winner: None }：全チーム失格で終了。
 
-Molkky::statusは同じサービスを呼び、result/is_finished/終了後の記録禁止にも同じ判定を使います。
+終了という共通状態に勝者の有無をまとめています。GameStatusは判定結果であり、チームや得点履歴そのものは所有しません。
 単独参加は50点で勝ち、3回連続0点なら勝者なしで終了します。
 空の参加者、複数の50点到達チーム、終了・失格後に記録がある不正履歴は拒否します。
-coreの記録APIは任意チームへの入力を許し、TUIのControllerが失格チームを飛ばして手番を進めます。
+record_point(&teams, index, point)は終了後・失格チーム・範囲外の記録を拒否し、新しいチーム一覧を返します。
+next_team(&teams, current)は失格チームを飛ばした次のインデックスを返し、終了後はNoneを返します。
+任意のチームへの記録は許容し、利用側がnext_teamの結果を手番として保持します。
 
 ### 表示とテスト
 

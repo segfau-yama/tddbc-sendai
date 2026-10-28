@@ -7,7 +7,8 @@ use crate::view::{
     team::TeamTui,
 };
 use rust_molkky::core::{
-    CONSECUTIVE_ZERO_LIMIT, GameStatus, Molkky, Point, RESET_SCORE, ScoreBoard, TARGET_SCORE, Team,
+    CONSECUTIVE_ZERO_LIMIT, Field, GameStatus, Point, RESET_SCORE, ScoreBoard, Stick, TARGET_SCORE,
+    Team, judge_game,
 };
 
 pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
@@ -29,28 +30,35 @@ pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
 }
 
 pub(crate) fn compose_game(
-    game: &Molkky,
+    teams: &[Team],
+    field: &Field,
+    stick: &Stick,
     layout: &FieldLayout,
     active: usize,
     message: &str,
 ) -> MolkkyTui {
-    let winner = game.result();
-    let banner = match game.status() {
-        GameStatus::Won { team_index } => format!(
+    let status = judge_game(teams);
+    let winner = match status {
+        GameStatus::InProgress => None,
+        GameStatus::Finished { winner } => winner,
+    };
+    let banner = match status {
+        GameStatus::Finished {
+            winner: Some(team_index),
+        } => format!(
             " MÖLKKY  |  {}の勝利！  Rで新しいゲーム",
-            game.teams()[team_index].name()
+            teams[team_index].name()
         ),
-        GameStatus::FinishedWithoutWinner => {
+        GameStatus::Finished { winner: None } => {
             " MÖLKKY  |  全チームが失格。勝者なし。Rで新しいゲーム".into()
         }
         GameStatus::InProgress => format!(
             " MÖLKKY  |  {}の投てき  |  {}チーム",
-            game.teams()[active].name(),
-            game.teams().len()
+            teams[active].name(),
+            teams.len()
         ),
     };
-    let teams = game
-        .teams()
+    let teams = teams
         .iter()
         .enumerate()
         .map(|(index, team)| TeamTui {
@@ -62,14 +70,13 @@ pub(crate) fn compose_game(
         })
         .collect();
     let field = FieldTui {
-        pins: game
-            .field()
+        pins: field
             .skittles()
             .iter()
             .map(|pin| SkittleTui {
                 number: pin.number(),
                 position: layout.positions[&pin.number()],
-                probability: game.stick().fall_probability(),
+                probability: stick.fall_probability(),
             })
             .collect(),
         stick: StickTui {

@@ -2,6 +2,29 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
+## Molkkyの削除とjudgeサービスへの集約（今回の変更）
+
+- Molkkyの所有・委譲を廃止し、チーム一覧・Field・Stickを利用側が個別に保持する。既存の得点ルールと不変更新を維持する。
+- GameStatusはInProgressとFinished { winner: Option<usize> }に整理する。終了という共通点をまとめ、Some(index)は勝者あり、Noneは全員失格による勝者なしを表す。状態はチーム履歴から導出し、重複保存しない。
+- judge.rsにjudge_game、次チーム判定next_team、記録可能性を検証して新しいチーム一覧を返すrecord_pointを集約する。履歴追加と採点規則は引き続きScoreBoard/calc_scoreが担う。
+- [x] 変更前のテストを実行する。
+- [x] 新しい状態・関数のテストでRedを確認する。
+- [x] Molkkyのテストをjudge.rsへ移し、終了後・失格・不正履歴・補正・不変性の検証を維持する。
+- [x] UIとドキュメントを更新し、テスト・build・fmt・Clippy・差分を検証する。
+
+### Red・Green・最終確認
+
+- 変更前のcargo test --lockedは119件成功（core74・バイナリ19・doc26）。ログ：/tmp/judge-baseline.log。
+- Red：next_team・record_point・GameStatus::Finishedを使う2テストを先に追加し、関数未実装のE0425と列挙子未実装のE0599で失敗することを確認した（/tmp/judge-red.log）。
+- Green：judge.rsに関数を実装し、旧Molkkyのテストをtests/core/services/judge.rsへ移した。型に依存する構築テストは判定時の入力検証に置き換え、終了後の更新拒否・失格・超過補正・元データ不変のアサーションを維持した。
+- Field/StickをMolkky内で差し替える1テストは所有モデル廃止により削除した。分離後の共有Field/Stickは既存Controllerテストと、独立保持を検証するAPIドキュメントの実行例で確認する。2つのcompile_fail例も削除したAPIのimport失敗で通すことを避け、記録結果の破棄禁止と共有参照の更新禁止に変更した。
+- next_teamの無効インデックス・勝者なし終了・50点での終了・循環の追加確認は実装後に成功したもので、Red確認済みとは数えない。
+- 最終cargo test --lockedは121件成功（core76・バイナリ19・doc26）、失敗・無視0件。cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功。ログ：/tmp/judge-final-tests.log。
+- 100列×30行の擬似端末で起動し、右矢印・Space投てき・R再開・Q終了を実行。第1投・確率25.0%の表示と終了コード0を確認した（/tmp/judge-tui.log）。
+- README・実行可能なAPI例を更新した。Molkkyの廃止とGameStatusの列挙子変更は公開APIの変更であり、旧呼び出し側はチーム一覧とjudge_game/record_point/next_teamへ移行する。旧APIの別名やラッパーは残さない。
+- GameStatus自体を保存して履歴と同期する仕組みは追加しない。Controllerは毎回チーム一覧から判定し、presentationも判定結果から勝者とバナーを組み立てる。Field/Stickの型と確率方式は今回移動・変更していない。Javaと依存関係は未変更。
+- 過去の記録内の削除済みMolkkyソースへのリンクは、変更前コミットのソースへ向けた。記録の内容は当時の設計として残す。
+
 ## 現在のMolkkyの設計説明とPonytailレビュー（2026-10-28・実装変更なし）
 
 - 対象：src/core/models/molkky.rs全93行とjudge_game、TUI・presentation側の呼び出し。直前の分離案は未実装であり、現在もteams・field・stickの3メンバを所有する。
@@ -190,7 +213,7 @@ net: -15 lines possible.
 - 入力：coreに勝敗判定関数を置き、全チームの状態を使うドメインサービスとして分離する提案。直前の判定オブジェクトをMolkkyのメンバにする案から、状態を持たない関数へ具体化する。これまでの実装しないという範囲を維持する。
 - Ponytailのentry-ponytailからponytailへ進み、通常の関数で表現する。判定器のインスタンス、保持するメンバ、専用traitや差し替えの仕組みは追加しない。
 - 判断：全チームの得点・参加資格から試合状態を返す関数は、ドメインサービスとして分離できる。複数オブジェクトを参照するだけで必ずサービスになるわけではなく、Molkkyに直接置く設計も成立する。今回は勝敗規則を独立した入力・出力で説明・検証するための分離として妥当。
-- 根拠：[Molkky::result/is_finished](src/core/models/molkky.rs)は全チームを参照し、50点到達・最後の生存チーム・全チーム失格を判定する。個々の得点・資格は[ScoreBoard](src/core/models/score.rs)が履歴から返す。
+- 根拠：[Molkky::result/is_finished](https://github.com/segfau-yama/tddbc-sendai/blob/1158399/rust_molkky/src/core/models/molkky.rs)は全チームを参照し、50点到達・最後の生存チーム・全チーム失格を判定する。個々の得点・資格は[ScoreBoard](src/core/models/score.rs)が履歴から返す。
 
 ### 関数の入力と結果
 
@@ -265,7 +288,7 @@ judge_gameの想定するシグネチャは`judge_game(teams: &[Team]) -> GameSt
 | エンティティとして読めるピン | 番号で同じピンを追跡するモデル | [Skittle](src/core/models/skittle.rs)は番号が同じなら移動後も同じピンとして扱う。ただしRustのPartialEqは番号と位置の両方を比べ、スナップショットの値の一致を表している |
 | 値オブジェクト | 個体の識別より、値そのものに意味があるもの | [Point](src/core/models/score.rs)と[Position](src/view/position.rs)。5点という値や座標の値を読み、変更時は別の値を使う |
 | 値として扱える得点状態 | 履歴に基づく状態をまとめて置き換えるもの | ScoreBoardはIDを持たず、履歴を加えた新しい値を返すため値オブジェクトとして説明できる。ただし現在はPartialEq未実装であり、概念上の分類。合計が同じでも履歴が違えば同じ得点状態とは限らない |
-| 集約ルート | 関連する状態の更新窓口となり、集約の不変条件を守るもの | [Molkky](src/core/models/molkky.rs)。Team/ScoreBoard、共通Field/Stickを所有し、record_pointで終了・対象チーム・失格を検証する。明示的なGameIdはなく、1つのRuntimeが1試合を扱う |
+| 集約ルート | 関連する状態の更新窓口となり、集約の不変条件を守るもの | [Molkky](https://github.com/segfau-yama/tddbc-sendai/blob/1158399/rust_molkky/src/core/models/molkky.rs)。Team/ScoreBoard、共通Field/Stickを所有し、record_pointで終了・対象チーム・失格を検証する。明示的なGameIdはなく、1つのRuntimeが1試合を扱う |
 | ドメインサービス | エンティティや値へ自然に属さない、領域の意味を持つ処理 | calc_scoreは倒れたピンから点数を得る関数。[throw_stick/fall_probability](src/core/services/throw.rs)と[relocate_skittles](src/game/placement.rs)も現在のシミュレーションのルール関数。サービス専用クラスは不要 |
 | アプリケーションサービスの役割 | 1つの操作を実行するためにドメインの処理をつなぐもの | [Runtime::throw](src/tui/controller.rs)が投てき→採点→試合更新→配置更新→手番をつなぐ。ただし端末入力・描画呼び出しも同じRuntimeにあり、層が明確に分かれた実装ではない |
 | プレゼンテーション | 利用者へ情報を表示し、操作を受け付ける部分 | MolkkyTui/FieldTui/SkittleTui/ScoreBoardTui等が表示を担当する。現在のビューはcoreへの共有参照を保持する |
@@ -340,7 +363,7 @@ DDDの中心は、対象領域の用語と守る規則をモデルへ一致さ�
 
 | 優先度 | 根拠となる入力・実装と確認結果 | 評価・提案 |
 | --- | --- | --- |
-| 高 | [core/molkky.rs](src/core/models/molkky.rs)のnewは、得点の記録だけでもField::defaultとStickの原点を作り、record_pointも両方を引き継ぐ | 得点・試合管理と空間モデルの結合。Molkkyの整合性を得点・参加状態・勝敗等に絞り、投てき生成や空間配置は別に扱う |
+| 高 | [core/molkky.rs](https://github.com/segfau-yama/tddbc-sendai/blob/1158399/rust_molkky/src/core/models/molkky.rs)のnewは、得点の記録だけでもField::defaultとStickの原点を作り、record_pointも両方を引き継ぐ | 得点・試合管理と空間モデルの結合。Molkkyの整合性を得点・参加状態・勝敗等に絞り、投てき生成や空間配置は別に扱う |
 | 高 | [core/score.rs](src/core/models/score.rs)のcalc_scoreは番号と本数だけを使うが、入力のSkittleはPositionを必ず持つ | calc_scoreをcore/scoring.rs等へ分離し、座標を持たない番号の値を入力にする。Pointの範囲検証と番号の一意性検証を維持する |
 | 中 | ScoreBoard::is_winnerはvalue == 50だけを返す一方、Molkky::resultは最後の生存チームも勝者とする | 得点表はhas_reached_target等で「50点到達」を返し、実際の勝者はMolkkyが判断する。最後の生存チームは0点でも勝てるため、両者は同じ事実ではない |
 | 中 | [tui/runtime.rs](src/tui/controller.rs)だけがactiveを保持して失格チームを飛ばす。現行のrecord_pointは任意チームへの記録APIで、テストも同じチームへの連続記録を許す | ライブ対戦として順番を守るなら、手番・次の参加チームという規則は試合モデルへ。既存APIは記録用という仕様なので、手番の強制は単なる移動ではなく仕様変更として別途扱う |
@@ -480,7 +503,7 @@ gameは1フレームの同じMolkkyから盤面・一覧・得点表を組み立
 ### 前提と判断
 
 - 入力：Componentによるapiの所有の重なりを回避する方法の説明。Ponytailのentry-ponytailからponytailへ進み、既存構造を保つ最小案を選ぶ。「まだ実装しない」という指定に従い、文書だけを変更する。
-- 根拠：[core::Molkky](src/core/models/molkky.rs)が共通のField/StickとTeamを所有し、[Field](src/core/models/field.rs)がSkittleを、[Team](src/core/models/team.rs)がScoreBoardを所有している。
+- 根拠：[core::Molkky](https://github.com/segfau-yama/tddbc-sendai/blob/1158399/rust_molkky/src/core/models/molkky.rs)が共通のField/StickとTeamを所有し、[Field](src/core/models/field.rs)がSkittleを、[Team](src/core/models/team.rs)がScoreBoardを所有している。
 - ここでいう重複とは、同じ現在状態を別の場所にも独立した値として保存し、両方を更新対象にすること。Rustが同一の値を通常の所有権で二重所有できる、という意味ではない。Copy/cloneによる複製は別の値であり、それぞれを現在状態として保つ場合に同期が必要になる。過去の不変なスナップショットを意図して保存することとは区別する。
 - 現在の状態の正本はcore::Molkkyに集約する。Componentはその読み取りとviewへの受け渡しを行う。apiは既存core型の呼称であり、新しいApiラッパーは作らない。
 
@@ -570,7 +593,7 @@ ScoreBoardComponent {
 - 提案:L2,L6,L11: shrink: 【高・既存のcore集約も保持する場合】Componentごとにapiを所有すると、Field/Team/Molkkyとの状態の受け渡し・差し替えが増える。既存集約を正本とし、描画時のComponentはapi/viewへの共有参照を組み合わせる。
 - 提案:L8: yagni: 【中・現在の操作を前提】キーから棒の移動を選ぶためだけのStickControllerフィールドは保持しない。[既存Runtimeのキー分岐とmove_from](src/tui/controller.rs)で足りる。キー変換を分ける場合も、まずはgame内の関数にする。
 
-第1項の根拠は、[core::Molkky](src/core/models/molkky.rs)が共通のField/StickとTeamを所有し、[core::Field](src/core/models/field.rs)がSkittleを、[core::Team](src/core/models/team.rs)がScoreBoardを所有していること。Componentを唯一の正本とする構成ならこの重複はなくなるが、既存の集約との接続も設計し直す必要がある。
+第1項の根拠は、[core::Molkky](https://github.com/segfau-yama/tddbc-sendai/blob/1158399/rust_molkky/src/core/models/molkky.rs)が共通のField/StickとTeamを所有し、[core::Field](src/core/models/field.rs)がSkittleを、[core::Team](src/core/models/team.rs)がScoreBoardを所有していること。Componentを唯一の正本とする構成ならこの重複はなくなるが、既存の集約との接続も設計し直す必要がある。
 
 第2項は、Controllerの実体や入力状態が提示されていないことを踏まえた判断。押下継続・フォーカス等の状態を実際に扱う必要があるなら、Controllerを保持する理由になる。単に型名がControllerであることを問題とはしない。
 
@@ -607,7 +630,7 @@ net: -1 lines possible.
 ### 対象・判断・今回の範囲
 
 - 入力：前回の代替案Dについて、gameがcoreと描画状態を保持する場合の具体的な設計を説明する依頼。前回の「実装せず設計整理のみ」を引き継ぐ。
-- 対象：[core/molkky.rs](src/core/models/molkky.rs)、[core/field.rs](src/core/models/field.rs)、[tui/molkky.rs](src/view/molkky.rs)、[tui/field.rs](src/view/field.rs)、[tui/skittle.rs](src/view/skittle.rs)、[tui/runtime.rs](src/tui/controller.rs)の所有・生成・更新の関係。
+- 対象：[core/molkky.rs](https://github.com/segfau-yama/tddbc-sendai/blob/1158399/rust_molkky/src/core/models/molkky.rs)、[core/field.rs](src/core/models/field.rs)、[tui/molkky.rs](src/view/molkky.rs)、[tui/field.rs](src/view/field.rs)、[tui/skittle.rs](src/view/skittle.rs)、[tui/runtime.rs](src/tui/controller.rs)の所有・生成・更新の関係。
 - 判断：ペアの保持自体が問題なのではなく、座標・得点等を描画側にも永続保存すると同期が必要になる。表示固有の状態を長く保持し、ゲームの値を描画時に渡す形なら、coreの不変性と両立できる。
 - 以下の型・メソッド・ディレクトリはすべて設計案。既存のTUIはcoreを借用する実装のままであり、この形へ変更済みとは扱わない。
 

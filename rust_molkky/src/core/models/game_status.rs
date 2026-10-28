@@ -1,6 +1,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameStatus {
     InProgress,
-    Won { team_index: usize },
-    FinishedWithoutWinner,
+    /// 勝者のインデックス。全チーム失格なら勝者はいない。
+    Finished {
+        winner: Option<usize>,
+    },
 }

@@ -4,21 +4,25 @@ use ratatui::{Terminal, backend::TestBackend};
 use rust_molkky::core::{Field, Skittle, calc_score};
 #[test]
 fn 複数モデルから表示を組み立てても得点や配置は変わらない() {
-    let model = Molkky::new(vec![Team::new("赤"), Team::new("青")])
-        .with_field(Field::new(vec![Skittle::new(5)]));
+    let model = vec![Team::new("赤"), Team::new("青")];
+    let field = Field::new(vec![Skittle::new(5)]);
+    let stick = Stick::default();
     let mut layout = FieldLayout::default();
     layout.stick = layout.positions[&5];
-    let view = compose_game(&model, &layout, 1, "テスト中");
+    let view = compose_game(&model, &field, &stick, &layout, 1, "テスト中");
     assert_eq!(view.field.pins.len(), 1);
     assert_eq!(view.field.pins[0].number, 5);
     assert_eq!(view.field.pins[0].position, layout.positions[&5]);
     assert_eq!(view.field.pins[0].probability, 0.25);
     layout.stick = Position::new(i32::MAX, i32::MIN);
     assert_eq!(
-        compose_game(&model, &layout, 1, "").field.pins[0].probability,
+        compose_game(&model, &field, &stick, &layout, 1, "")
+            .field
+            .pins[0]
+            .probability,
         0.25
     );
-    assert_eq!(model.teams()[0].score_board().value(), 0);
+    assert_eq!(model[0].score_board().value(), 0);
     assert!(view.teams[1].active);
     assert!(!view.teams[0].active);
 }
@@ -54,16 +58,23 @@ fn 補正と失格の説明はドメインの判定結果から作る() {
 fn 三チームでも勝者の得点行が見える() {
     let miss = calc_score(&[]);
     let disqualified = ScoreBoard::new().add(miss).add(miss).add(miss);
-    let game = Molkky::new(vec![
+    let game = vec![
         Team::new("WINNER"),
         Team::new("OUT_A").with_score_board(disqualified.clone()),
         Team::new("OUT_B").with_score_board(disqualified),
-    ]);
+    ];
     let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
     terminal
         .draw(|frame| {
             frame.render_widget(
-                compose_game(&game, &FieldLayout::default(), 2, ""),
+                compose_game(
+                    &game,
+                    &Field::default(),
+                    &Stick::default(),
+                    &FieldLayout::default(),
+                    2,
+                    "",
+                ),
                 frame.area(),
             )
         })
