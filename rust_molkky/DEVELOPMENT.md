@@ -2,7 +2,38 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## fallの命名とStick/Fieldの合成案（今回の設計レビュー・未実装）
+## Shape・個体状態・hitの判定関数案（今回の設計レビュー・未実装）
+
+- 入力：描画可能なcoreモデルへOptionのShapeを追加する案、Stick/Skittleへの状態追加、Molkky::throwをhitへ改名して判定関数へ委譲する案。最新の指定では判定関数は棒と個体一覧を受け、更新後の全個体一覧を返す。以前のfall案と区別する。
+- [x] AGENTS.md、現行Stick/Skittle、Molkky::throw/calc_score、view、gameの個体IDと表示状態の対応を確認する。
+- [x] 描画依存・状態の所有・関数委譲の必要性をレビューする。
+- [x] 実装を変更せず記録の差分をgit diff --checkで確認する。
+
+### 指摘と提案
+
+- src/core/models/skittle.rs:L6: yagni: 高・core全体へShapeの型引数とOptionを伝播させない。描画側またはgameの合成オブジェクトへ描画情報を置き、既存のIdで対応付ける。Optionにしてもcoreから描画への型依存は残り、同じ個体を複数のviewで表す用途にも合わない。
+- src/core/models/stick.rs:L3: yagni: 中・即時の抽選だけに飛行状態を先行追加しない。時間を進めるシミュレーションで必要になればHeld/InFlight/AtRestを合成側へ追加する。Thrownは投げた出来事の名称として使い、飛行中の状態と区別する。
+- src/core/models/skittle.rs:L6: shrink: 中・状態の命名はStanding/Fallenが分かりやすい。独立したシミュレーション状態として持つか、ルールが参照するcoreの状態として持つかを決め、物理姿勢から算出する状態との二重管理を避ける。
+- src/core/services/molkky.rs:L20: yagni: 中・判定関数を一度呼んで同じ結果を返すだけのhitは省略する。判定関数を直接呼び、ID集合の検証など共通の責務を担わせる場合だけ仲介関数を置く。
+
+### Rustの表現と契約（提案のみ）
+
+- Option<Shape: T>はRustの構文ではない。通常はT: Shapeという型制約を宣言し、フィールドをOption<T>とする。異なる実装を実行時に保持するならOption<Box<dyn Shape>>も可能だが、今回のcoreモデルには導入しない。CUIのために全モデルへNoneを持たせる必要はなく、CUIでは描画オブジェクト自体を作らずに済む。
+- ScoreBoardは図形というより表/文字の表示データを作る対象であり、Stickの3D形状と同じShapeへまとめる必然性はない。現行のScoreBoardTuiなど、出力に合う表現を使う。
+- 状態に応じたルールがcoreにあるならStanding/Fallenをcoreが所有してもよい。単に描画や物理運動のためならsimulation側でSkittleと状態を合成する。状態を持つことだけをDDDの条件にしない。不変更新では新しい個体のIdを発行せず、同じIdの新しい状態を返す。
+- 棒のInFlight/AtRestは時間や物理エンジンの状態。判定関数がSkittlesだけを返す契約では棒の更新は返せないため、棒の状態遷移はシミュレーション側が別に所有する。棒の更新が実際に必要になった場合だけ戻り値の拡張を検討する。
+- 判定関数には標準のクロージャ境界FnOnce(&Stick, &[Skittle]) -> Vec<Skittle>が使える。これは状態をSkittle自体に持たせた場合の概念上の型であり、合成する場合は具体的なシミュレーション型に置き換える。一覧をまとめて1回判定するのでFnOnceで足り、乱数源や物理世界はクロージャに捕捉できる。独自Strategy trait・fall_type enum・汎用コンテキストは作らない。
+- hitという名前は「衝突対象を決める」のか「転倒まで解決する」のかをコメントと契約で明示する。接触と転倒は異なるため、転倒まで扱うならresolve_hitやresolve_knockdownも候補。今回の命名は提案として留め、現行throwの実装は変更していない。
+- 更新後の全個体一覧をそのままcalc_scoreへ渡さない。採点用には今回StandingからFallenになった個体を取り出す。既にFallenだった個体を再び加点せず、投てき後に倒れた場所で立て直す状態遷移もシミュレーション/ゲーム進行側で扱う。全個体を返す契約ならIdの一意性・集合・得点用番号を維持し、変更対象を状態に限定する。
+
+### 記録の検証
+
+- レビュー記録のみ変更。Shape、状態enum、hit、判定関数の注入は未実装。Rustソース・テスト・依存関係は変更しないため再テストは実施せず、git diff --checkと文書差分を確認する。
+- 既存コードの削除行数は確定していない。未追加の抽象を見送る行数は集計しない。
+
+net: -0 lines possible.
+
+## fallの命名とStick/Fieldの合成案（前回の設計レビュー・未実装）
 
 - 対象と入力：Molkky::throwをfallへ改名し、Stick/FieldはIdだけを持ち、速度・確率・タイルマップ・3D物理世界は別の構造体で合成する案。現行のcore/services/molkky.rs、core/models/{stick,field}.rs、simulation/field.rs、gameの配置/表示合成、TUIの呼び出しを照合した。独立したthrow.rsは存在せず、対象はmolkky.rsのthrowメソッド。
 - [x] 現行の投てき・棒・盤面・表示合成と参照元を確認する。
