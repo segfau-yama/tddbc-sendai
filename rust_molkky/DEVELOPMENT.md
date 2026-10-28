@@ -2,7 +2,67 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## 投てきのMolkky統合とultra簡略化（今回の変更）
+## must_useの撤去とScoreBoardの状態保持案（今回の変更・設計レビュー）
+
+- 作業範囲：プロジェクトで付与したmust_use属性は撤去する。ScoreBoardの状態保持・生成時検証・公開APIの変更は設計レビューのみとし、今回の実装へは含めない。
+- [x] 変更前の既存テストを確認する。
+- [x] 全ソースのmust_use属性と、それを必須とするAPI例の検証を撤去する。
+- [x] 状態保持案の責務・生成経路・状態の意味・確認計画を記録する。
+- [x] 既存テスト・build・fmt・Clippy・差分を確認する。
+
+### ScoreBoardの状態保持案のレビュー（未実装）
+
+- 対象：core/models/score.rs、Molkkyの判定・記録、game/presentationの得点・通知。履歴と状態を非公開フィールドに持ち、生成経路を一本化すれば、ScoreBoard自身が有効性を保証する設計にできる。
+- 中・score.rs:L69（変更前）: shrink: validate_for_gameの独立した事後検証を、履歴を受け取る生成処理へ統合する。現在のnew()は空履歴しか作らないため、new(score_history)等の検証する入力を持つ生成経路が必要。addも新しい履歴を同じ生成処理へ通し、Clone/Defaultを含め不正な状態を作る経路を残さない。外部のMolkky側の再検証を外せるのは、その保証が成立した後。
+- 低・score.rs:L48,52,59（変更前）: shrink: is_winner/is_disqualified/was_resetは非公開化可能だが、newから呼ぶたびに履歴を再計算する形にはしない。残すなら、生成処理で一度走査した合計・連続0点数・超過判定を受け取る内部判定とする。簡単な条件ならnewへ直接書いてもよい。
+- 低・score.rs:L63（変更前）: shrink: evaluate_totalは関数として削除できるが、totalでの履歴計算は必要。現在の25点補正を表すapply_pointは、生成時の検証とtotalの計算で共有し、補正規則を二重に書かない。
+
+### 状態の意味と公開API案
+
+```rust,ignore
+pub enum ScoreState {
+    Calculated,
+    Reset,
+    Disqualified,
+    Won,
+}
+```
+
+- ResetedはResetとする。Calculatedは空履歴または通常の直近結果、Resetは直近の投てきで25点補正、Wonは50点到達、Disqualifiedは3回連続0点を表す。Resetは終端ではなく、次の通常投てきでCalculatedへ戻る。WonとDisqualifiedは終端で、その後の追加履歴を拒否する。
+- Wonはチームの50点到達に限定する。最後の生存チームとしての勝利は0点でも起こるため、ゲーム全体の勝者は引き続きMolkky::judge_gameが決める。ScoreStateだけでゲーム全体の勝敗を表そうとしない。
+- history() -> &[Point]、total() -> i32、state() -> ScoreStateを問い合わせの公開APIとする。stateはCopy可能な値として返し、状態のsetterは設けない。valueはtotalへ置き換え、公開is_winner/is_disqualified/was_resetの利用側はstateで判定する。
+- 生成の中心をnew(score_history: Vec<Point>)にする案なら、空履歴はnew(vec![])でCalculated・0点となり、addは履歴を複製してnewを呼ぶ。既存new()の引数・Defaultや、復元APIの扱いは実装時に揃える。
+- 履歴とstateは同じ事実の保存になるため、各生成時に履歴から必ずstateを導出する。totalは要求どおり履歴から算出し、合計の保存フィールドは追加しない。
+
+| 最後の有効な投てきの結果 | 合計 | 状態 |
+| --- | --- | --- |
+| 通常加算・空履歴 | 補正を反映した合計（空は0） | Calculated |
+| 加算直後が50点を超える | 25 | Reset |
+| 加算直後が50点ちょうど | 50 | Won |
+| 直近3回のPointが連続して0 | 合計は維持 | Disqualified |
+
+- 「50以上」を一括で処理せず、50超過と50ちょうどを区別する。失格の条件は合計が0であることではなく、3回のPointが連続して0であること。
+- totalは単なるsumではなく、各投てきの超過補正を順に適用する。例えば[12,12,12,12,3]は51ではなく25、さらに1点を加えた履歴なら26。
+- newは最後の状態だけを見ず、履歴の各時点を先頭から検証する。[10,10,10,10,10,1]は最後の計算結果を25点にして受理せず、50点到達後の記録として拒否する。[0,0,0,1]も同様に失格後の履歴として拒否する。
+
+### 状態保持案を実装する際の確認計画（未実装）
+
+- [ ] 空履歴でCalculated・0点、通常加算、50点到達、超過補正を確認する。
+- [ ] Resetの次の通常投てきでCalculatedとなり、複数回の補正もtotalへ反映されることを確認する。
+- [ ] [5,0,0,0]が合計5のままDisqualifiedとなり、正の点数で連続0回数が中断されることを確認する。
+- [ ] Won/Disqualifiedに達した後の0点・正の点数を、追加時と履歴復元時の両方で拒否する。
+- [ ] addで元の履歴・状態が変わらないことと、Molkky/表示側がstate/totalを使うことを確認する。
+
+### 今回のmust_use撤去と検証結果
+
+- ソースの属性4か所（ScoreBoard::add、Team::with_score_board、Molkky::record_point、relocate_skittles）を削除した。API文書内のunused_must_useを必須とするcompile_fail例2件も、ユーザーが不要とした契約に合わせて削除した。他の振る舞いの検証は維持する。Rustや依存ライブラリ側の属性・lint設定は変更していない。
+- 変更前のcargo test --lockedは142件成功（/tmp/score-state-review-baseline.log）。変更後は140件成功（core84・バイナリ20・CLI1・simulation4・doc31）、失敗・無視0件（/tmp/score-state-review-tests.log）。2件の差は上記API例の削除による。
+- cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkも成功。src/testsにmust_use属性やその必須化設定が残っていないことを確認した。属性撤去とレビューのみのため、今回はTUIの手動操作や新しい振る舞いのRedは行っていない。
+- ScoreState、生成時検証、公開APIの変更はすべて提案であり、score.rsはmust_use属性以外を変更していない。状態設計の削減行数は未計測。今回のソースの純減は属性4行。
+
+net: -4 lines possible.
+
+## 投てきのMolkky統合とultra簡略化（前回の変更）
 
 - 最新の指定：throw関数をstick・skittles・乱数源の3引数にしてMolkkyへまとめ、無駄を点検する。
 - Molkky::throw(&self, &Stick, &[Skittle], &mut dyn RngCore)へ独立抽選を直接記載した。関数型・コールバック・新たなStrategyは追加せず、既存ThrowStrategy/ThrowOutcome/RandomThrow/throw_stickと対応する2つのソースファイルを削除した。

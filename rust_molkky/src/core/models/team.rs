@@ -28,7 +28,6 @@ impl Team {
         &self.score_board
     }
 
-    #[must_use]
     pub fn with_score_board(&self, score_board: ScoreBoard) -> Self {
         Self {
             id: self.id,

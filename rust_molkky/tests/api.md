@@ -169,15 +169,6 @@ assert_eq!(original.history(), &[five]);
 assert_eq!(updated.history(), &[five, eleven]);
 ```
 
-## 更新結果の破棄はunused_must_useで検出できる
-
-```compile_fail
-#![deny(unused_must_use)]
-use rust_molkky::{ScoreBoard, Molkky, SimpleMolkky};
-let board = ScoreBoard::new();
-board.add(SimpleMolkky.calc_score(&[]));
-```
-
 ## チームは得点表を差し替えて新しい値を返す
 
 ```rust
@@ -218,15 +209,6 @@ assert_ne!(first.id(), second.id());
 let field = ArrayField::new(vec![first, second]);
 assert_eq!(SimpleMolkky.calc_score(field.skittles()).value(), 2);
 assert_eq!(SimpleMolkky.calc_score(&[first]).value(), 12);
-```
-
-## Pointの記録結果を破棄できない
-
-```compile_fail
-#![deny(unused_must_use)]
-use rust_molkky::{Name, Team, Molkky, SimpleMolkky};
-let teams = vec![Team::new(Name::new("赤").unwrap())];
-SimpleMolkky.record_point(&teams, 0, SimpleMolkky.calc_score(&[]));
 ```
 
 ## チーム内部の得点表は共有参照から差し替えられない

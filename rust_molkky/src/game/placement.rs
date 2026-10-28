@@ -40,7 +40,6 @@ impl FieldLayout {
 }
 
 /// 倒れたピンだけを表示上で移動する。coreのピン集合・確率は変えない。
-#[must_use]
 pub(crate) fn relocate_skittles(
     layout: &FieldLayout,
     knocked_over: &[Skittle],

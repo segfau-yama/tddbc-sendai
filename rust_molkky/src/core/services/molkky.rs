@@ -72,7 +72,6 @@ pub trait Molkky {
     }
 
     /// 試合の記録制約を検証し、元のチーム一覧を変更せずに点数を追加する。
-    #[must_use]
     fn record_point(&self, teams: &[Team], team_index: usize, point: Point) -> Vec<Team> {
         assert!(
             matches!(self.judge_game(teams), GameStatus::InProgress),

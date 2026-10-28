@@ -34,7 +34,6 @@ impl ScoreBoard {
     }
 
     /// 元の履歴を変更せず、点数を追加した新しい得点表を返す。
-    #[must_use]
     pub fn add(&self, point: Point) -> Self {
         let mut score_history = self.score_history.clone();
         score_history.push(point);
