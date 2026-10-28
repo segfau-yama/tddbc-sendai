@@ -37,3 +37,14 @@ fn 同じ番号でも別個体は別idでコピーはidを保つ() {
     assert_eq!(copied.id(), first.id());
     assert_eq!(SimpleMolkky.calc_score(&[first, second]).value(), 2);
 }
+
+#[test]
+fn 状態を変えても元の状態と個体識別子と番号を保つ() {
+    use rust_molkky::SkittleState;
+    let original = Skittle::new(12);
+    let updated = original.with_state(SkittleState::Fall);
+    assert_eq!(original.state(), SkittleState::Stand);
+    assert_eq!(updated.state(), SkittleState::Fall);
+    assert_eq!(updated.id(), original.id());
+    assert_eq!(updated.number(), original.number());
+}

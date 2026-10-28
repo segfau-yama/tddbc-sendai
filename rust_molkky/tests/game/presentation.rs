@@ -2,7 +2,8 @@ use super::*;
 use crate::view::position::Position;
 use ratatui::{Terminal, backend::TestBackend};
 use rust_molkky::Name;
-use rust_molkky::core::{Field, FieldGenerator, Molkky, SimpleMolkky, Skittle};
+use rust_molkky::core::{Field, Molkky, SimpleMolkky, Skittle};
+use rust_molkky::simulation::RandomStick;
 use rust_molkky::simulation::{ArrayField, StandardFieldGenerator};
 #[test]
 fn 複数モデルから表示を組み立てても得点や配置は変わらない() {
@@ -10,8 +11,11 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
         Team::new(Name::new("赤").unwrap()),
         Team::new(Name::new("青").unwrap()).with_turn(true),
     ];
-    let field = ArrayField::new(vec![Skittle::new(5), Skittle::new(12), Skittle::new(12)]);
-    let stick = Stick::default();
+    let field = ArrayField::new(
+        Field::new(),
+        vec![Skittle::new(5), Skittle::new(12), Skittle::new(12)],
+    );
+    let stick = RandomStick::default();
     let mut layout = FieldLayout::new(field.skittles());
     layout.stick = layout.positions[&field.skittles()[0].id()];
     layout
@@ -103,7 +107,7 @@ fn 三チームでも勝者の得点行が見える() {
                     &game,
                     &[0, 3, 3],
                     &field,
-                    &Stick::default(),
+                    &RandomStick::default(),
                     &layout,
                     "",
                 ),
@@ -143,7 +147,7 @@ fn 表示合成でも渡されたルールの判定を利用する() {
         &teams,
         &[0, 0],
         &field,
-        &Stick::default(),
+        &RandomStick::default(),
         &layout,
         "",
     );

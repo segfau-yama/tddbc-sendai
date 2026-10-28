@@ -19,7 +19,7 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 
 | 場所 | 責務 |
 | --- | --- |
-| src/core/models/ | Skittle・Stick・Point・ScoreBoard・Team・Id・Name・ScoreState、Field/FieldGeneratorのtrait |
+| src/core/models/ | Skittle・SkittleState・Field・Stick・Point・ScoreBoard・Team・Id・Name・ScoreState |
 | src/core/services/ | Molkkyの既定ルール（投てき・採点・Won/手番のチーム選択） |
 | src/simulation/ | ArrayField、標準Field生成 |
 | src/game/ | coreとviewの合成、表示上の移動、アプリの終了条件 |
@@ -66,26 +66,30 @@ Teamはturn: boolを保持し、turn()/with_turn(bool)で参照・不変更新�
 
 ### Field生成・投てき・採点
 
-Field・FieldGeneratorの共通契約をcoreへ定義し、ArrayFieldとStandardFieldGeneratorをsimulationに置きます。
-投てきはMolkky::throw(stick, skittles, rng)に直接実装しています。既定のルールでは各個体を独立抽選します。
-Stick::new(probability)で0〜1の確率を指定し、既定値は0.25です。乱数源は呼び出し側から渡します。
+FieldとStickは、非公開のIdだけを持つ不変の型です。new()/default()は新しいUUIDを発行し、id()で取得できます。
+simulationのArrayFieldがFieldと個体一覧、RandomStickがStickと検証済み確率を合成します。
+Molkky::hit(&Stick, &[Skittle], JudgeStrategy)は判定関数を呼び、更新後の全個体を返します。
+JudgeStrategy<'a>は&'a mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>の型別名です。専用traitやヒープ確保は不要です。
+判定関数は乱数源や物理世界を捕捉できます。coreは乱数・座標・描画に依存しません。
 
 ```rust
-use rust_molkky::{Field, FieldGenerator, Stick, Molkky, SimpleMolkky};
-use rust_molkky::simulation::StandardFieldGenerator;
+use rust_molkky::{SkittleState, Stick, Molkky, SimpleMolkky};
+use rust_molkky::simulation::{RandomStick, StandardFieldGenerator};
 let field = StandardFieldGenerator.generate();
-let stick = Stick::new(1.0);
-let fallen = SimpleMolkky.throw(&stick, field.skittles(), &mut rand::rng());
-assert_eq!(fallen, field.skittles());
+let stick = RandomStick::new(Stick::new(), 1.0);
+let mut rng = rand::rng();
+let updated = SimpleMolkky.hit(stick.stick(), field.skittles(), &mut |_, pins| stick.judge(pins, &mut rng));
+let fallen: Vec<_> = updated.into_iter().filter(|pin| pin.state() == SkittleState::Fall).collect();
 assert_eq!(SimpleMolkky.calc_score(&fallen).value(), 12);
 ```
 
-StandardFieldGeneratorは1〜12を各1本生成し、ArrayFieldは任意の個体集合を保持します。
-SkittleはIdと得点用の番号を持ち、同じ12番を2本置けます。同じIDの二重登録・二重採点は拒否します。
-デフォルト投てきは入力の個体を選んで返すため、IDとFieldは変更せず、乱数源だけを更新します。
-範囲外・NaN・無限大の確率、1〜12以外の番号を拒否します。
-これはゲーム用の簡略モデルです。物理エンジンの実装や、その状態更新・失敗を共通化する仕組みは追加していません。
-旧ThrowStrategy・ThrowOutcome・throw_stick・RandomThrowは廃止しました。
+StandardFieldGeneratorは1〜12を各1本生成し、ArrayField::new(field, skittles)は任意の個体集合を保持します。
+Field/FieldGeneratorのtraitは廃止しました。座標付きの独自表現はcoreのFieldと合成できます。
+SkittleはId・番号・状態（Stand/Fall）を持ち、同じ12番を2本置けます。newはStand、with_stateは同じIDの新しい値を返します。
+hitは入力と結果のID重複・個体集合の変更を拒否します。判定方法は状態だけを変更し、ID・番号を維持します。
+calc_scoreは渡された採点対象だけを扱います。全個体をそのまま採点せず、今回StandからFallへ変化した個体を呼び出し側で選びます。
+RandomStickの既定確率は0.25で、0〜1以外・NaN・無限大は拒否します。既にFallの個体は再抽選しません。
+この確率方式はゲーム用の簡略モデルです。物理エンジンや表示用の型引数は追加していません。
 
 0本なら0点、1本なら番号、複数本なら本数です。13本以上の変則構成も本数で採点します。
 ScoreBoard::new(history)は生成時に履歴を検証し、Calculated・Reset・Disqualified・Wonの状態を保持します。
@@ -100,7 +104,7 @@ is_resetは内部の超過判定です。apply_point・was_resetは削除しま�
 
 ### 採点・試合ルールのデフォルト実装
 
-core/services/molkky.rsのMolkky traitへ、throw・calc_score・judge_game・next_teamを直接実装しています。
+core/services/molkky.rsのMolkky traitへ、hit・calc_score・judge_game・next_teamを直接実装しています。
 SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
 得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
 next_teamは手番フラグの検索だけを行い、順番の計算・失格スキップ・終了判定を行いません。
@@ -126,7 +130,7 @@ coreのWon検索と組み合わせますが、得点0の生存者のScoreState�
 ### 表示とテスト
 
 初期表示は投てき側から1・2、3・10・4、5・11・12・6、7・9・8の4段です。座標の数値は描画用で、距離の単位ではありません。
-倒れたピンだけを表示上で隣接位置へ移し、立ったピンはそのままにします。共通の表示を次のチームも使います。
+今回倒れたピンだけを表示上で隣接位置へ移し、その場所でStandへ戻します。Field・Stick・SkittleのIDは変えず、共通の表示を次のチームも使います。
 
 tests/core/models・tests/core/services・tests/game・tests/tui・tests/viewにテストを置き、対象ファイルと同じ名前にしています。
 API利用例と型による制約はtests/api.mdのドキュメントテストで確認します。

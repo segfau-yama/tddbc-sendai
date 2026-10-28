@@ -2,7 +2,9 @@ use super::*;
 use ratatui::{Terminal, backend::TestBackend};
 use rust_molkky::Name;
 use rust_molkky::ScoreState;
+use rust_molkky::Stick;
 use rust_molkky::core::{Field, ScoreBoard, Skittle};
+use rust_molkky::simulation::RandomStick;
 
 fn rendered(runtime: &Controller) -> String {
     let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
@@ -31,7 +33,7 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
         Team::new(Name::new("青").unwrap()),
     ];
     runtime.teams[0] = runtime.teams[0].with_turn(true);
-    runtime.field = ArrayField::new(vec![]);
+    runtime.field = ArrayField::new(Field::new(), vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert!(matches!(
@@ -69,7 +71,7 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
         Team::new(Name::new("緑").unwrap()),
     ];
     runtime.teams[0] = runtime.teams[0].with_turn(true);
-    runtime.field = ArrayField::new(vec![]);
+    runtime.field = ArrayField::new(Field::new(), vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert!(!SimpleMolkky.next_team(&runtime.teams).is_none());
@@ -96,7 +98,7 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
 fn 一チーム開始なら三回連続0点で勝者なし終了する() {
     let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
     runtime.teams[0] = runtime.teams[0].with_turn(true);
-    runtime.field = ArrayField::new(vec![]);
+    runtime.field = ArrayField::new(Field::new(), vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     assert!(!SimpleMolkky.next_team(&runtime.teams).is_none());
     for _ in 0..3 {
@@ -113,9 +115,11 @@ fn 一チーム開始なら三回連続0点で勝者なし終了する() {
 #[test]
 fn 次のチームも共通のピン集合と棒と表示を使う() {
     let mut controller = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
-    controller.field = ArrayField::new(vec![Skittle::new(5)]);
+    controller.field = ArrayField::new(Field::new(), vec![Skittle::new(5)]);
     controller.layout = FieldLayout::new(controller.field.skittles());
-    controller.stick = Stick::new(1.0);
+    controller.stick = RandomStick::new(Stick::new(), 1.0);
+    let field_id = controller.field.field().id();
+    let stick_id = controller.stick.stick().id();
     let original = controller.layout.positions[&controller.field.skittles()[0].id()];
     controller.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(controller.teams[0].score_board().total(), 5);
@@ -141,6 +145,15 @@ fn 次のチームも共通のピン集合と棒と表示を使う() {
         [5]
     );
     assert_eq!(controller.stick.fall_probability(), 1.0);
+    assert_eq!(controller.field.field().id(), field_id);
+    assert_eq!(controller.stick.stick().id(), stick_id);
+    assert!(
+        controller
+            .field
+            .skittles()
+            .iter()
+            .all(|pin| pin.state() == SkittleState::Stand)
+    );
     assert_eq!(controller.teams[0].score_board().history().len(), 1);
     assert_eq!(controller.teams[1].score_board().history().len(), 1);
 }
@@ -184,9 +197,9 @@ fn 五十点勝利後は手番を外し使用側で追加投てきを停止す�
         .map(|n| SimpleMolkky.calc_score(&[Skittle::new(n)]))
         .to_vec();
     runtime.teams[0] = runtime.teams[0].with_score_board(ScoreBoard::new(history));
-    runtime.field = ArrayField::new(vec![Skittle::new(1)]);
+    runtime.field = ArrayField::new(Field::new(), vec![Skittle::new(1)]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
-    runtime.stick = Stick::new(1.0);
+    runtime.stick = RandomStick::new(Stick::new(), 1.0);
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.teams[0].score_board().state(), ScoreState::Won);
     assert_eq!(
@@ -210,9 +223,9 @@ fn 使用側で超過補正を表示し次の手番を設定する() {
         .map(|n| SimpleMolkky.calc_score(&[Skittle::new(n)]))
         .to_vec();
     runtime.teams[0] = runtime.teams[0].with_score_board(ScoreBoard::new(history));
-    runtime.field = ArrayField::new(vec![Skittle::new(2)]);
+    runtime.field = ArrayField::new(Field::new(), vec![Skittle::new(2)]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
-    runtime.stick = Stick::new(1.0);
+    runtime.stick = RandomStick::new(Stick::new(), 1.0);
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.teams[0].score_board().state(), ScoreState::Reset);
     assert_eq!(runtime.teams[0].score_board().total(), 25);
@@ -227,13 +240,13 @@ fn 使用側で超過補正を表示し次の手番を設定する() {
 #[test]
 fn 履歴を圧縮しても投てき番号とチームの投数は巻き戻らない() {
     let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
-    runtime.field = ArrayField::new(vec![Skittle::new(12)]);
+    runtime.field = ArrayField::new(Field::new(), vec![Skittle::new(12)]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
-    runtime.stick = Stick::new(1.0);
+    runtime.stick = RandomStick::new(Stick::new(), 1.0);
     for _ in 0..4 {
         runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     }
-    runtime.field = ArrayField::new(vec![Skittle::new(3)]);
+    runtime.field = ArrayField::new(Field::new(), vec![Skittle::new(3)]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.teams[0].score_board().total(), 25);
@@ -244,4 +257,28 @@ fn 履歴を圧縮しても投てき番号とチームの投数は巻き戻ら�
     assert_eq!(runtime.teams[0].score_board().total(), 28);
     assert!(runtime.message.contains("第6投"));
     assert!(rendered(&runtime).contains("赤28/506253"));
+}
+
+#[test]
+fn 既に倒れた個体を加点せず移動せず次の投てき前に立て直す() {
+    let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
+    let fallen = Skittle::new(12).with_state(SkittleState::Fall);
+    runtime.field = ArrayField::new(Field::new(), vec![fallen, Skittle::new(5)]);
+    runtime.layout = FieldLayout::new(runtime.field.skittles());
+    runtime.stick = RandomStick::new(Stick::new(), 0.0);
+    let layout = runtime.layout.clone();
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
+    assert_eq!(runtime.teams[0].score_board().total(), 0);
+    assert_eq!(runtime.layout, layout);
+    assert_eq!(runtime.field.skittles()[0].id(), fallen.id());
+    assert!(
+        runtime
+            .field
+            .skittles()
+            .iter()
+            .all(|pin| pin.state() == SkittleState::Stand)
+    );
+    runtime.stick = RandomStick::new(*runtime.stick.stick(), 1.0);
+    runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
+    assert_eq!(runtime.teams[0].score_board().total(), 2);
 }

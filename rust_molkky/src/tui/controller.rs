@@ -2,15 +2,14 @@ use crate::{
     game::{FieldLayout, compose_game, relocate_skittles, throw_message, winning_team},
     view::molkky::{MIN_HEIGHT, MIN_WIDTH},
 };
-use rust_molkky::Stick;
-use rust_molkky::simulation::{ArrayField, StandardFieldGenerator};
+use rust_molkky::simulation::{ArrayField, RandomStick, StandardFieldGenerator};
 use std::io;
 
 use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
 };
-use rust_molkky::core::{Field, FieldGenerator, Molkky, Name, ScoreState, SimpleMolkky, Team};
+use rust_molkky::core::{Molkky, Name, ScoreState, SimpleMolkky, SkittleState, Team};
 
 pub struct Controller {
     names: Vec<Name>,
@@ -18,7 +17,7 @@ pub struct Controller {
     teams: Vec<Team>,
     throw_counts: Vec<usize>,
     field: ArrayField,
-    stick: Stick,
+    stick: RandomStick,
     layout: FieldLayout,
     message: String,
 }
@@ -40,7 +39,7 @@ impl Controller {
             teams,
             throw_counts,
             field,
-            stick: Stick::default(),
+            stick: RandomStick::default(),
             layout,
             message: "Space / Enterで最初の投てき。矢印キーで棒の表示位置を移動できます（確率は変わりません）。".into(),
         }
@@ -104,13 +103,35 @@ impl Controller {
             .position(|team| team.id() == current.id())
             .unwrap();
         let before = self.teams[active].score_board().total();
-        let knocked_over = self.rules.throw(&self.stick, self.field.skittles(), rng);
+        let updated = self
+            .rules
+            .hit(self.stick.stick(), self.field.skittles(), &mut |_, pins| {
+                self.stick.judge(pins, rng)
+            });
+        let knocked_over: Vec<_> = updated
+            .iter()
+            .copied()
+            .filter(|pin| {
+                pin.state() == SkittleState::Fall
+                    && self.field.skittles().iter().any(|before| {
+                        before.id() == pin.id() && before.state() == SkittleState::Stand
+                    })
+            })
+            .collect();
         let point = self.rules.calc_score(&knocked_over);
         let board = self.teams[active].score_board().add(point);
         self.teams[active] = self.teams[active].with_score_board(board);
         self.throw_counts[active] += 1;
         let turn = self.throw_counts.iter().sum();
         self.layout = relocate_skittles(&self.layout, &knocked_over, rng);
+        // 次の投てきに備え、移動先で立て直す。個体とFieldのIDは保つ。
+        self.field = ArrayField::new(
+            *self.field.field(),
+            updated
+                .iter()
+                .map(|pin| pin.with_state(SkittleState::Stand))
+                .collect(),
+        );
         self.message = throw_message(&self.teams[active], turn, before, point);
         let next = if winning_team(&self.rules, &self.teams).is_some() {
             None

@@ -1,10 +1,18 @@
 use super::Id;
 
+/// Standは直立、Fallは転倒済みを表す。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SkittleState {
+    Stand,
+    Fall,
+}
+
 /// 番号は得点用。同じ番号でも、Idが異なれば別の個体。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Skittle {
     id: Id,
     number: i32,
+    state: SkittleState,
 }
 
 impl Skittle {
@@ -18,7 +26,16 @@ impl Skittle {
         Self {
             id: Id::new(),
             number,
+            state: SkittleState::Stand,
         }
+    }
+
+    pub fn state(&self) -> SkittleState {
+        self.state
+    }
+
+    pub fn with_state(&self, state: SkittleState) -> Self {
+        Self { state, ..*self }
     }
 
     pub fn id(&self) -> Id {

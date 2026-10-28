@@ -1,7 +1,7 @@
 use std::fmt;
 use uuid::Uuid;
 
-/// チームの同一性を表すUUID v4。表示名や一覧内の位置には依存しない。
+/// 個体の同一性を表すUUID v4。表示名や一覧内の位置には依存しない。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Id(Uuid);
 

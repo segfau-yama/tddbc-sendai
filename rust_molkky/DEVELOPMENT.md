@@ -2,7 +2,39 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## Displayの表現・hitの維持・動詞形の状態名（今回の設計レビュー・未実装）
+## hitへの変更とField/Stickの識別子への縮小（今回の実装）
+
+- 対象：最新の2項目を実装する。Molkky::hit(&Stick, &[Skittle], JudgeStrategy)へ変更し、JudgeStrategyは標準FnMutの借用型別名とする。Rustの可変長配列は共有スライスで受け、既存のdyn Molkky利用と入力の不変性を保つ。
+- 判定は更新後の全Skittleを返すため、SkittleState::Stand/Fallと不変更新を追加する。入力/結果のID重複と個体集合の維持を検証する。Shape/Displayの型引数やStickの状態は今回追加しない。
+- Field/Stickは非公開Idだけを保持し、new/defaultで新規ID、コピー/クローンでIDを保つ。Field traitとFieldGenerator traitは廃止し、具体的な生成方法はsimulationのStandardFieldGeneratorへ残す。ArrayFieldはFieldと個体一覧、RandomStickはStickと検証済み確率を合成する。
+- 確率抽選はsimulationへ移す。使用側は今回Stand→Fallになった個体だけ採点・移動し、同じ場所で立て直す。得点・勝敗・手番・25点補正・3連続0点失格を維持する。
+- [x] 変更前の全テストを確認する。
+- [x] IDだけのモデル・状態の不変更新・判定関数を使うhitのRedを確認する。
+- [x] coreとsimulation、TUI/合成を移行する。
+- [x] API例・テストを現行契約へ移行し、既存の確率/得点/進行の検証を維持する。
+- [x] test/build/fmt/Clippy・TUI操作・差分を確認する。
+
+### 実装とAPI
+
+- JudgeStrategy<'a> = &'a mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>とし、hitの第3引数に使う。判定を1回呼び、更新後の全個体を返す。dyn Molkkyからも呼べる。専用trait・Box・互換throw・判定方式enumは追加していない。
+- 棒と個体一覧は共有参照のため元を変更しない。判定後のID重複と、ID/番号の集合の変更を拒否する。並び替えは許可する。Skittle::with_stateは同じID/番号で新しい値を返す。Fallは転倒済みを示す。
+- coreのField/StickはIdだけの構造体。Defaultが新しいIdを生成し、newはDefaultへ委譲する。ArrayField::new(Field, Vec<Skittle>)とRandomStick::new(Stick, probability)が具体的な表現と設定を合成する。確率の妥当性検証と独立抽選はsimulation/stick.rsへ移した。
+- Field/FieldGeneratorのtraitは削除し、StandardFieldGenerator::generateは具体的な生成として維持した。座標付き表現はFieldを合成して自由に作れる。過去のtrait契約のテストは識別子のテストへ置き換え、座標と個体の合成はAPI例で検証する。
+- TUIはRandomStick::judgeを捕捉したクロージャをhitへ渡す。今回Stand→Fallになった個体だけ採点/移動し、移動先でStandへ戻す。同じField/Stick/SkittleのIDを保ち、次チームも共通の個体集合・配置を使う。viewは既存の描画用データだけを扱う。
+- READMEと実行可能なAPI例を更新した。Shape/Display、StickState、実際の物理エンジン、共通Worldは未実装のままとする。得点ルール・ScoreBoard・Teamの契約は変更していない。
+
+### Red・Green・最終確認
+
+- 変更前のcargo test --lockedは130件成功（/tmp/hit-baseline.log）。
+- Red：Field/Stickの新しい生成/ID取得、Skittleの状態の不変更新、JudgeStrategyとhitのテストを先に書き、旧FieldがtraitのE0782、未実装型のE0432、hit等のE0599を確認した（/tmp/hit-red.log）。
+- Green：core/利用側を移行したtests実行、続けてAPI例を移行した全テストが成功（/tmp/hit-green.log、/tmp/hit-doc-green.log）。確率の検証・確率0/1・入力不変・同じシードの再現性・設定変更をsimulationの対象と同名のテストへ移した。旧throwの検証を無効化していない。
+- 追加で、判定関数の呼び出し回数、渡された棒/個体、ID/番号の維持、入力重複、結果の重複/追加/消失/置換、空と並び替えを確認した。Field/Stickの新規IDとコピー、合成後のID保持、同番号の別個体、既存Fallの維持、今回倒れた個体だけの採点/移動と立て直しを検証した。実装後の追加確認は事前Redとは区別する。
+- 最終cargo test --lockedは138件成功（core62・バイナリ27・CLI1・simulation12・doc36）、失敗・無視0件（/tmp/hit-final-tests.log）。旧確率関連テストの配置をcoreからsimulationへ移したため、coreの件数は減るが全体は8件増えている。テスト本体はtests以下で対象と同名とした。
+- cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功。初回Clippyで移行後のテストに残った未使用Stick importが指摘されたため削除し、再確認した。
+- 100列×30行の擬似端末で右矢印・Space・R・Space・Qを操作し、終了コード0・panicなし・第1投・得点履歴見出し・25.0%表示を確認した（/tmp/hit-tui.log）。
+- coreにrand/端末依存・旧throw・Field trait・確率メンバがないこと、モデルに可変selfがないこと、must_useを追加していないことを確認した。依存関係・ロックファイル・Javaは変更していない。
+
+## Displayの表現・hitの維持・動詞形の状態名（前回の設計レビュー・未実装）
 
 - 入力：描画情報をint/2D/3Dなど任意の値にする案、モルックの公開操作としてhitを残す指定、状態名を前置詞なしの動詞形へ統一する指定。前回のhit削除提案は今回の指定で取り下げる。
 - [x] AGENTS.md、現行CanvasDraw、Stick/Skittle、Molkky::throwと直前のレビューを確認する。

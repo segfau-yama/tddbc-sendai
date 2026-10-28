@@ -1,8 +1,9 @@
 use super::*;
 use crate::test_support::ConstantRng;
 use rand::{SeedableRng, rngs::StdRng};
+use rust_molkky::simulation::RandomStick;
 use rust_molkky::simulation::StandardFieldGenerator;
-use rust_molkky::{Field, FieldGenerator, Molkky, SimpleMolkky, Stick};
+use rust_molkky::{Molkky, SimpleMolkky, SkittleState};
 #[test]
 fn 同番号でも倒れた個体だけを移動し元の表示と他の個体を保持する() {
     let pins = [Skittle::new(12), Skittle::new(12)];
@@ -32,9 +33,22 @@ fn 同じシードなら点数列と表示移動を再現しピン集合は変�
         FieldLayout::new(pins.skittles()),
         FieldLayout::new(pins.skittles()),
     );
+    let stick = RandomStick::default();
     for _ in 0..100 {
-        let hit_a = SimpleMolkky.throw(&Stick::default(), pins.skittles(), &mut first);
-        let hit_b = SimpleMolkky.throw(&Stick::default(), pins.skittles(), &mut second);
+        let updated_a = SimpleMolkky.hit(stick.stick(), pins.skittles(), &mut |_, pins| {
+            stick.judge(pins, &mut first)
+        });
+        let hit_a: Vec<_> = updated_a
+            .into_iter()
+            .filter(|pin| pin.state() == SkittleState::Fall)
+            .collect();
+        let updated_b = SimpleMolkky.hit(stick.stick(), pins.skittles(), &mut |_, pins| {
+            stick.judge(pins, &mut second)
+        });
+        let hit_b: Vec<_> = updated_b
+            .into_iter()
+            .filter(|pin| pin.state() == SkittleState::Fall)
+            .collect();
         assert_eq!(&hit_a, &hit_b);
         assert!((0..=12).contains(&SimpleMolkky.calc_score(&hit_a).value()));
         a = relocate_skittles(&a, &hit_a, &mut first);

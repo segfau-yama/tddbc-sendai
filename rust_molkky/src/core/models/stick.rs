@@ -1,25 +1,17 @@
-/// デフォルトの確率投てきに使う棒の条件。
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Stick {
-    fall_probability: f64,
-}
+use super::Id;
 
-impl Default for Stick {
-    fn default() -> Self {
-        Self::new(0.25)
-    }
+/// 表現やシミュレーション設定から独立した個体の識別子。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Stick {
+    id: Id,
 }
 
 impl Stick {
-    pub fn new(fall_probability: f64) -> Self {
-        assert!(
-            (0.0..=1.0).contains(&fall_probability),
-            "倒れる確率は0〜1です"
-        );
-        Self { fall_probability }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    pub fn fall_probability(&self) -> f64 {
-        self.fall_probability
+    pub fn id(&self) -> Id {
+        self.id
     }
 }

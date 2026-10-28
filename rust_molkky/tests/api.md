@@ -99,65 +99,65 @@ let borrowed: &[Team] = &teams;
 borrowed[0] = borrowed[0].with_score_board(borrowed[0].score_board().add(SimpleMolkky.calc_score(&[])));
 ```
 
-## 棒と対象個体と乱数源でデフォルトの投てきを行う
+## 棒と対象個体と判定関数でhitを行う
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Field, Skittle, Stick, Molkky, SimpleMolkky};
-use rust_molkky::simulation::ArrayField;
+use rust_molkky::{Field, Skittle, SkittleState, Stick, Molkky, SimpleMolkky};
+use rust_molkky::simulation::{ArrayField, RandomStick};
 let mut rng = StdRng::seed_from_u64(42);
 let pin = Skittle::new(5);
-let field = ArrayField::new(vec![pin]);
-let stick = Stick::new(1.0);
-let fallen = SimpleMolkky.throw(&stick, field.skittles(), &mut rng);
-assert_eq!(fallen, [pin]);
+let field = ArrayField::new(Field::new(), vec![pin]);
+let stick = RandomStick::new(Stick::new(), 1.0);
+let updated = SimpleMolkky.hit(stick.stick(), field.skittles(), &mut |_, pins| stick.judge(pins, &mut rng));
+assert_eq!(updated, [pin.with_state(SkittleState::Fall)]);
+let fallen: Vec<_> = updated.into_iter().filter(|pin| pin.state() == SkittleState::Fall).collect();
 assert_eq!(SimpleMolkky.calc_score(&fallen).value(), 5);
 assert_eq!(field.skittles(), [pin]);
 ```
 
-## 投てき対象にNoneは指定できない
+## hitの対象にNoneは指定できない
 
 ```compile_fail
 use rust_molkky::{Molkky, SimpleMolkky, Stick};
-SimpleMolkky.throw(&Stick::default(), None, &mut rand::rng());
+SimpleMolkky.hit(&Stick::default(), None, &mut |_, pins| pins.to_vec());
 ```
 
-## 投てき結果から採点と不変な状態の更新を組み合わせる
+## hitの結果から採点と不変な状態の更新を組み合わせる
 
 ```rust
-use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Name, Field, Skittle, Stick, Team, Molkky, SimpleMolkky};
-use rust_molkky::simulation::ArrayField;
+use rust_molkky::{Name, Skittle, SkittleState, Stick, Team, Molkky, SimpleMolkky};
 let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
-let pin = Skittle::new(5);
-let field = ArrayField::new(vec![pin]);
-let stick = Stick::new(1.0);
-let mut rng = StdRng::seed_from_u64(42);
-let fallen = SimpleMolkky.throw(&stick, field.skittles(), &mut rng);
+let pins = [Skittle::new(5), Skittle::new(12)];
+let updated_pins = SimpleMolkky.hit(&Stick::new(), &pins, &mut |_, pins| {
+    vec![pins[0].with_state(SkittleState::Fall), pins[1]]
+});
+let fallen: Vec<_> = updated_pins.into_iter().filter(|pin| pin.state() == SkittleState::Fall).collect();
 let board = original[0].score_board().add(SimpleMolkky.calc_score(&fallen));
 let updated = original[0].with_score_board(board);
 assert_eq!(original[0].score_board().total(), 0);
 assert_eq!(updated.score_board().total(), 5);
-assert_eq!(field.skittles(), [pin]);
+assert!(pins.iter().all(|pin| pin.state() == SkittleState::Stand));
 ```
 
-## 確率零と一の投てき結果
+## 確率零と一の判定は全個体の新しい状態を返す
 
 ```rust
-use rust_molkky::{Field, Skittle, Stick, Molkky, SimpleMolkky};
-use rust_molkky::simulation::ArrayField;
-let field = ArrayField::new(vec![Skittle::new(5), Skittle::new(8)]);
-assert_eq!(Stick::default().fall_probability(), 0.25);
-let zero = SimpleMolkky.throw(&Stick::new(0.0), field.skittles(), &mut rand::rng());
-let all = SimpleMolkky.throw(&Stick::new(1.0), field.skittles(), &mut rand::rng());
-assert!(zero.is_empty());
-assert_eq!(all, field.skittles());
+use rust_molkky::{Skittle, SkittleState, Stick};
+use rust_molkky::simulation::RandomStick;
+let pins = [Skittle::new(5), Skittle::new(8)];
+assert_eq!(RandomStick::default().fall_probability(), 0.25);
+let zero = RandomStick::new(Stick::new(), 0.0).judge(&pins, &mut rand::rng());
+let all = RandomStick::new(Stick::new(), 1.0).judge(&pins, &mut rand::rng());
+assert_eq!(zero, pins);
+assert_eq!(all.len(), pins.len());
+assert!(all.iter().all(|pin| pin.state() == SkittleState::Fall));
 ```
 
 ## Fieldの共有参照からピン集合を書き換えることはできない
 
 ```compile_fail
-use rust_molkky::{Field, FieldGenerator, Skittle};
+use rust_molkky::Skittle;
 use rust_molkky::simulation::StandardFieldGenerator;
 let field = StandardFieldGenerator.generate();
 field.skittles()[0] = Skittle::new(12);
@@ -209,7 +209,7 @@ use rust_molkky::simulation::ArrayField;
 let first = Skittle::new(12);
 let second = Skittle::new(12);
 assert_ne!(first.id(), second.id());
-let field = ArrayField::new(vec![first, second]);
+let field = ArrayField::new(Field::new(), vec![first, second]);
 assert_eq!(SimpleMolkky.calc_score(field.skittles()).value(), 2);
 assert_eq!(SimpleMolkky.calc_score(&[first]).value(), 12);
 ```
@@ -298,24 +298,19 @@ use rust_molkky::Id;
 Id(uuid::Uuid::nil());
 ```
 
-## 座標付きFieldからも個体集合だけを渡して投げられる
+## Fieldの識別子と座標付き表現を合成する
 
 ```rust
-use rust_molkky::{Field, FieldGenerator, Skittle, Stick, Molkky, SimpleMolkky};
-struct Board { pins: Vec<Skittle>, x: f64 }
-impl Field for Board {
-    fn skittles(&self) -> &[Skittle] { &self.pins }
-}
-struct Setup;
-impl FieldGenerator for Setup {
-    type Field = Board;
-    fn generate(&self) -> Board { Board { pins: vec![Skittle::new(12), Skittle::new(12)], x: 0.0 } }
-}
-let field = Setup.generate();
-let fallen = SimpleMolkky.throw(&Stick::new(1.0), field.skittles(), &mut rand::rng());
-assert_eq!(fallen, field.skittles());
-assert_eq!(field.x, 0.0);
-assert_eq!(SimpleMolkky.calc_score(&fallen).value(), 2);
+use rust_molkky::{Field, Skittle, SkittleState, Stick, Molkky, SimpleMolkky};
+struct Board { field: Field, pins: Vec<Skittle>, positions: Vec<(f64, f64)> }
+let identity = Field::new();
+let field = Board { field: identity, pins: vec![Skittle::new(12), Skittle::new(12)], positions: vec![(0.0, 0.0), (1.0, 0.0)] };
+let updated = SimpleMolkky.hit(&Stick::new(), &field.pins, &mut |_, pins| {
+    pins.iter().map(|pin| pin.with_state(SkittleState::Fall)).collect()
+});
+assert_eq!(field.field.id(), identity.id());
+assert_eq!(field.positions, [(0.0, 0.0), (1.0, 0.0)]);
+assert_eq!(SimpleMolkky.calc_score(&updated).value(), 2);
 ```
 
 ## 空のMolkky実装でデフォルトのルールを利用する
@@ -368,4 +363,23 @@ assert!(active.turn());
 assert_eq!(active.id(), original.id());
 let teams = [active];
 assert_eq!(SimpleMolkky.next_team(&teams).unwrap().id(), original.id());
+```
+
+## 判定関数の型別名はクロージャの可変借用として使える
+
+```rust
+use rust_molkky::{JudgeStrategy, Molkky, SimpleMolkky, Skittle, Stick};
+let mut count = 0;
+let mut judge = |_: &Stick, pins: &[Skittle]| { count += 1; pins.to_vec() };
+let strategy: JudgeStrategy<'_> = &mut judge;
+let rules: &dyn Molkky = &SimpleMolkky;
+assert!(rules.hit(&Stick::new(), &[], strategy).is_empty());
+assert_eq!(count, 1);
+```
+
+## 識別子だけの棒に確率を設定することはできない
+
+```compile_fail
+use rust_molkky::Stick;
+Stick::new(0.25);
 ```

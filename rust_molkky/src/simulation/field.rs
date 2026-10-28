@@ -1,28 +1,31 @@
-use crate::core::models::{Field, FieldGenerator, Skittle};
+use crate::core::models::{Field, Skittle};
 use crate::core::services::validate_unique_ids;
 
-/// 座標を持たない具体的なField。
+/// フィールドの識別子と、座標を持たない個体集合を合成する。
 #[derive(Clone)]
 pub struct ArrayField {
+    field: Field,
     skittles: Vec<Skittle>,
 }
 impl ArrayField {
-    pub fn new(skittles: Vec<Skittle>) -> Self {
+    pub fn new(field: Field, skittles: Vec<Skittle>) -> Self {
         validate_unique_ids(&skittles);
-        Self { skittles }
+        Self { field, skittles }
     }
-}
-impl Field for ArrayField {
-    fn skittles(&self) -> &[Skittle] {
+
+    pub fn field(&self) -> &Field {
+        &self.field
+    }
+
+    pub fn skittles(&self) -> &[Skittle] {
         &self.skittles
     }
 }
 
-/// 標準ルールの1〜12各1本を生成する。変則構成の制約とは分離する。
+/// 標準ルールの1〜12各1本を生成する。
 pub struct StandardFieldGenerator;
-impl FieldGenerator for StandardFieldGenerator {
-    type Field = ArrayField;
-    fn generate(&self) -> ArrayField {
-        ArrayField::new((1..=12).map(Skittle::new).collect())
+impl StandardFieldGenerator {
+    pub fn generate(&self) -> ArrayField {
+        ArrayField::new(Field::new(), (1..=12).map(Skittle::new).collect())
     }
 }

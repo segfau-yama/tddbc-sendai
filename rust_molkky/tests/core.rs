@@ -15,4 +15,3 @@ mod team;
 
 #[path = "core/models/stick.rs"]
 mod stick;
-mod support;

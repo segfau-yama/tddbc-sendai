@@ -1,5 +1,4 @@
 use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
-use rand::{Rng, RngCore};
 use std::collections::HashSet;
 
 pub(crate) fn validate_unique_ids(skittles: &[Skittle]) {
@@ -13,17 +12,24 @@ pub(crate) fn validate_unique_ids(skittles: &[Skittle]) {
     }
 }
 
-/// 投てき・採点・チーム選択のルール。既定メソッドは現在のシンプルなモルックのルールを使う。
-/// 履歴やFieldを所有せず、更新は新しいチーム一覧として返す。
+/// クロージャで乱数源や物理世界を捕捉できる、判定関数の借用。ヒープ確保は不要。
+pub type JudgeStrategy<'a> = &'a mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>;
+
+/// 衝突・転倒判定・採点・チーム選択のルール。既定メソッドは現在のシンプルなモルックのルールを使う。
+/// 履歴やFieldを所有せず、手番や得点の更新は呼び出し側が扱う。
 pub trait Molkky {
-    /// 各個体を棒の設定確率で独立抽選する。入力は変更せず、乱数源だけを更新する。
-    fn throw(&self, stick: &Stick, skittles: &[Skittle], rng: &mut dyn RngCore) -> Vec<Skittle> {
+    /// 判定方法を注入し、同じ個体集合の新しい状態を返す。入力は変更しない。
+    fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> Vec<Skittle> {
         validate_unique_ids(skittles);
-        skittles
+        let updated = judge(stick, skittles);
+        validate_unique_ids(&updated);
+        let before: HashSet<_> = skittles
             .iter()
-            .copied()
-            .filter(|_| rng.random_bool(stick.fall_probability()))
-            .collect()
+            .map(|pin| (pin.id(), pin.number()))
+            .collect();
+        let after: HashSet<_> = updated.iter().map(|pin| (pin.id(), pin.number())).collect();
+        assert_eq!(before, after, "判定後のスキットル集合が変わっています");
+        updated
     }
 
     /// 位置や投てき方法に依存せず、倒れた番号だけから採点する。
