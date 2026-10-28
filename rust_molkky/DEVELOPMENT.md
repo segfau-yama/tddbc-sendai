@@ -2,6 +2,45 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
+## 判定結果の所有によるライフタイム注釈の簡約（今回の変更）
+
+### 設計とレビュー範囲
+
+- 対象：JudgeStrategy・Molkky::hit、Skittlesの生成時検証とas_slice、判定関数の呼び出し元、関連テストとAPI例。ScoreBoardとPoint分離の編集中の変更は保全し、今回のコミットには含めない。
+- 期待する振る舞い：入力の個体集合を変更せず、判定関数は更新後の全個体を所有するVecとして返す。クロージャは乱数源・呼び出し回数等を借用でき、Molkkyのtrait objectから呼べる。ID重複・個体の追加/欠落/置換を拒否し、状態変更と並び替えは許可する。
+- 公開API案：`JudgeStrategy<'judge> = &'judge mut dyn FnMut(&Stick, Skittles<'_>) -> Vec<Skittle>`、`hit(&self, &Stick, Skittles<'_>, JudgeStrategy<'_>) -> Vec<Skittle>`。返却値が入力やクロージャの借用に依存しなくなるため、hitの名前付きライフタイムと判定結果用の型引数を削除する。
+- 判断：借用型のSkittles/Teamsを維持し、更新結果だけを所有させる。Skittles生成時のID検証という編集中の意図は維持し、旧validate呼び出しを生成へ移行する。モデルを借用するために必要な型定義・コンストラクタ・要素参照のライフタイムは残す。所有型への一括変更・Rc/Arc・リーク・staticによる回避は追加しない。
+- レビューP1：借用型Skittlesを判定結果にすると、判定関数内で作ったVecを返せない。現在のRandomStick::judgeは新しいVecを生成するため、返却値の所有を分ける必要がある。
+- レビューP1：作業中のhitから個体集合の比較が外れている。既存の追加/欠落/置換拒否テストを根拠に、この検証を維持する。
+- レビューP1：Skittlesの検証がnewへ移った一方、ArrayFieldとテスト/API例は削除されたvalidateを呼んでいる。開始時のcargo testはE0599で失敗した。この既存の不整合は新しいテストのRedとは区別する。
+
+### テスト計画
+
+- [x] 作業開始時の失敗と、ScoreBoardを検証済み実装に固定した検証用コピーの基準を記録する。
+- [x] 入力Skittlesから新しいVecを返し、ローカル変数を借用する判定関数のテストを先に書いて失敗を確認する。
+- [x] 判定結果のライフタイムを削除し、利用側と生成時検証を移行して成功を確認する。
+- [x] 空・同番号別個体・同ID重複・状態変更・集合の追加/欠落/置換・入力不変の既存検証を維持する。
+- [x] API例、test/build/fmt/Clippy・差分と最終レビューを記録する。
+
+
+### Red・Green・Refactorと検証結果
+
+- 開始時の`cd rust_molkky && cargo test --locked`は、ArrayFieldから削除されたvalidateを呼ぶE0599で失敗した（/tmp/lifetime-start.log）。既存の不整合であり、新しいテストのRedとして扱わない。
+- 検証用worktreeを作り、HEADの検証済み実装で`cargo test --locked`の145件成功を確認した（/tmp/lifetime-baseline.log）。以降、ScoreBoardとPointの公開経路だけをこの状態に固定し、独立したtargetで今回の変更を検証した。
+- Red：入力と判定関数の借用スコープを抜けた後も結果を保持するテストを先に書いた。判定関数が返すVecに対し旧APIがSkittlesを要求するE0271を確認した（/tmp/lifetime-red.log）。同ログ内の旧型別名の引数数E0107も、2つから1つへの移行に対応する。移行中の余分なas_slice呼び出しによるE0658は単なる修正ミスとして解消し、Redとは区別した。
+- Green：判定関数とhitの返却値をVecにし、型別名のライフタイムを2つから1つへ、hitの名前付きライフタイムを1つから0へ削減した。入力のSkittlesとTeamsの借用設計は維持した。出力の生成時検証・個体集合の比較も復旧した。
+- Refactor：判定関数内ではas_sliceから入力を参照し、既存のRandomStick::judgeが生成するVecをそのまま返す。モデル全体の所有型化や不要なclone、static制約、Box化は追加していない。
+- Skittles生成時の検証へArrayField・既存テスト・API例を合わせ、削除済みvalidateを呼ばないようにした。as_sliceは元のデータの参照を返すため`&'a [Skittle]`を維持し、一時モデルの破棄後もその参照を使えるテストを追加した。この追加ケースは初回から成功しており、事前Redではない。
+- 最終`cargo test --locked`は147件成功（core69・バイナリ27・CLI1・simulation12・doc38）、失敗・無視0件（/tmp/lifetime-final-tests.log）。`cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --all-targets -- -D warnings`・`git diff --check`も成功した。
+- 現作業ツリーでも別途`cargo test --locked`を実行し、編集中のScoreBoardのhistory/total欠落によるE0599が残ることを確認した（/tmp/lifetime-working-tree.log）。この未コミット編集とPoint分離は今回変更していない。
+
+### 最終レビュー
+
+- 対象：JudgeStrategy・Molkky::hit・Skittles・ArrayField・Controller・判定/採点テスト・API例とREADME。想定規模は1端末の対話ゲーム、標準12本・少数チーム。
+- 確認済み：ローカル変数を捕捉するFnMutとdyn Molkkyが使える。入力と判定関数の借用より長く結果を保持できる。判定は1回、入力のID/状態は不変、出力の重複/追加/欠落/置換は拒否し、並び替えと状態変更は許可する。検証の削除・テストの無効化はない。
+- 残す注釈の根拠：Skittles/Teamsの型は外部データを借用する。as_slice/judge_gameの出力参照は一時的なラッパーではなく元のデータに結び付く必要があり、単純な省略は利用可能な参照期間を短くする。これらの関係は既存と追加のテストで維持した。
+- 今回の変更に未修正の指摘はない。範囲外のScoreBoard編集中の不整合は引き続き残る。実端末でのTUI操作・Javaの検証は未実施。
+
 ## ドメインモデルの範囲に関する根拠の確認（今回のレビュー・ソース変更なし）
 
 - 対象：前の説明「ドメインモデルにはエンティティだけでなく、値オブジェクトやコレクションも含まれます」。根拠となる定義と、このプロジェクトへの設計判断を分けて再確認した。

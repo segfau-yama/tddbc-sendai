@@ -8,7 +8,7 @@ pub struct ArrayField {
 }
 impl ArrayField {
     pub fn new(field: Field, skittles: Vec<Skittle>) -> Self {
-        Skittles::new(&skittles).validate();
+        Skittles::new(&skittles);
         Self { field, skittles }
     }
 

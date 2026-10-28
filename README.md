@@ -65,9 +65,9 @@ Teamはturn: boolを保持し、turn()/with_turn(bool)で参照・不変更新�
 
 ### 集合のドメインモデル
 
-Skittles::new(&pins)は既存の個体一覧をコピーせず借用します。生成だけでは検証せず、validate()で同IDの重複を拒否します。
+Skittles::new(&pins)は既存の個体一覧をコピーせず借用します。生成時に同IDの重複を拒否します。as_slice()で元の共有スライスを参照できます。
 同番号の別個体・空集合・13本以上を許可します。
-hit・calc_score・ArrayField生成はこの検証を使います。Skittles::calc_score()は検証後にその集合だけを採点します。採点対象の選択は呼び出し側が行います。
+hitの入出力とArrayField生成はこの生成時検証を使います。Skittles::calc_score()は検証済みの集合だけを採点します。採点対象の選択は呼び出し側が行います。
 Teams::new(&teams)も参加者をコピーせず借用し、judge_game()/next_team()の実行時に従来の不正入力を検証します。
 両モデルは元の一覧を変更しません。可変アクセサや所有するVecは追加していません。
 
@@ -75,8 +75,8 @@ Teams::new(&teams)も参加者をコピーせず借用し、judge_game()/next_te
 
 FieldとStickは、非公開のIdだけを持つ不変の型です。new()/default()は新しいUUIDを発行し、id()で取得できます。
 simulationのArrayFieldがFieldと個体一覧、RandomStickがStickと検証済み確率を合成します。
-Molkky::hit(&Stick, &[Skittle], JudgeStrategy)は判定関数を呼び、更新後の全個体を返します。
-JudgeStrategy<'a>は&'a mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>の型別名です。専用traitやヒープ確保は不要です。
+Molkky::hit(&Stick, Skittles<'_>, JudgeStrategy<'_>)は判定関数を呼び、更新後の全個体をVec<Skittle>として返します。
+JudgeStrategy<'judge>は&'judge mut dyn FnMut(&Stick, Skittles<'_>) -> Vec<Skittle>の型別名です。'judgeは判定関数の借用期間だけを表し、返却値は入力や判定関数の借用期間に依存しません。
 判定関数は乱数源や物理世界を捕捉できます。coreは乱数・座標・描画に依存しません。
 
 ```rust
@@ -86,7 +86,7 @@ use rust_molkky::simulation::{RandomStick, StandardFieldGenerator};
 let field = StandardFieldGenerator.generate();
 let stick = RandomStick::new(Stick::new(), 1.0);
 let mut rng = rand::rng();
-let updated = SimpleMolkky.hit(stick.stick(), field.skittles(), &mut |_, pins| stick.judge(pins, &mut rng));
+let updated = SimpleMolkky.hit(stick.stick(), Skittles::new(field.skittles()), &mut |_, pins| stick.judge(pins.as_slice(), &mut rng));
 let fallen: Vec<_> = updated.into_iter().filter(|pin| pin.state() == SkittleState::Fall).collect();
 assert_eq!(Skittles::new(&fallen).calc_score().value(), 12);
 ```
@@ -112,7 +112,7 @@ is_reset・apply_point・was_resetは削除しました。
 
 ### 投てき判定とドメインモデル
 
-core/services/molkky.rsのMolkky traitはhitを定義します。採点はSkittles::calc_scoreが担当します。個体IDの検証はSkittles::validate、勝者と手番の選択はTeamsが担当します。
+core/services/molkky.rsのMolkky traitはhitを定義します。採点はSkittles::calc_scoreが担当します。個体IDの検証はSkittles::new、勝者と手番の選択はTeamsが担当します。
 SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
 得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
 next_teamは次の手番を設定した新しいチーム一覧を返します。元の一覧は変更しません。

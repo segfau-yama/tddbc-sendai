@@ -118,7 +118,7 @@ let mut rng = StdRng::seed_from_u64(42);
 let pin = Skittle::new(5);
 let field = ArrayField::new(Field::new(), vec![pin]);
 let stick = RandomStick::new(Stick::new(), 1.0);
-let updated = SimpleMolkky.hit(stick.stick(), field.skittles(), &mut |_, pins| stick.judge(pins, &mut rng));
+let updated = SimpleMolkky.hit(stick.stick(), Skittles::new(field.skittles()), &mut |_, pins| stick.judge(pins.as_slice(), &mut rng));
 assert_eq!(updated, [pin.with_state(SkittleState::Fall)]);
 let fallen: Vec<_> = updated.into_iter().filter(|pin| pin.state() == SkittleState::Fall).collect();
 assert_eq!(Skittles::new(&fallen).calc_score().value(), 5);
@@ -129,7 +129,7 @@ assert_eq!(field.skittles(), [pin]);
 
 ```compile_fail
 use rust_molkky::{Molkky, SimpleMolkky, Stick};
-SimpleMolkky.hit(&Stick::default(), None, &mut |_, pins| pins.to_vec());
+SimpleMolkky.hit(&Stick::default(), None, &mut |_, pins| pins.as_slice().to_vec());
 ```
 
 ## hitの結果から採点と不変な状態の更新を組み合わせる
@@ -139,7 +139,8 @@ use rust_molkky::Skittles;
 use rust_molkky::{Name, Skittle, SkittleState, Stick, Team, Molkky, SimpleMolkky};
 let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
 let pins = [Skittle::new(5), Skittle::new(12)];
-let updated_pins = SimpleMolkky.hit(&Stick::new(), &pins, &mut |_, pins| {
+let updated_pins = SimpleMolkky.hit(&Stick::new(), Skittles::new(&pins), &mut |_, pins| {
+    let pins = pins.as_slice();
     vec![pins[0].with_state(SkittleState::Fall), pins[1]]
 });
 let fallen: Vec<_> = updated_pins.into_iter().filter(|pin| pin.state() == SkittleState::Fall).collect();
@@ -328,7 +329,8 @@ use rust_molkky::{Field, Skittle, SkittleState, Stick, Molkky, SimpleMolkky};
 struct Board { field: Field, pins: Vec<Skittle>, positions: Vec<(f64, f64)> }
 let identity = Field::new();
 let field = Board { field: identity, pins: vec![Skittle::new(12), Skittle::new(12)], positions: vec![(0.0, 0.0), (1.0, 0.0)] };
-let updated = SimpleMolkky.hit(&Stick::new(), &field.pins, &mut |_, pins| {
+let updated = SimpleMolkky.hit(&Stick::new(), Skittles::new(&field.pins), &mut |_, pins| {
+    let pins = pins.as_slice();
     pins.iter().map(|pin| pin.with_state(SkittleState::Fall)).collect()
 });
 assert_eq!(field.field.id(), identity.id());
@@ -346,7 +348,7 @@ struct MyMolkky;
 impl Molkky for MyMolkky {}
 let rules: &dyn Molkky = &MyMolkky;
 let original = vec![Team::new(Name::new("赤").unwrap())];
-let pins = rules.hit(&rust_molkky::Stick::new(), &[Skittle::new(12)], &mut |_, pins| pins.to_vec());
+let pins = rules.hit(&rust_molkky::Stick::new(), Skittles::new(&[Skittle::new(12)]), &mut |_, pins| pins.as_slice().to_vec());
 let board = original[0].score_board().add(Skittles::new(&pins).calc_score());
 let updated = original[0].with_score_board(board);
 assert_eq!(updated.score_board().total(), 12);
@@ -398,12 +400,12 @@ assert!(next[0].turn());
 ## 判定関数の型別名はクロージャの可変借用として使える
 
 ```rust
-use rust_molkky::{JudgeStrategy, Molkky, SimpleMolkky, Skittle, Stick};
+use rust_molkky::{JudgeStrategy, Molkky, SimpleMolkky, Skittles, Stick};
 let mut count = 0;
-let mut judge = |_: &Stick, pins: &[Skittle]| { count += 1; pins.to_vec() };
+let mut judge = |_: &Stick, pins: Skittles<'_>| { count += 1; pins.as_slice().to_vec() };
 let strategy: JudgeStrategy<'_> = &mut judge;
 let rules: &dyn Molkky = &SimpleMolkky;
-assert!(rules.hit(&Stick::new(), &[], strategy).is_empty());
+assert!(rules.hit(&Stick::new(), Skittles::new(&[]), strategy).is_empty());
 assert_eq!(count, 1);
 ```
 
@@ -421,7 +423,7 @@ use rust_molkky::Skittles;
 use rust_molkky::Skittle;
 let pins = [Skittle::new(12), Skittle::new(12)];
 let skittles = Skittles::new(&pins);
-skittles.validate();
+skittles.calc_score();
 assert_eq!(skittles.calc_score().value(), 2);
 ```
 
@@ -432,5 +434,5 @@ use rust_molkky::{Skittle, Skittles};
 let mut pins = [Skittle::new(5)];
 let skittles = Skittles::new(&pins);
 pins[0] = Skittle::new(12);
-skittles.validate();
+skittles.calc_score();
 ```

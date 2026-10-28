@@ -1,15 +1,22 @@
 use rust_molkky::{Skittle, Skittles};
 
 #[test]
-fn 検証メソッドは番号でなく個体の重複を判定し入力を変えない() {
+fn 一時的なモデルの破棄後も元のスライスを参照できる() {
+    let pins = [Skittle::new(5)];
+    let borrowed = Skittles::new(&pins).as_slice();
+    assert!(std::ptr::eq(borrowed, &pins[..]));
+}
+
+#[test]
+fn 生成時に番号でなく個体の重複を判定し入力を変えない() {
     let pins = [Skittle::new(12), Skittle::new(12)];
     let original = pins;
-    Skittles::new(&[]).validate();
-    Skittles::new(&pins).validate();
+    Skittles::new(&[]);
+    Skittles::new(&pins);
     assert_eq!(pins, original);
     assert!(
         std::panic::catch_unwind(|| {
-            Skittles::new(&[pins[0], pins[0]]).validate();
+            Skittles::new(&[pins[0], pins[0]]);
         })
         .is_err()
     );
@@ -19,7 +26,7 @@ fn 検証メソッドは番号でなく個体の重複を判定し入力を変�
 #[should_panic(expected = "スキットルIDが重複しています")]
 fn 同じ個体は状態が異なっても二重登録できない() {
     let pin = Skittle::new(5);
-    Skittles::new(&[pin, pin.with_state(rust_molkky::SkittleState::Fall)]).validate();
+    Skittles::new(&[pin, pin.with_state(rust_molkky::SkittleState::Fall)]);
 }
 
 mod scoring {

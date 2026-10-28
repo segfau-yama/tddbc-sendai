@@ -93,11 +93,14 @@ impl Controller {
             return;
         }
         let before = self.teams[active].score_board().total();
-        let updated = self
-            .rules
-            .hit(self.stick.stick(), self.field.skittles(), &mut |_, pins| {
+        let updated = self.rules.hit(
+            self.stick.stick(),
+            Skittles::new(self.field.skittles()),
+            &mut |_, pins| {
+                let pins = pins.as_slice();
                 self.stick.judge(pins, rng)
-            });
+            },
+        );
         let knocked_over: Vec<_> = updated
             .iter()
             .copied()

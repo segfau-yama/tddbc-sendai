@@ -36,16 +36,26 @@ fn 同じシードなら点数列と表示移動を再現しピン集合は変�
     );
     let stick = RandomStick::default();
     for _ in 0..100 {
-        let updated_a = SimpleMolkky.hit(stick.stick(), pins.skittles(), &mut |_, pins| {
-            stick.judge(pins, &mut first)
-        });
+        let updated_a = SimpleMolkky.hit(
+            stick.stick(),
+            Skittles::new(pins.skittles()),
+            &mut |_, pins| {
+                let pins = pins.as_slice();
+                stick.judge(pins, &mut first)
+            },
+        );
         let hit_a: Vec<_> = updated_a
             .into_iter()
             .filter(|pin| pin.state() == SkittleState::Fall)
             .collect();
-        let updated_b = SimpleMolkky.hit(stick.stick(), pins.skittles(), &mut |_, pins| {
-            stick.judge(pins, &mut second)
-        });
+        let updated_b = SimpleMolkky.hit(
+            stick.stick(),
+            Skittles::new(pins.skittles()),
+            &mut |_, pins| {
+                let pins = pins.as_slice();
+                stick.judge(pins, &mut second)
+            },
+        );
         let hit_b: Vec<_> = updated_b
             .into_iter()
             .filter(|pin| pin.state() == SkittleState::Fall)
