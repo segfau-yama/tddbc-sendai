@@ -2,7 +2,32 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## 現行ルールをデフォルトにするMolkky trait案（2026-10-28・レビューのみ）
+## 採点・試合判定のMolkky traitへの直接統合（今回の変更）
+
+- 要求：関数への委譲ではなく、Molkky traitのデフォルト実装へ処理を直接書き、judge.rs/scoring.rsを削除してmolkky.rsへまとめる。
+- core/services/molkky.rsにcalc_score・judge_game・next_team・record_pointをデフォルトメソッドとして置く。現行の得点・補正・失格・勝敗・入力検証・不変更新を維持する。next_team/record_pointはself.judge_gameを呼ぶ。
+- 状態を持たないSimpleMolkkyを既定の利用型として用意する。ScoreBoardが持つ得点履歴・合計・補正の規則はそのまま再利用する。Fieldや投てき方式をtraitへ含めない。投てきの関数型への縮小案は今回の範囲外で、throw.rsは変更しない。
+- 自由関数の互換ラッパーは残さず、利用側はMolkky traitとSimpleMolkkyを使う。TUIと表示用合成は同じルール実装で判定する。
+- [x] 変更前の全テストを確認する。
+- [x] 空のtrait実装の既定ルールと、上書きした判定が記録・次チーム判定へ反映されることのRedを確認する。
+- [x] 実装と既存テストをmolkky.rsへ統合し、全ルールの検証を維持する。
+- [x] 利用側・API文書を更新し、test/build/fmt/Clippy・TUI操作・差分を確認する。
+
+### 設計・Red/Green・最終確認
+
+- デフォルトメソッドの本体はmolkky.rsへ直接記載し、judge.rs/scoring.rsおよび再公開を削除した。SimpleMolkkyは空のimplで全デフォルトを使う。旧Molkky構造体と異なり、trait/既定実装はチーム・Field・Stickを所有しない。
+- calc_scoreは個体IDの重複検証と0/1/複数本の採点、judge_gameはチームID・履歴・勝者の検証と試合判定を実行する。50点超過の25点補正・3連続0点の判定・履歴追加は既存ScoreBoardの実装を使い、処理を複製していない。
+- next_team/record_pointはself.judge_gameを利用する。TUIのControllerはSimpleMolkkyを保持し、その同じ参照をgameの表示用合成へ渡す。上書きした判定を表示にも反映するテストを追加した。任意の得点・失格ルール全体を設定可能にする変更は今回行わない。
+- 変更前のcargo test --lockedは140件成功（/tmp/molkky-defaults-baseline.log）。
+- Red：空のimplで既定ルールを使うテストと、judge_gameの上書きが記録・次チーム判定へ反映されるテストを先に追加し、Molkky未実装のE0432を確認した（/tmp/molkky-defaults-red.log）。
+- Green：traitと直接の既定実装を追加して2テストが成功。旧judge/scoringのテスト本体はtests/core/services/molkky.rsのjudging/scoringモジュールへ移し、既存のアサーションを維持した。その他の呼び出しも自由関数からSimpleMolkkyのメソッドへ更新した。
+- 新しい表示テストと空のimplを説明するAPI例は実装後に追加して成功したもので、事前のRed確認済みとは数えない。compile_fail例のimportも更新し、削除した自由関数の未解決importだけで通る状態にはしない。
+- 最終cargo test --lockedは144件成功（core79・バイナリ20・CLI1・simulation11・doc33）、失敗・無視0件。cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkも成功（/tmp/molkky-defaults-final-tests.log）。
+- 100列×30行の擬似端末で右矢印・Space投てき・R再開・Q終了を実行。第1投・25.0%表示、panicなし、終了コード0を確認した（/tmp/molkky-defaults-tui.log）。削除したファイル/自由関数が存在しないこと、テストのファイル名・配置が対象と一致することも確認した。
+- 公開APIはMolkky traitをimportしSimpleMolkkyや利用側の空implからメソッドを呼ぶ形へ変更した。READMEと実行可能なAPI例を更新した。過去のレビュー中のjudge.rs/scoring.rsへのリンクは変更前コミットのソースへ向けた。
+- throw.rs・Field・物理エンジン・モデルの内部構造・依存/ロック・Javaは未変更。記録済みの投てき関数型への縮小案は引き続き未実装。
+
+## 現行ルールをデフォルトにするMolkky trait案（前回のレビュー・直接統合は上記）
 
 - 入力：judge/scoringをMolkky traitへまとめ、過度な抽象化を避けるため、現在実装しているシンプルなルールをデフォルト提供する提案。繰り返しの指定により、「最初の実装」への巻き戻しではなく、現在のルールを対象とする。今回は設計レビューで、ソースの置換は行わない。
 - 対象：core/services/judge.rs、scoring.rs、core/models/score.rsとTUI/presentationの呼び出し。結論は「試合ルールの契約として限定すれば可能。ただしtraitの追加自体は抽象化を増やし、デフォルト実装だけで過度な抽象化を防ぐものではない」。差し替えが不要なら、現行の具体的な関数の方が少ない構成で済む。

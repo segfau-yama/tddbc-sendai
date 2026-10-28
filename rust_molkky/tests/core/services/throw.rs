@@ -1,4 +1,4 @@
-use rust_molkky::{Field, Skittle, ThrowOutcome, ThrowStrategy, calc_score, throw_stick};
+use rust_molkky::{Field, Molkky, SimpleMolkky, Skittle, ThrowOutcome, ThrowStrategy, throw_stick};
 
 #[derive(Clone)]
 struct CoordinateField {
@@ -39,7 +39,7 @@ fn 座標付きfieldとstrategyを動的に渡し新しい状態と倒れた個�
     assert_eq!(outcome.field().positions, [(1.0, 0.0), (2.0, 0.0)]);
     assert_eq!(outcome.field().pins, field.pins);
     assert_eq!(outcome.knocked_over(), [field.pins[0]]);
-    assert_eq!(calc_score(outcome.knocked_over()).value(), 12);
+    assert_eq!(SimpleMolkky.calc_score(outcome.knocked_over()).value(), 12);
     assert_eq!(field.positions, [(0.0, 0.0), (2.0, 0.0)]);
 }
 #[test]

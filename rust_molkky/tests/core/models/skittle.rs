@@ -1,4 +1,4 @@
-use rust_molkky::{Skittle, calc_score};
+use rust_molkky::{Molkky, SimpleMolkky, Skittle};
 
 #[test]
 fn 番号1を保持する() {
@@ -25,7 +25,7 @@ fn 番号13のスキットルは生成時に拒否する() {
 #[test]
 #[should_panic(expected = "スキットル番号は1〜12です")]
 fn 複数本に範囲外の番号が含まれると生成時に拒否する() {
-    calc_score(&[Skittle::new(1), Skittle::new(13)]);
+    SimpleMolkky.calc_score(&[Skittle::new(1), Skittle::new(13)]);
 }
 
 #[test]
@@ -35,5 +35,5 @@ fn 同じ番号でも別個体は別idでコピーはidを保つ() {
     assert_ne!(first.id(), second.id());
     let copied = first;
     assert_eq!(copied.id(), first.id());
-    assert_eq!(calc_score(&[first, second]).value(), 2);
+    assert_eq!(SimpleMolkky.calc_score(&[first, second]).value(), 2);
 }

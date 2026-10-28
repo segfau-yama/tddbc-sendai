@@ -2,7 +2,7 @@ use super::*;
 use crate::test_support::ConstantRng;
 use rand::{SeedableRng, rngs::StdRng};
 use rust_molkky::simulation::{RandomThrow, StandardFieldGenerator, Stick};
-use rust_molkky::{Field, FieldGenerator, calc_score, throw_stick};
+use rust_molkky::{Field, FieldGenerator, Molkky, SimpleMolkky, throw_stick};
 #[test]
 fn 同番号でも倒れた個体だけを移動し元の表示と他の個体を保持する() {
     let pins = [Skittle::new(12), Skittle::new(12)];
@@ -38,7 +38,7 @@ fn 同じシードなら点数列と表示移動を再現しピン集合は変�
         let hit_b =
             throw_stick(&pins, &mut RandomThrow::new(&Stick::default(), &mut second)).unwrap();
         assert_eq!(hit_a.knocked_over(), hit_b.knocked_over());
-        assert!((0..=12).contains(&calc_score(hit_a.knocked_over()).value()));
+        assert!((0..=12).contains(&SimpleMolkky.calc_score(hit_a.knocked_over()).value()));
         a = relocate_skittles(&a, hit_a.knocked_over(), &mut first);
         b = relocate_skittles(&b, hit_b.knocked_over(), &mut second);
         assert_eq!(a, b);

@@ -3,9 +3,9 @@
 ## 採点して得点表へ記録する
 
 ```rust
-use rust_molkky::{ScoreBoard, Skittle, calc_score};
-let first = calc_score(&[Skittle::new(5)]);
-let second = calc_score(&[Skittle::new(11)]);
+use rust_molkky::{ScoreBoard, Skittle, Molkky, SimpleMolkky};
+let first = SimpleMolkky.calc_score(&[Skittle::new(5)]);
+let second = SimpleMolkky.calc_score(&[Skittle::new(11)]);
 let mut board = ScoreBoard::new();
 board = board.add(first);
 board = board.add(second);
@@ -24,13 +24,13 @@ Skittle::new(None);
 ## 採点入力とその要素にNoneは指定できない
 
 ```compile_fail
-use rust_molkky::calc_score;
-calc_score(None);
+use rust_molkky::{Molkky, SimpleMolkky};
+SimpleMolkky.calc_score(None);
 ```
 
 ```compile_fail
-use rust_molkky::{Skittle, calc_score};
-calc_score(&[None::<Skittle>]);
+use rust_molkky::{Skittle, Molkky, SimpleMolkky};
+SimpleMolkky.calc_score(&[None::<Skittle>]);
 ```
 
 ## 得点表にNoneは追加できない
@@ -50,9 +50,9 @@ Point(99);
 ## 50点超過では履歴を残して25点へ戻す
 
 ```rust
-use rust_molkky::{ScoreBoard, Skittle, calc_score};
-let twelve = calc_score(&[Skittle::new(12)]);
-let three = calc_score(&[Skittle::new(3)]);
+use rust_molkky::{ScoreBoard, Skittle, Molkky, SimpleMolkky};
+let twelve = SimpleMolkky.calc_score(&[Skittle::new(12)]);
+let three = SimpleMolkky.calc_score(&[Skittle::new(3)]);
 let mut board = ScoreBoard::new();
 for _ in 0..4 { board = board.add(twelve); }
 board = board.add(three);
@@ -69,11 +69,11 @@ assert_eq!(board.history(), &[twelve, twelve, twelve, twelve, three, twelve]);
 ## 複数チームで50点ちょうどの勝者を判定する
 
 ```rust
-use rust_molkky::{Name, GameStatus, Skittle, Team, calc_score, judge_game, record_point};
+use rust_molkky::{Name, GameStatus, Skittle, Team, Molkky, SimpleMolkky};
 let mut teams = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
-let ten = calc_score(&[Skittle::new(10)]);
-for _ in 0..5 { teams = record_point(&teams, 1, ten); }
-assert_eq!(judge_game(&teams), GameStatus::Finished { winner: Some(1) });
+let ten = SimpleMolkky.calc_score(&[Skittle::new(10)]);
+for _ in 0..5 { teams = SimpleMolkky.record_point(&teams, 1, ten); }
+assert_eq!(SimpleMolkky.judge_game(&teams), GameStatus::Finished { winner: Some(1) });
 assert_eq!(teams[0].score_board().value(), 0);
 assert_eq!(teams[1].score_board().value(), 50);
 ```
@@ -81,24 +81,24 @@ assert_eq!(teams[1].score_board().value(), 50);
 ## 履歴と借用したチーム一覧は書き換えられない
 
 ```compile_fail
-use rust_molkky::{ScoreBoard, Skittle, calc_score};
-let point = calc_score(&[Skittle::new(5)]);
+use rust_molkky::{ScoreBoard, Skittle, Molkky, SimpleMolkky};
+let point = SimpleMolkky.calc_score(&[Skittle::new(5)]);
 let board = ScoreBoard::new().add(point);
-board.history()[0] = calc_score(&[Skittle::new(12)]);
+board.history()[0] = SimpleMolkky.calc_score(&[Skittle::new(12)]);
 ```
 
 ```compile_fail
-use rust_molkky::{Name, Team, calc_score, record_point};
+use rust_molkky::{Name, Team, Molkky, SimpleMolkky};
 let teams = vec![Team::new(Name::new("赤").unwrap())];
 let borrowed: &[Team] = &teams;
-borrowed[0] = record_point(borrowed, 0, calc_score(&[])).remove(0);
+borrowed[0] = SimpleMolkky.record_point(borrowed, 0, SimpleMolkky.calc_score(&[])).remove(0);
 ```
 
 ## Strategyから入力を変更せず投てき結果を得る
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Field, Skittle, calc_score, throw_stick};
+use rust_molkky::{Field, Skittle, throw_stick, Molkky, SimpleMolkky};
 use rust_molkky::simulation::{ArrayField, RandomThrow, Stick};
 let mut rng = StdRng::seed_from_u64(42);
 let pin = Skittle::new(5);
@@ -106,7 +106,7 @@ let field = ArrayField::new(vec![pin]);
 let stick = Stick::new(1.0);
 let outcome = throw_stick(&field, &mut RandomThrow::new(&stick, &mut rng)).unwrap();
 assert_eq!(outcome.knocked_over(), [pin]);
-assert_eq!(calc_score(outcome.knocked_over()).value(), 5);
+assert_eq!(SimpleMolkky.calc_score(outcome.knocked_over()).value(), 5);
 assert_eq!(field.skittles(), [pin]);
 assert_eq!(outcome.field().skittles(), [pin]);
 ```
@@ -126,7 +126,7 @@ throw_stick(None, &mut strategy);
 
 ```rust
 use rand::{rngs::StdRng, SeedableRng};
-use rust_molkky::{Name, Field, Skittle, Team, calc_score, record_point, throw_stick};
+use rust_molkky::{Name, Field, Skittle, Team, throw_stick, Molkky, SimpleMolkky};
 use rust_molkky::simulation::{ArrayField, RandomThrow, Stick};
 let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
 let pin = Skittle::new(5);
@@ -134,7 +134,7 @@ let field = ArrayField::new(vec![pin]);
 let stick = Stick::new(1.0);
 let mut rng = StdRng::seed_from_u64(42);
 let outcome = throw_stick(&field, &mut RandomThrow::new(&stick, &mut rng)).unwrap();
-let updated = record_point(&original, 0, calc_score(outcome.knocked_over()));
+let updated = SimpleMolkky.record_point(&original, 0, SimpleMolkky.calc_score(outcome.knocked_over()));
 assert_eq!(original[0].score_board().value(), 0);
 assert_eq!(updated[0].score_board().value(), 5);
 assert_eq!(field.skittles(), [pin]);
@@ -165,9 +165,9 @@ field.skittles()[0] = Skittle::new(12);
 ## 得点表の更新は元の履歴を変更しない
 
 ```rust
-use rust_molkky::{ScoreBoard, Skittle, calc_score};
-let five = calc_score(&[Skittle::new(5)]);
-let eleven = calc_score(&[Skittle::new(11)]);
+use rust_molkky::{ScoreBoard, Skittle, Molkky, SimpleMolkky};
+let five = SimpleMolkky.calc_score(&[Skittle::new(5)]);
+let eleven = SimpleMolkky.calc_score(&[Skittle::new(11)]);
 let original = ScoreBoard::new().add(five);
 let updated = original.add(eleven);
 assert_eq!(original.history(), &[five]);
@@ -178,17 +178,17 @@ assert_eq!(updated.history(), &[five, eleven]);
 
 ```compile_fail
 #![deny(unused_must_use)]
-use rust_molkky::{ScoreBoard, calc_score};
+use rust_molkky::{ScoreBoard, Molkky, SimpleMolkky};
 let board = ScoreBoard::new();
-board.add(calc_score(&[]));
+board.add(SimpleMolkky.calc_score(&[]));
 ```
 
 ## チームは得点表を差し替えて新しい値を返す
 
 ```rust
-use rust_molkky::{Name, ScoreBoard, Skittle, Team, calc_score};
+use rust_molkky::{Name, ScoreBoard, Skittle, Team, Molkky, SimpleMolkky};
 let original = Team::new(Name::new("赤").unwrap());
-let point = calc_score(&[Skittle::new(5)]);
+let point = SimpleMolkky.calc_score(&[Skittle::new(5)]);
 let updated = original.with_score_board(ScoreBoard::new().add(point));
 assert_eq!(original.score_board().value(), 0);
 assert_eq!(updated.score_board().value(), 5);
@@ -198,40 +198,40 @@ assert_eq!(original.name(), updated.name());
 ## 3回連続0点の失格後も残ったチームで継続する
 
 ```rust
-use rust_molkky::{Name, GameStatus, Skittle, Team, calc_score, judge_game, next_team, record_point};
+use rust_molkky::{Name, GameStatus, Skittle, Team, Molkky, SimpleMolkky};
 let mut teams = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap()), Team::new(Name::new("緑").unwrap())];
-let missed = calc_score(&[]);
-for _ in 0..3 { teams = record_point(&teams, 0, missed); }
-assert_eq!(judge_game(&teams), GameStatus::InProgress);
-assert_eq!(next_team(&teams, 2), Some(1));
-teams = record_point(&teams, 1, calc_score(&[Skittle::new(5)]));
+let missed = SimpleMolkky.calc_score(&[]);
+for _ in 0..3 { teams = SimpleMolkky.record_point(&teams, 0, missed); }
+assert_eq!(SimpleMolkky.judge_game(&teams), GameStatus::InProgress);
+assert_eq!(SimpleMolkky.next_team(&teams, 2), Some(1));
+teams = SimpleMolkky.record_point(&teams, 1, SimpleMolkky.calc_score(&[Skittle::new(5)]));
 assert_eq!(teams[1].score_board().value(), 5);
-for _ in 0..3 { teams = record_point(&teams, 1, missed); }
-assert_eq!(judge_game(&teams), GameStatus::Finished { winner: Some(2) });
-assert_eq!(next_team(&teams, 1), None);
+for _ in 0..3 { teams = SimpleMolkky.record_point(&teams, 1, missed); }
+assert_eq!(SimpleMolkky.judge_game(&teams), GameStatus::Finished { winner: Some(2) });
+assert_eq!(SimpleMolkky.next_team(&teams, 1), None);
 assert_eq!(teams[2].score_board().value(), 0);
 ```
 
 ## 同番号の別個体を配置し採点できる
 
 ```rust
-use rust_molkky::{Field, Skittle, calc_score};
+use rust_molkky::{Field, Skittle, Molkky, SimpleMolkky};
 use rust_molkky::simulation::ArrayField;
 let first = Skittle::new(12);
 let second = Skittle::new(12);
 assert_ne!(first.id(), second.id());
 let field = ArrayField::new(vec![first, second]);
-assert_eq!(calc_score(field.skittles()).value(), 2);
-assert_eq!(calc_score(&[first]).value(), 12);
+assert_eq!(SimpleMolkky.calc_score(field.skittles()).value(), 2);
+assert_eq!(SimpleMolkky.calc_score(&[first]).value(), 12);
 ```
 
 ## Pointの記録結果を破棄できない
 
 ```compile_fail
 #![deny(unused_must_use)]
-use rust_molkky::{Name, Team, calc_score, record_point};
+use rust_molkky::{Name, Team, Molkky, SimpleMolkky};
 let teams = vec![Team::new(Name::new("赤").unwrap())];
-record_point(&teams, 0, calc_score(&[]));
+SimpleMolkky.record_point(&teams, 0, SimpleMolkky.calc_score(&[]));
 ```
 
 ## チーム内部の得点表は共有参照から差し替えられない
@@ -246,9 +246,9 @@ let team = Team::new(Name::new("赤").unwrap());
 
 ```rust
 use rust_molkky::core::models::{ScoreBoard, Skittle};
-use rust_molkky::core::services::calc_score;
+use rust_molkky::core::services::{Molkky, SimpleMolkky};
 let pin: rust_molkky::Skittle = Skittle::new(5);
-let point = calc_score(&[pin]);
+let point = SimpleMolkky.calc_score(&[pin]);
 let board = ScoreBoard::new().add(point);
 assert_eq!(board.value(), 5);
 ```
@@ -257,12 +257,12 @@ assert_eq!(board.value(), 5);
 
 ```rust
 use rust_molkky::core::models::{GameStatus, Name, ScoreBoard, Team};
-use rust_molkky::core::services::{calc_score, judge_game};
-let missed = calc_score(&[]);
+use rust_molkky::core::services::{Molkky, SimpleMolkky};
+let missed = SimpleMolkky.calc_score(&[]);
 let out = ScoreBoard::new().add(missed).add(missed).add(missed);
 let teams = vec![Team::new(Name::new("赤").unwrap()).with_score_board(out.clone()), Team::new(Name::new("青").unwrap())];
-assert_eq!(judge_game(&teams), GameStatus::Finished { winner: Some(1) });
-assert_eq!(judge_game(&[Team::new(Name::new("赤").unwrap()).with_score_board(out)]), GameStatus::Finished { winner: None });
+assert_eq!(SimpleMolkky.judge_game(&teams), GameStatus::Finished { winner: Some(1) });
+assert_eq!(SimpleMolkky.judge_game(&[Team::new(Name::new("赤").unwrap()).with_score_board(out)]), GameStatus::Finished { winner: None });
 ```
 
 ## coreの公開APIに描画座標は含まれない
@@ -279,13 +279,13 @@ Skittle::new(5).position();
 ## チームの識別子は名前や得点更新で変わらない
 
 ```rust
-use rust_molkky::{Name, Team, calc_score, record_point};
+use rust_molkky::{Name, Team, Molkky, SimpleMolkky};
 let first = Team::new(Name::new("赤").unwrap());
 let second = Team::new(Name::new("赤").unwrap());
 assert_ne!(first.id(), second.id());
 let id = first.id();
 let original = vec![first, second];
-let updated = record_point(&original, 0, calc_score(&[]));
+let updated = SimpleMolkky.record_point(&original, 0, SimpleMolkky.calc_score(&[]));
 assert_eq!(updated[0].id(), id);
 assert_eq!(updated[0].name().as_str(), "赤");
 ```
@@ -347,4 +347,18 @@ let result = throw_stick(&field, strategy).unwrap();
 assert_eq!(result.field().x, 1.0);
 assert_eq!(field.x, 0.0);
 assert_eq!(result.knocked_over(), [field.pins[0]]);
+```
+
+## 空のMolkky実装でデフォルトのルールを利用する
+
+```rust
+use rust_molkky::{GameStatus, Molkky, Name, Skittle, Team};
+struct MyMolkky;
+impl Molkky for MyMolkky {}
+let rules: &dyn Molkky = &MyMolkky;
+let original = vec![Team::new(Name::new("赤").unwrap())];
+let updated = rules.record_point(&original, 0, rules.calc_score(&[Skittle::new(12)]));
+assert_eq!(updated[0].score_board().value(), 12);
+assert_eq!(original[0].score_board().value(), 0);
+assert_eq!(rules.judge_game(&updated), GameStatus::InProgress);
 ```

@@ -1,10 +1,10 @@
-use rust_molkky::{Point, ScoreBoard, Skittle, calc_score};
+use rust_molkky::{Molkky, Point, ScoreBoard, SimpleMolkky, Skittle};
 
 fn point(number: i32) -> Point {
     if number == 0 {
-        calc_score(&[])
+        SimpleMolkky.calc_score(&[])
     } else {
-        calc_score(&[Skittle::new(number)])
+        SimpleMolkky.calc_score(&[Skittle::new(number)])
     }
 }
 
@@ -56,7 +56,7 @@ fn 一回も投てきしていなければ0点になる() {
 #[test]
 fn 一回目に5本倒すと5点になる() {
     let mut board = ScoreBoard::new();
-    board = board.add(calc_score(&[
+    board = board.add(SimpleMolkky.calc_score(&[
         Skittle::new(1),
         Skittle::new(2),
         Skittle::new(3),
@@ -69,7 +69,7 @@ fn 一回目に5本倒すと5点になる() {
 #[test]
 fn 五本倒した後に11番を1本倒すと16点になる() {
     let mut board = ScoreBoard::new();
-    board = board.add(calc_score(&[
+    board = board.add(SimpleMolkky.calc_score(&[
         Skittle::new(1),
         Skittle::new(2),
         Skittle::new(3),
@@ -156,8 +156,8 @@ mod immutability {
 
     #[test]
     fn 点数を追加しても元の得点表の履歴と得点は変わらない() {
-        let five = calc_score(&[Skittle::new(5)]);
-        let eleven = calc_score(&[Skittle::new(11)]);
+        let five = SimpleMolkky.calc_score(&[Skittle::new(5)]);
+        let eleven = SimpleMolkky.calc_score(&[Skittle::new(11)]);
         let original = ScoreBoard::new().add(five);
         let updated = original.add(eleven);
         assert_eq!(original.history(), &[five]);

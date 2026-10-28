@@ -1,7 +1,7 @@
 use crate::support::ConstantRng;
 use rand::{SeedableRng, rngs::StdRng};
 use rust_molkky::simulation::{ArrayField, RandomThrow, StandardFieldGenerator, Stick};
-use rust_molkky::{Field, FieldGenerator, Skittle, calc_score, throw_stick};
+use rust_molkky::{Field, FieldGenerator, Molkky, SimpleMolkky, Skittle, throw_stick};
 
 #[test]
 fn 確率零なら倒れず確率一なら全ピンが倒れる() {
@@ -18,7 +18,7 @@ fn 確率零なら倒れず確率一なら全ピンが倒れる() {
     )
     .unwrap();
     assert_eq!(all.knocked_over(), field.skittles());
-    assert_eq!(calc_score(all.knocked_over()).value(), 12);
+    assert_eq!(SimpleMolkky.calc_score(all.knocked_over()).value(), 12);
 }
 #[test]
 fn 投てきは入力のピンと棒の条件を変えない() {

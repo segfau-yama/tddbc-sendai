@@ -1,5 +1,5 @@
 use rust_molkky::Name;
-use rust_molkky::{Skittle, Team, calc_score};
+use rust_molkky::{Molkky, SimpleMolkky, Skittle, Team};
 
 #[test]
 fn 名称を保持し得点は0から始まる() {
@@ -12,7 +12,7 @@ fn 名称を保持し得点は0から始まる() {
 #[test]
 fn 得点表を指定して元のチームを変えずに再構成する() {
     let mut team = Team::new(Name::new("赤チーム").unwrap());
-    let thrown = calc_score(&[Skittle::new(11)]);
+    let thrown = SimpleMolkky.calc_score(&[Skittle::new(11)]);
     assert_eq!(thrown.value(), 11);
     team = team.with_score_board(team.score_board().add(thrown));
     assert_eq!(team.score_board().value(), 11);
@@ -37,11 +37,11 @@ fn 同名でも異なるチームを作成できる() {
 #[test]
 fn 超過しても生の点数を保持して得点は25点になる() {
     let mut team = Team::new(Name::new("赤チーム").unwrap());
-    let twelve = calc_score(&[Skittle::new(12)]);
+    let twelve = SimpleMolkky.calc_score(&[Skittle::new(12)]);
     for _ in 0..4 {
         team = team.with_score_board(team.score_board().add(twelve));
     }
-    let point = calc_score(&[Skittle::new(3)]);
+    let point = SimpleMolkky.calc_score(&[Skittle::new(3)]);
     assert_eq!(point.value(), 3);
     team = team.with_score_board(team.score_board().add(point));
     assert_eq!(team.score_board().value(), 25);
@@ -61,8 +61,11 @@ mod immutability {
     #[test]
     fn チームへの記録でも元のチームは変わらない() {
         let original = Team::new(Name::new("赤").unwrap());
-        let updated =
-            original.with_score_board(original.score_board().add(calc_score(&[Skittle::new(11)])));
+        let updated = original.with_score_board(
+            original
+                .score_board()
+                .add(SimpleMolkky.calc_score(&[Skittle::new(11)])),
+        );
         assert_eq!(original.score_board().value(), 0);
         assert!(original.score_board().history().is_empty());
         assert_eq!(updated.score_board().value(), 11);
@@ -76,7 +79,11 @@ fn 同名でも別チームのidは異なりcloneと得点更新ではidを維�
     let second = Team::new(Name::new("同じ名前").unwrap());
     assert_ne!(first.id(), second.id());
     assert_eq!(first.clone().id(), first.id());
-    let updated = first.with_score_board(first.score_board().add(calc_score(&[Skittle::new(5)])));
+    let updated = first.with_score_board(
+        first
+            .score_board()
+            .add(SimpleMolkky.calc_score(&[Skittle::new(5)])),
+    );
     assert_eq!(updated.id(), first.id());
     let mut teams = [first, second];
     let id = teams[0].id();

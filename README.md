@@ -20,14 +20,14 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 | 場所 | 責務 |
 | --- | --- |
 | src/core/models/ | Skittle・Point・ScoreBoard・Team・Id・Name・GameStatus、Field/FieldGeneratorのtrait |
-| src/core/services/ | calc_score（採点）、ThrowStrategy/ThrowOutcome・throw_stick（投てきの契約と結果検証）、judge_game（継続・勝敗判定）、next_team（次チーム）、record_point（記録制約と不変更新） |
+| src/core/services/ | Molkkyの既定ルール（採点・勝敗・次チーム・記録）、ThrowStrategy/ThrowOutcome・throw_stick（投てきの契約と結果検証） |
 | src/simulation/ | ArrayField、標準Field生成、確率投てきRandomThrowと確率設定Stick |
 | src/game/ | coreとviewの合成、投てき後の表示上の移動 |
 | src/tui/ | Controllerによる端末入力、操作制御、描画の呼び出し |
 | src/view/ | 表示専用のPosition、描画構造体、Widget・CanvasDraw |
 
 core/modelsという名前は、エンティティと値オブジェクトの両方をまとめるためのものです。
-Teamは参加チーム、PointやScoreBoardは不変な値として扱います。試合を包むMolkky構造体は廃止し、チーム一覧から状態を導出します。
+Teamは参加チーム、PointやScoreBoardは不変な値として扱います。Molkkyは状態を所有する構造体ではなく、チーム一覧から採点・試合判定を行うルールのtraitです。
 モデルの更新は新しい値を返し、乱数源と端末入出力は呼び出し側で扱います。
 viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示値から描画します。
 
@@ -35,16 +35,18 @@ viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示�
 
 ```rust
 use rust_molkky::core::models::{GameStatus, Name, Skittle, Team};
-use rust_molkky::core::services::{calc_score, judge_game, record_point};
+use rust_molkky::core::services::{Molkky, SimpleMolkky};
 
+let rules = SimpleMolkky;
 let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
-let updated = record_point(&original, 0, calc_score(&[Skittle::new(11)]));
+let updated = rules.record_point(&original, 0, rules.calc_score(&[Skittle::new(11)]));
 assert_eq!(original[0].score_board().value(), 0);
 assert_eq!(updated[0].score_board().value(), 11);
-assert_eq!(judge_game(&updated), GameStatus::InProgress);
+assert_eq!(rules.judge_game(&updated), GameStatus::InProgress);
 ```
 
-従来のrust_molkky::Skittleやrust_molkky::core::calc_score等の公開名も再公開しています。
+MolkkyとSimpleMolkkyはcrate直下・core直下・core/servicesから公開します。
+calc_score・judge_game・next_team・record_pointの自由関数は廃止し、Molkkyのメソッドへ統合しました。
 PositionとSkittle/Stickの位置APIはcoreから削除しました。Positionはview内の表示専用型です。
 coreのFieldはピン集合を参照するtraitです。位置や世界状態は具体的なField実装が持てます。
 TUIのControllerはチーム一覧と配列Field・確率設定Stickを個別に保持します。gameがピンのIdと表示座標を対応づけます。
@@ -61,14 +63,14 @@ team.id()で一覧内の順番や名前に依存せず検索できます。同�
 
 ### Field生成・投てき・採点
 
-coreにはField・FieldGenerator・ThrowStrategyの契約のみを定義します。
+Field・FieldGenerator・ThrowStrategyの共通契約をcoreへ定義しています。
 FieldGenerator::generateが関連型のFieldを生成し、throw_stickは選択されたStrategyへ一投全体を委譲します。
 投てきはResult<ThrowOutcome<F>, Error>で新しいFieldと倒れた個体を返し、入力Fieldは変更しません。
 物理エンジンの状態・位置・投てき条件・失敗の型は実装側で定義できます。
 物理エンジンそのものは未実装です。配列以外のFieldとの接続は座標付きのテスト実装とAPI例で確認しています。
 
 ```rust
-use rust_molkky::{Field, FieldGenerator, calc_score, throw_stick};
+use rust_molkky::{Field, FieldGenerator, throw_stick, Molkky, SimpleMolkky};
 use rust_molkky::simulation::{StandardFieldGenerator, RandomThrow, Stick};
 let field = StandardFieldGenerator.generate();
 let stick = Stick::new(1.0);
@@ -76,7 +78,7 @@ let mut rng = rand::rng();
 let mut strategy = RandomThrow::new(&stick, &mut rng);
 let result = throw_stick(&field, &mut strategy).unwrap();
 assert_eq!(result.knocked_over(), field.skittles());
-assert_eq!(calc_score(result.knocked_over()).value(), 12);
+assert_eq!(SimpleMolkky.calc_score(result.knocked_over()).value(), 12);
 ```
 
 StandardFieldGeneratorは1〜12を各1本生成し、ArrayFieldは任意の個体集合を保持します。
@@ -91,9 +93,18 @@ ScoreBoard::addは履歴を追加した新しい得点表を返し、50点超過
 ScoreBoard::is_winnerは50点到達を示し、ゲーム全体の勝者はjudge_gameが決めます。
 was_resetは直近の25点補正の説明に使います。
 
+### 採点・試合ルールのデフォルト実装
+
+core/services/molkky.rsのMolkky traitへ、calc_score・judge_game・next_team・record_pointを直接実装しています。
+SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
+得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
+next_teamとrecord_pointはself.judge_gameを呼ぶため、判定を上書きした場合も同じ実装を使います。
+TUIはSimpleMolkkyを保持し、その参照を表示用合成にも渡します。
+Field生成・投てき・描画はこのtraitには含めません。
+
 ### 勝敗判定
 
-judge_game(&[Team])は失格チームを含む元の参加リストを受け取り、次を返します。
+Molkky::judge_game(&[Team])は失格チームを含む元の参加リストを受け取り、次を返します。
 
 - GameStatus::InProgress：進行中。
 - GameStatus::Finished { winner: Some(index) }：終了し、指定チームが勝利。50点到達、または2チーム以上の参加から最後の生存チームになった。
@@ -102,8 +113,8 @@ judge_game(&[Team])は失格チームを含む元の参加リストを受け取�
 終了という共通状態に勝者の有無をまとめています。GameStatusは判定結果であり、チームや得点履歴そのものは所有しません。
 単独参加は50点で勝ち、3回連続0点なら勝者なしで終了します。
 空の参加者、複数の50点到達チーム、終了・失格後に記録がある不正履歴は拒否します。
-record_point(&teams, index, point)は終了後・失格チーム・範囲外の記録を拒否し、新しいチーム一覧を返します。
-next_team(&teams, current)は失格チームを飛ばした次のインデックスを返し、終了後はNoneを返します。
+Molkky::record_point(&teams, index, point)は終了後・失格チーム・範囲外の記録を拒否し、新しいチーム一覧を返します。
+Molkky::next_team(&teams, current)は失格チームを飛ばした次のインデックスを返し、終了後はNoneを返します。
 任意のチームへの記録は許容し、利用側がnext_teamの結果を手番として保持します。
 
 ### 表示とテスト

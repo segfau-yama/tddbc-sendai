@@ -10,12 +10,12 @@ use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
 };
 use rust_molkky::core::{
-    Field, FieldGenerator, GameStatus, Name, Team, calc_score, judge_game, next_team, record_point,
-    throw_stick,
+    Field, FieldGenerator, GameStatus, Molkky, Name, SimpleMolkky, Team, throw_stick,
 };
 
 pub struct Controller {
     names: Vec<Name>,
+    rules: SimpleMolkky,
     teams: Vec<Team>,
     field: ArrayField,
     stick: Stick,
@@ -31,6 +31,7 @@ impl Controller {
         let layout = FieldLayout::new(field.skittles());
         Self {
             names,
+            rules: SimpleMolkky,
             teams,
             field,
             stick: Stick::default(),
@@ -71,7 +72,10 @@ impl Controller {
     }
 
     fn move_from(&mut self, dx: i32, dy: i32) {
-        if matches!(judge_game(&self.teams), GameStatus::Finished { .. }) {
+        if matches!(
+            self.rules.judge_game(&self.teams),
+            GameStatus::Finished { .. }
+        ) {
             return;
         }
         if let Some(position) = self.layout.stick.translated(dx, dy) {
@@ -81,7 +85,10 @@ impl Controller {
 
     fn throw_with_rng(&mut self, rng: &mut impl rand::Rng) {
         // 終了後はFieldも動かさないよう、乱数生成より先に確認する。
-        if matches!(judge_game(&self.teams), GameStatus::Finished { .. }) {
+        if matches!(
+            self.rules.judge_game(&self.teams),
+            GameStatus::Finished { .. }
+        ) {
             return;
         }
         let turn = self
@@ -93,13 +100,13 @@ impl Controller {
         let before = self.teams[self.active].score_board().value();
         let outcome = throw_stick(&self.field, &mut RandomThrow::new(&self.stick, rng)).unwrap();
         let (field, knocked_over) = outcome.into_parts();
-        let point = calc_score(&knocked_over);
-        let updated = record_point(&self.teams, self.active, point);
+        let point = self.rules.calc_score(&knocked_over);
+        let updated = self.rules.record_point(&self.teams, self.active, point);
         self.layout = relocate_skittles(&self.layout, &knocked_over, rng);
         self.teams = updated;
         self.field = field;
         self.message = throw_message(&self.teams[self.active], turn, before, point);
-        if let Some(next) = next_team(&self.teams, self.active) {
+        if let Some(next) = self.rules.next_team(&self.teams, self.active) {
             self.active = next;
         }
     }
@@ -107,6 +114,7 @@ impl Controller {
     fn render(&self, frame: &mut Frame) {
         frame.render_widget(
             compose_game(
+                &self.rules,
                 &self.teams,
                 &self.field,
                 &self.stick,

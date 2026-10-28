@@ -18,7 +18,7 @@ fn rendered(runtime: &Controller) -> String {
 }
 
 fn almost_disqualified() -> ScoreBoard {
-    let missed = calc_score(&[]);
+    let missed = SimpleMolkky.calc_score(&[]);
     ScoreBoard::new().add(missed).add(missed)
 }
 
@@ -34,11 +34,11 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert!(runtime.teams[0].score_board().is_disqualified());
     assert!(matches!(
-        judge_game(&runtime.teams),
+        SimpleMolkky.judge_game(&runtime.teams),
         GameStatus::Finished { .. }
     ));
     assert_eq!(
-        judge_game(&runtime.teams),
+        SimpleMolkky.judge_game(&runtime.teams),
         GameStatus::Finished { winner: Some(1) }
     );
     let history = runtime.teams[0].score_board().history().to_vec();
@@ -70,7 +70,7 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert!(!matches!(
-        judge_game(&runtime.teams),
+        SimpleMolkky.judge_game(&runtime.teams),
         GameStatus::Finished { .. }
     ));
     assert_eq!(runtime.active, 1);
@@ -89,18 +89,18 @@ fn 一チーム開始なら三回連続0点で勝者なし終了する() {
     runtime.field = ArrayField::new(vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     assert!(!matches!(
-        judge_game(&runtime.teams),
+        SimpleMolkky.judge_game(&runtime.teams),
         GameStatus::Finished { .. }
     ));
     for _ in 0..3 {
         runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     }
     assert!(matches!(
-        judge_game(&runtime.teams),
+        SimpleMolkky.judge_game(&runtime.teams),
         GameStatus::Finished { .. }
     ));
     assert_eq!(
-        judge_game(&runtime.teams),
+        SimpleMolkky.judge_game(&runtime.teams),
         GameStatus::Finished { winner: None }
     );
     assert_eq!(runtime.teams[0].score_board().history().len(), 3);
@@ -154,7 +154,10 @@ fn 棒の表示をピンへ重ねても確率と投てき結果は変わらな�
     for _ in 0..10 {
         a.throw_with_rng(&mut first);
         b.throw_with_rng(&mut second);
-        assert_eq!(judge_game(&a.teams), judge_game(&b.teams));
+        assert_eq!(
+            SimpleMolkky.judge_game(&a.teams),
+            SimpleMolkky.judge_game(&b.teams)
+        );
         assert_eq!(a.active, b.active);
         for (left, right) in a.teams.iter().zip(&b.teams) {
             assert_eq!(left.score_board().history(), right.score_board().history());

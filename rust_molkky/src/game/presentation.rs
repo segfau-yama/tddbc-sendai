@@ -4,8 +4,8 @@ use crate::view::{
     team::TeamTui,
 };
 use rust_molkky::core::{
-    CONSECUTIVE_ZERO_LIMIT, Field, GameStatus, Point, RESET_SCORE, ScoreBoard, TARGET_SCORE, Team,
-    judge_game,
+    CONSECUTIVE_ZERO_LIMIT, Field, GameStatus, Molkky, Point, RESET_SCORE, ScoreBoard,
+    TARGET_SCORE, Team,
 };
 use rust_molkky::simulation::Stick;
 
@@ -28,6 +28,7 @@ pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
 }
 
 pub(crate) fn compose_game(
+    rules: &dyn Molkky,
     teams: &[Team],
     field: &dyn Field,
     stick: &Stick,
@@ -35,7 +36,7 @@ pub(crate) fn compose_game(
     active: usize,
     message: &str,
 ) -> MolkkyTui {
-    let status = judge_game(teams);
+    let status = rules.judge_game(teams);
     let winner = match status {
         GameStatus::InProgress => None,
         GameStatus::Finished { winner } => winner,
