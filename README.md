@@ -19,9 +19,9 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 
 | 場所 | 責務 |
 | --- | --- |
-| src/core/models/ | Skittle・Point・ScoreBoard・Team・Id・Name・GameStatus、Field/FieldGeneratorのtrait |
-| src/core/services/ | Molkkyの既定ルール（採点・勝敗・次チーム・記録）、ThrowStrategy/ThrowOutcome・throw_stick（投てきの契約と結果検証） |
-| src/simulation/ | ArrayField、標準Field生成、確率投てきRandomThrowと確率設定Stick |
+| src/core/models/ | Skittle・Stick・Point・ScoreBoard・Team・Id・Name・GameStatus、Field/FieldGeneratorのtrait |
+| src/core/services/ | Molkkyの既定ルール（投てき・採点・勝敗・次チーム・記録） |
+| src/simulation/ | ArrayField、標準Field生成 |
 | src/game/ | coreとviewの合成、投てき後の表示上の移動 |
 | src/tui/ | Controllerによる端末入力、操作制御、描画の呼び出し |
 | src/view/ | 表示専用のPosition、描画構造体、Widget・CanvasDraw |
@@ -63,30 +63,26 @@ team.id()で一覧内の順番や名前に依存せず検索できます。同�
 
 ### Field生成・投てき・採点
 
-Field・FieldGenerator・ThrowStrategyの共通契約をcoreへ定義しています。
-FieldGenerator::generateが関連型のFieldを生成し、throw_stickは選択されたStrategyへ一投全体を委譲します。
-投てきはResult<ThrowOutcome<F>, Error>で新しいFieldと倒れた個体を返し、入力Fieldは変更しません。
-物理エンジンの状態・位置・投てき条件・失敗の型は実装側で定義できます。
-物理エンジンそのものは未実装です。配列以外のFieldとの接続は座標付きのテスト実装とAPI例で確認しています。
+Field・FieldGeneratorの共通契約をcoreへ定義し、ArrayFieldとStandardFieldGeneratorをsimulationに置きます。
+投てきはMolkky::throw(stick, skittles, rng)に直接実装しています。既定のルールでは各個体を独立抽選します。
+Stick::new(probability)で0〜1の確率を指定し、既定値は0.25です。乱数源は呼び出し側から渡します。
 
 ```rust
-use rust_molkky::{Field, FieldGenerator, throw_stick, Molkky, SimpleMolkky};
-use rust_molkky::simulation::{StandardFieldGenerator, RandomThrow, Stick};
+use rust_molkky::{Field, FieldGenerator, Stick, Molkky, SimpleMolkky};
+use rust_molkky::simulation::StandardFieldGenerator;
 let field = StandardFieldGenerator.generate();
 let stick = Stick::new(1.0);
-let mut rng = rand::rng();
-let mut strategy = RandomThrow::new(&stick, &mut rng);
-let result = throw_stick(&field, &mut strategy).unwrap();
-assert_eq!(result.knocked_over(), field.skittles());
-assert_eq!(SimpleMolkky.calc_score(result.knocked_over()).value(), 12);
+let fallen = SimpleMolkky.throw(&stick, field.skittles(), &mut rand::rng());
+assert_eq!(fallen, field.skittles());
+assert_eq!(SimpleMolkky.calc_score(&fallen).value(), 12);
 ```
 
 StandardFieldGeneratorは1〜12を各1本生成し、ArrayFieldは任意の個体集合を保持します。
 SkittleはIdと得点用の番号を持ち、同じ12番を2本置けます。同じIDの二重登録・二重採点は拒否します。
-RandomThrowは各個体を独立抽選します。Stick::new(probability)は0〜1の確率設定で、既定値は0.25です。
-これはゲーム用の簡略モデルで、公式の確率や物理シミュレーションではありません。
+デフォルト投てきは入力の個体を選んで返すため、IDとFieldは変更せず、乱数源だけを更新します。
 範囲外・NaN・無限大の確率、1〜12以外の番号を拒否します。
-投てき後の個体集合の変更、対象外個体、結果内の同ID重複も共通の入口で拒否します。
+これはゲーム用の簡略モデルです。物理エンジンの実装や、その状態更新・失敗を共通化する仕組みは追加していません。
+旧ThrowStrategy・ThrowOutcome・throw_stick・RandomThrowは廃止しました。
 
 0本なら0点、1本なら番号、複数本なら本数です。13本以上の変則構成も本数で採点します。
 ScoreBoard::addは履歴を追加した新しい得点表を返し、50点超過で25点、3回連続0点で失格とします。
@@ -95,12 +91,12 @@ was_resetは直近の25点補正の説明に使います。
 
 ### 採点・試合ルールのデフォルト実装
 
-core/services/molkky.rsのMolkky traitへ、calc_score・judge_game・next_team・record_pointを直接実装しています。
+core/services/molkky.rsのMolkky traitへ、throw・calc_score・judge_game・next_team・record_pointを直接実装しています。
 SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
 得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
 next_teamとrecord_pointはself.judge_gameを呼ぶため、判定を上書きした場合も同じ実装を使います。
 TUIはSimpleMolkkyを保持し、その参照を表示用合成にも渡します。
-Field生成・投てき・描画はこのtraitには含めません。
+Field生成・描画はこのtraitには含めません。
 
 ### 勝敗判定
 

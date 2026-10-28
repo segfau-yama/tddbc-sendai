@@ -737,3 +737,89 @@ mod scoring {
         assert_eq!(SimpleMolkky.calc_score(&pins).value(), 13);
     }
 }
+
+#[test]
+fn デフォルト投てきへ棒と個体と乱数源を渡す() {
+    use rand::{SeedableRng, rngs::StdRng};
+    use rust_molkky::Stick;
+    use rust_molkky::{Molkky, SimpleMolkky};
+    let rules: &dyn Molkky = &SimpleMolkky;
+    let pins = [Skittle::new(12), Skittle::new(12)];
+    let fallen = rules.throw(&Stick::new(1.0), &pins, &mut StdRng::seed_from_u64(42));
+    assert_eq!(fallen, pins);
+    assert_eq!(rules.calc_score(&fallen).value(), 2);
+}
+
+mod throwing {
+    use crate::support::ConstantRng;
+    use rand::{SeedableRng, rngs::StdRng};
+    use rust_molkky::simulation::{ArrayField, StandardFieldGenerator};
+    use rust_molkky::{Field, FieldGenerator, Molkky, SimpleMolkky, Skittle, Stick};
+
+    #[test]
+    fn 確率零なら倒れず確率一なら全ピンが倒れる() {
+        let field = StandardFieldGenerator.generate();
+        assert!(
+            SimpleMolkky
+                .throw(&Stick::new(0.0), field.skittles(), &mut ConstantRng(0))
+                .is_empty()
+        );
+        let all = SimpleMolkky.throw(
+            &Stick::new(1.0),
+            field.skittles(),
+            &mut ConstantRng(u64::MAX),
+        );
+        assert_eq!(all, field.skittles());
+        assert_eq!(SimpleMolkky.calc_score(&all).value(), 12);
+    }
+    #[test]
+    fn 投てきは入力のピンと棒の条件を変えない() {
+        let pin = Skittle::new(5);
+        let field = ArrayField::new(vec![pin]);
+        let stick = Stick::new(1.0);
+        assert_eq!(
+            SimpleMolkky.throw(&stick, field.skittles(), &mut StdRng::seed_from_u64(42)),
+            [pin]
+        );
+        assert_eq!(field.skittles(), [pin]);
+        assert_eq!(stick.fall_probability(), 1.0);
+    }
+    #[test]
+    fn 同じピンと確率とシードなら同じ投てきを再現する() {
+        let field = StandardFieldGenerator.generate();
+        let (mut a, mut b) = (StdRng::seed_from_u64(42), StdRng::seed_from_u64(42));
+        for _ in 0..100 {
+            assert_eq!(
+                SimpleMolkky.throw(&Stick::default(), field.skittles(), &mut a),
+                SimpleMolkky.throw(&Stick::default(), field.skittles(), &mut b)
+            );
+        }
+    }
+    #[test]
+    fn 同じ乱数でも棒の設定を変えると結果が変わる() {
+        let pins = [Skittle::new(5)];
+        assert!(
+            SimpleMolkky
+                .throw(&Stick::new(0.2), &pins, &mut ConstantRng(1 << 62))
+                .is_empty()
+        );
+        assert_eq!(
+            SimpleMolkky.throw(&Stick::new(0.5), &pins, &mut ConstantRng(1 << 62)),
+            pins
+        );
+    }
+    #[test]
+    fn 対象が空なら何も倒れない() {
+        assert!(
+            SimpleMolkky
+                .throw(&Stick::default(), &[], &mut ConstantRng(0))
+                .is_empty()
+        );
+    }
+    #[test]
+    #[should_panic(expected = "スキットルIDが重複しています")]
+    fn 同じ個体を重複して投げられない() {
+        let pin = Skittle::new(5);
+        SimpleMolkky.throw(&Stick::default(), &[pin, pin], &mut ConstantRng(0));
+    }
+}

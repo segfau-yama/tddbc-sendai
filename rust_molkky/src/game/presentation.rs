@@ -3,11 +3,11 @@ use crate::view::{
     field::FieldTui, molkky::MolkkyTui, score::ScoreBoardTui, skittle::SkittleTui, stick::StickTui,
     team::TeamTui,
 };
+use rust_molkky::Stick;
 use rust_molkky::core::{
     CONSECUTIVE_ZERO_LIMIT, Field, GameStatus, Molkky, Point, RESET_SCORE, ScoreBoard,
     TARGET_SCORE, Team,
 };
-use rust_molkky::simulation::Stick;
 
 pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
     let mut notice = String::new();

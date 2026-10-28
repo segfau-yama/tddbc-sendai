@@ -2,7 +2,39 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## 採点・試合判定のMolkky traitへの直接統合（今回の変更）
+## 投てきのMolkky統合とultra簡略化（今回の変更）
+
+- 最新の指定：throw関数をstick・skittles・乱数源の3引数にしてMolkkyへまとめ、無駄を点検する。
+- Molkky::throw(&self, &Stick, &[Skittle], &mut dyn RngCore)へ独立抽選を直接記載した。関数型・コールバック・新たなStrategyは追加せず、既存ThrowStrategy/ThrowOutcome/RandomThrow/throw_stickと対応する2つのソースファイルを削除した。
+- 投てき結果はVec<Skittle>だけとし、現在の方式で更新しないFieldの複製・アクセサ・分解・InfallibleのResultを廃止した。棒と個体は共有参照のまま、渡された乱数源だけを更新する。
+- デフォルトの投てきがStickを直接受けるため、確率設定のStickをcore/modelsへ移してsimulationへの逆依存を避けた。coreは乱数源の契約RngCoreと抽選処理を使うが、乱数源の生成・端末・座標は引き続き利用側に置く。
+- [x] 変更前の全テストを確認する。
+- [x] Molkky::throwのRedを確認する。
+- [x] 投てき・設定のテストを新しい対象と同名のファイルへ統合し、ID重複拒否・確率境界・再現性・入力不変を維持する。
+- [x] molkky.rsの簡略化、利用側・API文書を更新してtest/build/fmt/Clippy・TUI操作・差分を確認する。
+
+### molkky.rsの点検結果
+
+- 削除：Fieldを複製して同じ状態を返す結果型、結果を取得・分解するメソッド、処理を包むStrategy構造体と関連型Error、確率方式で失敗しない処理のResult。乱数投てきは入力のfilterだけで表せる。
+- 簡略化：record_pointで同じ添字を繰り返し参照していた箇所をteams.get(...).expect(...)の1回にし、得たTeamから新しい値を生成する。範囲外の拒否は維持する。
+- 維持：入力のID重複検証、履歴検証、複数勝者の拒否、単独参加と最後の生存者の区別。これらは必要なルールであり、短くするために削らない。
+- 維持：record_point末尾のself.judge_game(&updated)。結果は捨てるが更新後の検証と上書きした判定を実行するため、不要な呼び出しとは扱わない。判定結果のキャッシュや新しい中間状態型も追加しない。
+- 既定throwは入力の個体をコピーして選ぶだけなので、対象外個体の生成や個体集合の変更を検査する仲介が不要になる。採点側のID重複検証は維持する。throw自体を上書きする場合の実装契約を検査する別レイヤーは追加しない。
+
+### Red・Green・最終確認
+
+- 変更前のcargo test --lockedは144件成功（/tmp/throw-ultra-baseline.log）。
+- Red：最新の3引数指定に合わせ、dyn Molkky経由でthrowを使うテストを実装前に追加し、未実装のE0599を確認した（/tmp/throw-direct-red.log）。
+- Green：デフォルトthrowを実装し、既存確率方式の5テストとStickの2テストをtests/coreへ移した。投てきのID重複拒否もtests/core/services/molkky.rsへ統合した。旧tests/core/services/throw.rsとtests/simulation/random_throw.rsは削除した。
+- 旧投てき契約のField更新・エンジンエラー伝播のテストは、未実装の物理エンジンに備えた契約自体を廃止したため削除した。個体集合の追加・消失・対象外の結果を作る偽Strategyのケースも、外部判定結果を受ける入口の廃止に合わせて整理した。入力不変・同番号の別個体・同ID拒否・確率0/1・同じシードの再現性は維持する。単なるテストの無効化やignore追加は行っていない。
+- 最終cargo test --lockedは142件成功（core84・バイナリ20・CLI1・simulation4・doc33）、失敗・無視0件。cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkも成功（/tmp/throw-direct-final-tests.log）。
+- 100列×30行の擬似端末で右矢印・Space投てき・R再開・Q終了を実行。第1投・25.0%表示、panicなし、終了コード0を確認した（/tmp/throw-direct-tui.log）。
+- 旧抽象型と関数がソースに残っていないこと、モデルに可変selfがないこと、viewへcore依存を追加していないこと、テストの配置と対象ファイル名が一致することを確認した。
+- READMEとAPI例を更新した。Stickはsimulation::Stickからcore/models・core直下・crate直下のStickへ移行し、投てきはSimpleMolkky.throw(...)へ変更する。全メソッドはdyn Molkkyでも利用可能。
+- 物理エンジンの実装・世界状態更新・エラーや非同期の共通化は追加しない。Fieldの生成契約、既存の採点・勝敗ルール、依存/ロック・Javaは変更していない。
+- プロダクトソース（src）の差分は追加24行・削除102行、純減78行。文書・テストはこの集計に含めない。
+
+## 採点・試合判定のMolkky traitへの直接統合（前回の変更）
 
 - 要求：関数への委譲ではなく、Molkky traitのデフォルト実装へ処理を直接書き、judge.rs/scoring.rsを削除してmolkky.rsへまとめる。
 - core/services/molkky.rsにcalc_score・judge_game・next_team・record_pointをデフォルトメソッドとして置く。現行の得点・補正・失格・勝敗・入力検証・不変更新を維持する。next_team/record_pointはself.judge_gameを呼ぶ。

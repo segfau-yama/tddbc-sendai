@@ -1,4 +1,4 @@
-/// 確率方式の投てき条件。物理エンジンの棒の状態とは独立して扱う。
+/// デフォルトの確率投てきに使う棒の条件。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Stick {
     fall_probability: f64,

@@ -1,9 +1,20 @@
-use crate::core::models::{GameStatus, Point, Skittle, Team, validate_unique_ids};
+use crate::core::models::{GameStatus, Point, Skittle, Stick, Team, validate_unique_ids};
+use rand::{Rng, RngCore};
 use std::collections::HashSet;
 
-/// 採点と試合進行のルール。既定メソッドは現在のシンプルなモルックのルールを使う。
+/// 投てき・採点・試合進行のルール。既定メソッドは現在のシンプルなモルックのルールを使う。
 /// 履歴やFieldを所有せず、更新は新しいチーム一覧として返す。
 pub trait Molkky {
+    /// 各個体を棒の設定確率で独立抽選する。入力は変更せず、乱数源だけを更新する。
+    fn throw(&self, stick: &Stick, skittles: &[Skittle], rng: &mut dyn RngCore) -> Vec<Skittle> {
+        validate_unique_ids(skittles);
+        skittles
+            .iter()
+            .copied()
+            .filter(|_| rng.random_bool(stick.fall_probability()))
+            .collect()
+    }
+
     /// 位置や投てき方法に依存せず、倒れた番号だけから採点する。
     fn calc_score(&self, knocked_over_skittles: &[Skittle]) -> Point {
         validate_unique_ids(knocked_over_skittles);
@@ -67,14 +78,13 @@ pub trait Molkky {
             matches!(self.judge_game(teams), GameStatus::InProgress),
             "ゲームは終了しています"
         );
-        assert!(team_index < teams.len(), "チームが存在しません");
+        let team = teams.get(team_index).expect("チームが存在しません");
         assert!(
-            !teams[team_index].score_board().is_disqualified(),
+            !team.score_board().is_disqualified(),
             "チームは失格しています"
         );
         let mut updated = teams.to_vec();
-        updated[team_index] =
-            teams[team_index].with_score_board(teams[team_index].score_board().add(point));
+        updated[team_index] = team.with_score_board(team.score_board().add(point));
         self.judge_game(&updated);
         updated
     }
