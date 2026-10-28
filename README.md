@@ -19,7 +19,7 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 
 | 場所 | 責務 |
 | --- | --- |
-| src/core/models/ | Skittle・Stick・Point・ScoreBoard・Team・Id・Name・GameStatus、Field/FieldGeneratorのtrait |
+| src/core/models/ | Skittle・Stick・Point・ScoreBoard・Team・Id・Name・ScoreState、Field/FieldGeneratorのtrait |
 | src/core/services/ | Molkkyの既定ルール（投てき・採点・勝敗・次チーム・記録） |
 | src/simulation/ | ArrayField、標準Field生成 |
 | src/game/ | coreとviewの合成、投てき後の表示上の移動 |
@@ -34,7 +34,7 @@ viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示�
 ### ライブラリの利用
 
 ```rust
-use rust_molkky::core::models::{GameStatus, Name, Skittle, Team};
+use rust_molkky::core::models::{Name, ScoreState, Skittle, Team};
 use rust_molkky::core::services::{Molkky, SimpleMolkky};
 
 let rules = SimpleMolkky;
@@ -42,7 +42,8 @@ let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("�
 let updated = rules.record_point(&original, 0, rules.calc_score(&[Skittle::new(11)]));
 assert_eq!(original[0].score_board().value(), 0);
 assert_eq!(updated[0].score_board().value(), 11);
-assert_eq!(rules.judge_game(&updated), GameStatus::InProgress);
+assert_eq!(rules.judge_game(&updated), None);
+assert_eq!(updated[0].score_board().state(), ScoreState::Calculated);
 ```
 
 MolkkyとSimpleMolkkyはcrate直下・core直下・core/servicesから公開します。
@@ -85,32 +86,34 @@ SkittleはIdと得点用の番号を持ち、同じ12番を2本置けます。�
 旧ThrowStrategy・ThrowOutcome・throw_stick・RandomThrowは廃止しました。
 
 0本なら0点、1本なら番号、複数本なら本数です。13本以上の変則構成も本数で採点します。
-ScoreBoard::addは履歴を追加した新しい得点表を返し、50点超過で25点、3回連続0点で失格とします。
-ScoreBoard::is_winnerは50点到達を示し、ゲーム全体の勝者はjudge_gameが決めます。
-was_resetは直近の25点補正の説明に使います。
+ScoreBoard::new(history)は生成時に履歴を検証し、Calculated・Reset・Disqualified・Wonの状態を保持します。
+ScoreBoard::default()は空履歴・0点・Calculatedです。addは履歴を追加した新しい得点表を同じ生成経路で作ります。
+公開する問い合わせはhistory()（共有スライス）、total()（補正済み合計を履歴から計算）、state()（状態）です。
+50点超過で25点となりReset、50点ちょうどでWon、3回連続0点でDisqualifiedになります。
+Resetは次の通常投てきでCalculatedへ戻ります。Won/Disqualifiedに達した後の追加履歴は生成・追加時に拒否します。
+value・公開is_winner/is_disqualified/was_reset・evaluate_total・validate_for_gameは廃止しました。
 
 ### 採点・試合ルールのデフォルト実装
 
 core/services/molkky.rsのMolkky traitへ、throw・calc_score・judge_game・next_team・record_pointを直接実装しています。
 SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
 得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
-next_teamとrecord_pointはself.judge_gameを呼ぶため、判定を上書きした場合も同じ実装を使います。
+next_teamはself.judge_gameを、record_pointはself.next_teamを呼び、同じ実装で継続可否を判定します。
 TUIはSimpleMolkkyを保持し、その参照を表示用合成にも渡します。
 Field生成・描画はこのtraitには含めません。
 
 ### 勝敗判定
 
-Molkky::judge_game(&[Team])は失格チームを含む元の参加リストを受け取り、次を返します。
+GameStatusとgame_status.rsを廃止し、ScoreBoardの状態から試合を判定します。
+Molkky::judge_game(&teams)は失格チームを含む元の参加リストを受け取り、勝者がいればSome(index)、いなければNoneを返します。
+Molkky::next_team(&teams, current)は失格者を飛ばした次のインデックスを返し、勝者あり・全員失格ならNoneです。
+勝者がいない継続中と全失格での終了は、next_teamで区別します。
 
-- GameStatus::InProgress：進行中。
-- GameStatus::Finished { winner: Some(index) }：終了し、指定チームが勝利。50点到達、または2チーム以上の参加から最後の生存チームになった。
-- GameStatus::Finished { winner: None }：全チーム失格で終了。
-
-終了という共通状態に勝者の有無をまとめています。GameStatusは判定結果であり、チームや得点履歴そのものは所有しません。
+ScoreState::Wonは50点到達を表します。2チーム以上の参加から最後の生存者になったチームも試合には勝ちますが、そのScoreStateをWonへ書き換えません。
 単独参加は50点で勝ち、3回連続0点なら勝者なしで終了します。
-空の参加者、複数の50点到達チーム、終了・失格後に記録がある不正履歴は拒否します。
-Molkky::record_point(&teams, index, point)は終了後・失格チーム・範囲外の記録を拒否し、新しいチーム一覧を返します。
-Molkky::next_team(&teams, current)は失格チームを飛ばした次のインデックスを返し、終了後はNoneを返します。
+空の参加者・チームIDの重複・複数の50点到達チームはjudge_gameが拒否します。
+履歴の検証はScoreBoard生成時に完了しており、judge_gameで再検証しません。
+record_pointは終了後・失格チーム・範囲外への記録を拒否し、新しいチーム一覧を返します。
 任意のチームへの記録は許容し、利用側がnext_teamの結果を手番として保持します。
 
 ### 表示とテスト

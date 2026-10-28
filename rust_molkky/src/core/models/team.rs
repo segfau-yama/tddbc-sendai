@@ -12,7 +12,7 @@ impl Team {
         Self {
             id: Id::new(),
             name,
-            score_board: ScoreBoard::new(),
+            score_board: ScoreBoard::default(),
         }
     }
 

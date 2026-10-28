@@ -2,7 +2,39 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## must_useの撤去とScoreBoardの状態保持案（今回の変更・設計レビュー）
+## ScoreBoardの生成時検証・状態保持とGameStatus撤去（今回の実装）
+
+- ScoreState（Calculated/Reset/Disqualified/Won）をScoreBoardに保持する。new(history)で履歴を先頭から検証・状態判定し、addも同じ経路を通す。history/total/stateを公開し、is_winner/is_disqualified/was_resetは内部判定とする。evaluate_total/validate_for_gameは削除する。
+- 追記に合わせGameStatusとgame_status.rsを廃止する。judge_gameは勝者のOption<usize>を返し、next_teamは勝者あり・全失格ならNoneで終了を示す。チーム単位のScoreStateへ、最後の生存による試合勝利を書き戻さない。
+- 既存ルール（50点ちょうど勝利・超過25点・3連続0点失格・最後の生存者勝利）と不変更新、must_useを付けない方針を維持する。得点の総和ではなく各投てきの補正を適用したtotalを返す。
+- [x] 変更前の全テストを実行する。
+- [x] 新しい状態・履歴復元・生成時拒否のRedを確認する。winnerの戻り値は既存テストの移行と継続判定で検証する。
+- [x] 実装と既存テストを移行し、補正・失格・勝敗・不変性を維持する。
+- [x] 公開API例・README・利用側を更新し、test/build/fmt/Clippy・TUI操作・差分を確認する。
+
+### 実装・判断
+
+- ScoreBoardはscore_historyとScoreStateを非公開に保持し、new(Vec<Point>)で履歴を順に1回走査する。各投てきの前に直前がWon/Disqualifiedでないことを検証し、50点到達・3連続0点の後の履歴を拒否する。Defaultはnew(Vec::new())、addは履歴を複製してnewを呼ぶため、検証を迂回しない。
+- historyは共有スライス、totalは各投てきの補正を反映した合計、stateはCopyなScoreStateを返す。合計値は保存せず要求どおり履歴から計算する。clone・addでも元の状態は変えない。
+- is_winner/is_disqualified/was_resetは非公開の判定へ変更し、走査中に計算した値を利用する。apply_pointを生成時とtotalで共有し、was_resetはその内部から使う。evaluate_totalとvalidate_for_gameを削除し、Molkky側での履歴再検証も削除した。
+- ScoreState::Resetは直近の25点補正であり、次の通常投てき（0点を含む）でCalculatedへ戻る。Wonは50点到達のみを表す。最後の生存者が勝利した場合も、そのチームの得点状態をWonへ変更しない。
+- GameStatusとgame_status.rs、および再公開を削除した。judge_gameはSome(勝者のindex)またはNoneを返す。Noneは継続中・全失格の両方を含むため、継続可否はnext_teamで判定する。next_teamは勝者ありならNone、全失格でも候補がなくNone。record_pointとTUIの終了ガードも同じ継続判定を使う。
+- チーム一覧の空・ID重複・複数の50点到達チームの拒否はMolkky側に維持した。ScoreBoardの有効性とチームを横断する制約を混同しない。利用側のvalue/is_*等はtotal/stateへ移行した。Point::valueは変更しない。
+
+### Red・Green・最終確認
+
+- 変更前のcargo test --lockedは140件成功（/tmp/score-states-baseline.log）。
+- Red：履歴からの復元・状態・total・生成/追加時の不正履歴拒否を確認する2テストを実装前に追加し、ScoreState未実装のE0432、newの引数のE0061、total未実装のE0599を確認した（/tmp/score-states-red.log）。GameStatus撤去後の戻り値は既存テストの移行で確認したもので、独立したRedとは数えない。
+- Green：初回の移行テストでは、従来judge_gameで拒否していた2ケースがScoreBoard::addで先に失敗したため、アサーションの対象をチーム生成を含む範囲へ移した。終了・失格後の拒否と元履歴保持の検証内容は維持し、テスト名も生成時の拒否に合わせた。
+- 空履歴・49点・50点・超過補正・補正後通常計算・3連続0点・正の点数での中断・繰り返し補正を確認した。新たに補正後の0点で状態だけがCalculatedへ戻ることと元の状態/clone/履歴の不変性も確認した。
+- 継続中と全失格終了の両方がjudge_gameではNoneとなる一方、next_teamではSome/Noneで区別できるテストを追加した。最後の生存チームの状態がCalculatedのままであることも確認した。これら追加確認は実装後に成功したもので、事前のRedとは区別する。
+- 最終cargo test --lockedは146件成功（core88・バイナリ20・CLI1・simulation4・doc33）、失敗・無視0件。cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功（/tmp/score-states-final-tests.log）。
+- 100列×30行の擬似端末で右矢印・Space投てき・R再開・Q終了を実行。第1投・25.0%表示、panicなし、終了コード0を確認した（/tmp/score-states-tui.log）。
+- GameStatus/validate_for_game/evaluate_total/must_useがソースにないこと、状態setter・可変selfを導入していないこと、viewにcore依存を追加していないこと、テストがtests以下で対象と同名であることを確認した。
+- READMEとAPI例を更新し、ScoreBoardの状態を直接変更できないcompile_fail例も追加した。new()はnew(history)へ変更し、空の生成にはDefaultを利用できる。GameStatus・ScoreBoard::value・公開のis_winner/is_disqualified/was_resetの互換ラッパーは残さない。
+- Field・乱数投てきの方式・得点ルール・依存/ロック・Javaは変更していない。must_useを再導入していない。
+
+## must_useの撤去とScoreBoardの状態保持案（前回の変更・設計レビュー）
 
 - 作業範囲：プロジェクトで付与したmust_use属性は撤去する。ScoreBoardの状態保持・生成時検証・公開APIの変更は設計レビューのみとし、今回の実装へは含めない。
 - [x] 変更前の既存テストを確認する。

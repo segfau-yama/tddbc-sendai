@@ -48,7 +48,7 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
             .probability,
         0.25
     );
-    assert_eq!(model[0].score_board().value(), 0);
+    assert_eq!(model[0].score_board().total(), 0);
     assert!(view.teams[1].active);
     assert!(!view.teams[0].active);
 }
@@ -63,7 +63,7 @@ fn 補正と失格の説明はドメインの判定結果から作る() {
     };
     let board = [12, 12, 12, 12, 1]
         .iter()
-        .fold(ScoreBoard::new(), |b, &n| b.add(point(n)));
+        .fold(ScoreBoard::default(), |b, &n| b.add(point(n)));
     let reset = board.add(point(2));
     assert!(
         compose_score(&reset)
@@ -71,7 +71,10 @@ fn 補正と失格の説明はドメインの判定結果から作る() {
             .contains("50点を超過したため25点へ")
     );
     assert!(compose_score(&reset.add(point(12))).notice.is_empty());
-    let missed = ScoreBoard::new().add(point(0)).add(point(0)).add(point(0));
+    let missed = ScoreBoard::default()
+        .add(point(0))
+        .add(point(0))
+        .add(point(0));
     assert!(
         compose_score(&missed)
             .notice
@@ -83,7 +86,7 @@ fn 補正と失格の説明はドメインの判定結果から作る() {
 #[test]
 fn 三チームでも勝者の得点行が見える() {
     let miss = SimpleMolkky.calc_score(&[]);
-    let disqualified = ScoreBoard::new().add(miss).add(miss).add(miss);
+    let disqualified = ScoreBoard::default().add(miss).add(miss).add(miss);
     let game = vec![
         Team::new(Name::new("WINNER").unwrap()),
         Team::new(Name::new("OUT_A").unwrap()).with_score_board(disqualified.clone()),
@@ -125,8 +128,8 @@ fn 三チームでも勝者の得点行が見える() {
 fn 表示合成でも渡されたルールの判定を利用する() {
     struct BlueWins;
     impl Molkky for BlueWins {
-        fn judge_game(&self, _: &[Team]) -> GameStatus {
-            GameStatus::Finished { winner: Some(1) }
+        fn judge_game(&self, _: &[Team]) -> Option<usize> {
+            Some(1)
         }
     }
     let teams = [
@@ -139,5 +142,5 @@ fn 表示合成でも渡されたルールの判定を利用する() {
     assert!(view.banner.contains("青の勝利"));
     assert!(view.teams[1].winner);
     assert!(!view.teams[0].winner);
-    assert_eq!(teams[1].score_board().value(), 0);
+    assert_eq!(teams[1].score_board().total(), 0);
 }

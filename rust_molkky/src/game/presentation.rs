@@ -5,22 +5,22 @@ use crate::view::{
 };
 use rust_molkky::Stick;
 use rust_molkky::core::{
-    CONSECUTIVE_ZERO_LIMIT, Field, GameStatus, Molkky, Point, RESET_SCORE, ScoreBoard,
+    CONSECUTIVE_ZERO_LIMIT, Field, Molkky, Point, RESET_SCORE, ScoreBoard, ScoreState,
     TARGET_SCORE, Team,
 };
 
 pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
     let mut notice = String::new();
-    if board.was_reset() {
+    if board.state() == ScoreState::Reset {
         notice.push_str(&format!(
             "  {TARGET_SCORE}点を超過したため{RESET_SCORE}点へ"
         ));
     }
-    if board.is_disqualified() {
+    if board.state() == ScoreState::Disqualified {
         notice.push_str(&format!("  {CONSECUTIVE_ZERO_LIMIT}回連続0点のため失格"));
     }
     ScoreBoardTui {
-        value: board.value(),
+        value: board.total(),
         target: TARGET_SCORE,
         history: board.history().iter().map(Point::value).collect(),
         notice,
@@ -36,22 +36,16 @@ pub(crate) fn compose_game(
     active: usize,
     message: &str,
 ) -> MolkkyTui {
-    let status = rules.judge_game(teams);
-    let winner = match status {
-        GameStatus::InProgress => None,
-        GameStatus::Finished { winner } => winner,
-    };
-    let banner = match status {
-        GameStatus::Finished {
-            winner: Some(team_index),
-        } => format!(
+    let winner = rules.judge_game(teams);
+    let banner = match winner {
+        Some(team_index) => format!(
             " MÖLKKY  |  {}の勝利！  Rで新しいゲーム",
             teams[team_index].name()
         ),
-        GameStatus::Finished { winner: None } => {
+        None if rules.next_team(teams, active).is_none() => {
             " MÖLKKY  |  全チームが失格。勝者なし。Rで新しいゲーム".into()
         }
-        GameStatus::InProgress => format!(
+        None => format!(
             " MÖLKKY  |  {}の投てき  |  {}チーム",
             teams[active].name(),
             teams.len()
@@ -65,7 +59,7 @@ pub(crate) fn compose_game(
             board: compose_score(team.score_board()),
             active: index == active,
             winner: winner == Some(index),
-            disqualified: team.score_board().is_disqualified(),
+            disqualified: team.score_board().state() == ScoreState::Disqualified,
         })
         .collect();
     let field = FieldTui {
@@ -100,7 +94,7 @@ pub(crate) fn throw_message(team: &Team, turn: usize, before: i32, point: Point)
         "第{turn}投  {}: {}点  得点 {before} → {}{}",
         team.name(),
         point.value(),
-        team.score_board().value(),
+        team.score_board().total(),
         compose_score(team.score_board()).notice
     )
 }

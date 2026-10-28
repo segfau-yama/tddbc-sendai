@@ -1,6 +1,7 @@
 use super::*;
 use ratatui::{Terminal, backend::TestBackend};
 use rust_molkky::Name;
+use rust_molkky::ScoreState;
 use rust_molkky::core::{Field, ScoreBoard, Skittle};
 
 fn rendered(runtime: &Controller) -> String {
@@ -19,7 +20,7 @@ fn rendered(runtime: &Controller) -> String {
 
 fn almost_disqualified() -> ScoreBoard {
     let missed = SimpleMolkky.calc_score(&[]);
-    ScoreBoard::new().add(missed).add(missed)
+    ScoreBoard::default().add(missed).add(missed)
 }
 
 #[test]
@@ -32,15 +33,12 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
     runtime.field = ArrayField::new(vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
-    assert!(runtime.teams[0].score_board().is_disqualified());
     assert!(matches!(
-        SimpleMolkky.judge_game(&runtime.teams),
-        GameStatus::Finished { .. }
+        runtime.teams[0].score_board().state(),
+        ScoreState::Disqualified
     ));
-    assert_eq!(
-        SimpleMolkky.judge_game(&runtime.teams),
-        GameStatus::Finished { winner: Some(1) }
-    );
+    assert!(SimpleMolkky.next_team(&runtime.teams, 0).is_none());
+    assert_eq!(SimpleMolkky.judge_game(&runtime.teams), Some(1));
     let history = runtime.teams[0].score_board().history().to_vec();
     let pins = runtime.field.skittles().to_vec();
     let stick = runtime.stick;
@@ -69,10 +67,7 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
     runtime.field = ArrayField::new(vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
-    assert!(!matches!(
-        SimpleMolkky.judge_game(&runtime.teams),
-        GameStatus::Finished { .. }
-    ));
+    assert!(!SimpleMolkky.next_team(&runtime.teams, 0).is_none());
     assert_eq!(runtime.active, 1);
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.active, 2);
@@ -88,21 +83,12 @@ fn 一チーム開始なら三回連続0点で勝者なし終了する() {
     let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
     runtime.field = ArrayField::new(vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
-    assert!(!matches!(
-        SimpleMolkky.judge_game(&runtime.teams),
-        GameStatus::Finished { .. }
-    ));
+    assert!(!SimpleMolkky.next_team(&runtime.teams, 0).is_none());
     for _ in 0..3 {
         runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     }
-    assert!(matches!(
-        SimpleMolkky.judge_game(&runtime.teams),
-        GameStatus::Finished { .. }
-    ));
-    assert_eq!(
-        SimpleMolkky.judge_game(&runtime.teams),
-        GameStatus::Finished { winner: None }
-    );
+    assert!(SimpleMolkky.next_team(&runtime.teams, 0).is_none());
+    assert_eq!(SimpleMolkky.judge_game(&runtime.teams), None);
     assert_eq!(runtime.teams[0].score_board().history().len(), 3);
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.teams[0].score_board().history().len(), 3);
@@ -117,12 +103,12 @@ fn 次のチームも共通のピン集合と棒と表示を使う() {
     controller.stick = Stick::new(1.0);
     let original = controller.layout.positions[&controller.field.skittles()[0].id()];
     controller.throw_with_rng(&mut crate::test_support::ConstantRng(0));
-    assert_eq!(controller.teams[0].score_board().value(), 5);
+    assert_eq!(controller.teams[0].score_board().total(), 5);
     assert_eq!(controller.active, 1);
     let moved = controller.layout.positions[&controller.field.skittles()[0].id()];
     assert_ne!(moved, original);
     controller.throw_with_rng(&mut crate::test_support::ConstantRng(0));
-    assert_eq!(controller.teams[1].score_board().value(), 5);
+    assert_eq!(controller.teams[1].score_board().total(), 5);
     assert_ne!(
         controller.layout.positions[&controller.field.skittles()[0].id()],
         moved
@@ -149,7 +135,7 @@ fn 棒の表示をピンへ重ねても確率と投てき結果は変わらな�
     b.move_from(100, -100);
     a.throw_with_rng(&mut crate::test_support::ConstantRng(u64::MAX));
     b.throw_with_rng(&mut crate::test_support::ConstantRng(u64::MAX));
-    assert_eq!(a.teams[0].score_board().value(), 0);
+    assert_eq!(a.teams[0].score_board().total(), 0);
     let (mut first, mut second) = (StdRng::seed_from_u64(71), StdRng::seed_from_u64(71));
     for _ in 0..10 {
         a.throw_with_rng(&mut first);

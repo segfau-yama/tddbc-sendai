@@ -10,7 +10,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
 };
-use rust_molkky::core::{Field, FieldGenerator, GameStatus, Molkky, Name, SimpleMolkky, Team};
+use rust_molkky::core::{Field, FieldGenerator, Molkky, Name, SimpleMolkky, Team};
 
 pub struct Controller {
     names: Vec<Name>,
@@ -71,10 +71,7 @@ impl Controller {
     }
 
     fn move_from(&mut self, dx: i32, dy: i32) {
-        if matches!(
-            self.rules.judge_game(&self.teams),
-            GameStatus::Finished { .. }
-        ) {
+        if self.rules.next_team(&self.teams, self.active).is_none() {
             return;
         }
         if let Some(position) = self.layout.stick.translated(dx, dy) {
@@ -84,10 +81,7 @@ impl Controller {
 
     fn throw_with_rng(&mut self, rng: &mut impl rand::Rng) {
         // 終了後はFieldも動かさないよう、乱数生成より先に確認する。
-        if matches!(
-            self.rules.judge_game(&self.teams),
-            GameStatus::Finished { .. }
-        ) {
+        if self.rules.next_team(&self.teams, self.active).is_none() {
             return;
         }
         let turn = self
@@ -96,7 +90,7 @@ impl Controller {
             .map(|team| team.score_board().history().len())
             .sum::<usize>()
             + 1;
-        let before = self.teams[self.active].score_board().value();
+        let before = self.teams[self.active].score_board().total();
         let knocked_over = self.rules.throw(&self.stick, self.field.skittles(), rng);
         let point = self.rules.calc_score(&knocked_over);
         let updated = self.rules.record_point(&self.teams, self.active, point);

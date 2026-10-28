@@ -4,7 +4,7 @@ pub const CONSECUTIVE_ZERO_LIMIT: usize = 3;
 
 fn apply_point(total: i32, point: Point) -> (i32, bool) {
     let next = i64::from(total) + i64::from(point.value());
-    let reset = next > i64::from(TARGET_SCORE);
+    let reset = ScoreBoard::was_reset(next);
     (if reset { RESET_SCORE } else { next as i32 }, reset)
 }
 
@@ -23,72 +23,88 @@ impl Point {
     }
 }
 
-#[derive(Clone, Default)]
+/// 直近の計算状態。WonとDisqualifiedに達した後は履歴を追加できない。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScoreState {
+    Calculated,
+    Reset,
+    Disqualified,
+    Won,
+}
+
+#[derive(Clone)]
 pub struct ScoreBoard {
     score_history: Vec<Point>,
+    state: ScoreState,
+}
+
+impl Default for ScoreBoard {
+    fn default() -> Self {
+        Self::new(Vec::new())
+    }
 }
 
 impl ScoreBoard {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// 元の履歴を変更せず、点数を追加した新しい得点表を返す。
-    pub fn add(&self, point: Point) -> Self {
-        let mut score_history = self.score_history.clone();
-        score_history.push(point);
-        Self { score_history }
-    }
-
-    pub fn value(&self) -> i32 {
-        self.evaluate_total().0
-    }
-
-    pub fn is_winner(&self) -> bool {
-        self.value() == TARGET_SCORE
-    }
-
-    pub fn is_disqualified(&self) -> bool {
-        self.score_history
-            .windows(CONSECUTIVE_ZERO_LIMIT)
-            .any(|points| points.iter().all(|point| point.value() == 0))
-    }
-
-    /// 直近の投てきで超過補正が適用されたかを返す。
-    pub fn was_reset(&self) -> bool {
-        self.evaluate_total().1
-    }
-
-    fn evaluate_total(&self) -> (i32, bool) {
-        self.score_history
-            .iter()
-            .fold((0, false), |(total, _), &point| apply_point(total, point))
-    }
-
-    pub(crate) fn validate_for_game(&self) {
+    /// 履歴の途中で終了した後の追加記録も、生成時に拒否する。
+    pub fn new(score_history: Vec<Point>) -> Self {
         let mut total = 0;
         let mut consecutive_zeros = 0;
-        for &point in &self.score_history {
-            // 最終得点だけでなく、終了後に記録された履歴も構築時に拒否する。
-            assert!(total != TARGET_SCORE, "50点到達後に記録があります");
-            assert!(
-                consecutive_zeros < CONSECUTIVE_ZERO_LIMIT,
-                "失格後に記録があります"
-            );
-            total = apply_point(total, point).0;
+        let mut state = ScoreState::Calculated;
+        for &point in &score_history {
+            assert!(state != ScoreState::Won, "50点到達後に記録があります");
+            assert!(state != ScoreState::Disqualified, "失格後に記録があります");
+            let (next, reset) = apply_point(total, point);
+            total = next;
             consecutive_zeros = if point.value() == 0 {
                 consecutive_zeros + 1
             } else {
                 0
             };
+            state = if Self::is_disqualified(consecutive_zeros) {
+                ScoreState::Disqualified
+            } else if Self::is_winner(total) {
+                ScoreState::Won
+            } else if reset {
+                ScoreState::Reset
+            } else {
+                ScoreState::Calculated
+            };
         }
-        assert!(
-            (0..=TARGET_SCORE).contains(&total),
-            "現在の得点が範囲外です"
-        );
+        Self {
+            score_history,
+            state,
+        }
+    }
+
+    /// 元の履歴を変更せず、新しい履歴を生成時と同じ経路で検証する。
+    pub fn add(&self, point: Point) -> Self {
+        let mut history = self.score_history.clone();
+        history.push(point);
+        Self::new(history)
     }
 
     pub fn history(&self) -> &[Point] {
         &self.score_history
+    }
+
+    /// 各投てきの25点補正を反映して履歴から合計を算出する。
+    pub fn total(&self) -> i32 {
+        self.score_history
+            .iter()
+            .fold(0, |total, &point| apply_point(total, point).0)
+    }
+
+    pub fn state(&self) -> ScoreState {
+        self.state
+    }
+
+    fn is_winner(total: i32) -> bool {
+        total == TARGET_SCORE
+    }
+    fn is_disqualified(consecutive_zeros: usize) -> bool {
+        consecutive_zeros >= CONSECUTIVE_ZERO_LIMIT
+    }
+    fn was_reset(total: i64) -> bool {
+        total > i64::from(TARGET_SCORE)
     }
 }

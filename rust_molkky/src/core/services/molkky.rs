@@ -1,4 +1,4 @@
-use crate::core::models::{GameStatus, Point, Skittle, Stick, Team, validate_unique_ids};
+use crate::core::models::{Point, ScoreState, Skittle, Stick, Team, validate_unique_ids};
 use rand::{Rng, RngCore};
 use std::collections::HashSet;
 
@@ -24,62 +24,55 @@ pub trait Molkky {
         })
     }
 
-    /// 全参加チームの有効な履歴から、入力を変えずに試合状態を返す。
-    fn judge_game(&self, teams: &[Team]) -> GameStatus {
+    /// 勝者のインデックスを返す。継続可否はnext_teamで判定する。
+    fn judge_game(&self, teams: &[Team]) -> Option<usize> {
         assert!(!teams.is_empty(), "チームは1件以上必要です");
         let mut ids = HashSet::new();
         for team in teams {
             assert!(ids.insert(team.id()), "チームIDが重複しています");
-            team.score_board().validate_for_game();
         }
         let mut winners = teams
             .iter()
             .enumerate()
-            .filter(|(_, team)| team.score_board().is_winner());
+            .filter(|(_, team)| team.score_board().state() == ScoreState::Won);
         if let Some((team_index, _)) = winners.next() {
             assert!(winners.next().is_none(), "勝者が複数います");
-            return GameStatus::Finished {
-                winner: Some(team_index),
-            };
+            return Some(team_index);
         }
         let mut remaining = teams
             .iter()
             .enumerate()
-            .filter(|(_, team)| !team.score_board().is_disqualified());
-        let Some((team_index, _)) = remaining.next() else {
-            return GameStatus::Finished { winner: None };
-        };
+            .filter(|(_, team)| team.score_board().state() != ScoreState::Disqualified);
+        let (team_index, _) = remaining.next()?;
         // 単独参加は、参加しただけでは勝利しない。
         if teams.len() >= 2 && remaining.next().is_none() {
-            GameStatus::Finished {
-                winner: Some(team_index),
-            }
+            Some(team_index)
         } else {
-            GameStatus::InProgress
+            None
         }
     }
 
     /// 終了後はNone、それ以外は失格チームを飛ばした次のインデックスを返す。
     fn next_team(&self, teams: &[Team], current: usize) -> Option<usize> {
-        let status = self.judge_game(teams);
+        let winner = self.judge_game(teams);
         assert!(current < teams.len(), "チームが存在しません");
-        if matches!(status, GameStatus::Finished { .. }) {
+        if winner.is_some() {
             return None;
         }
         (1..=teams.len())
             .map(|offset| (current + offset) % teams.len())
-            .find(|&index| !teams[index].score_board().is_disqualified())
+            .find(|&index| teams[index].score_board().state() != ScoreState::Disqualified)
     }
 
     /// 試合の記録制約を検証し、元のチーム一覧を変更せずに点数を追加する。
     fn record_point(&self, teams: &[Team], team_index: usize, point: Point) -> Vec<Team> {
         assert!(
-            matches!(self.judge_game(teams), GameStatus::InProgress),
+            self.next_team(teams, team_index).is_some(),
             "ゲームは終了しています"
         );
         let team = teams.get(team_index).expect("チームが存在しません");
         assert!(
-            !team.score_board().is_disqualified(),
+            team.score_board().state() != ScoreState::Disqualified,
             "チームは失格しています"
         );
         let mut updated = teams.to_vec();
