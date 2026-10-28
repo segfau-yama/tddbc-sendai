@@ -40,33 +40,43 @@ impl Default for ScoreBoard {
 
 impl ScoreBoard {
     /// 履歴の途中で終了した後の追加記録も、生成時に拒否する。
-    pub fn new(points: Vec<Point>) -> Self {
-        let mut total = 0_i64;
-        let mut consecutive_zeros = 0;
-        let mut state = ScoreState::Calculated;
-        let mut history = Vec::new();
-        for point in points {
-            assert!(state != ScoreState::Won, "50点到達後に記録があります");
-            assert!(state != ScoreState::Disqualified, "失格後に記録があります");
-            total += i64::from(point.value());
-            history.push(point);
-            consecutive_zeros = if point.value() == 0 {
-                consecutive_zeros + 1
-            } else {
-                0
-            };
-            state = if consecutive_zeros >= CONSECUTIVE_ZERO_LIMIT {
-                ScoreState::Disqualified
-            } else if total == i64::from(TARGET_SCORE) {
-                ScoreState::Won
-            } else if total > i64::from(TARGET_SCORE) {
-                total = i64::from(RESET_SCORE);
-                history = vec![Point::new(RESET_SCORE)];
-                ScoreState::Reset
-            } else {
-                ScoreState::Calculated
-            };
-        }
+    pub fn new(history: Vec<Point>) -> Self {
+        let (_, _, state, reset_at) = history.iter().enumerate().fold(
+            (0_i64, 0, ScoreState::Calculated, None),
+            |(total, consecutive_zeros, state, reset_at), (index, point)| {
+                assert!(state != ScoreState::Won, "50点到達後に記録があります");
+                assert!(state != ScoreState::Disqualified, "失格後に記録があります");
+                let total = total + i64::from(point.value());
+                let consecutive_zeros = if point.value() == 0 {
+                    consecutive_zeros + 1
+                } else {
+                    0
+                };
+                let state = if consecutive_zeros >= CONSECUTIVE_ZERO_LIMIT {
+                    ScoreState::Disqualified
+                } else if total == i64::from(TARGET_SCORE) {
+                    ScoreState::Won
+                } else if total > i64::from(TARGET_SCORE) {
+                    ScoreState::Reset
+                } else {
+                    ScoreState::Calculated
+                };
+                let (total, reset_at) = if state == ScoreState::Reset {
+                    (i64::from(RESET_SCORE), Some(index))
+                } else {
+                    (total, reset_at)
+                };
+                (total, consecutive_zeros, state, reset_at)
+            },
+        );
+        // 超過前の履歴を25点に置き換え、その後の投てきだけを残す。
+        let history = if let Some(index) = reset_at {
+            std::iter::once(Point::new(RESET_SCORE))
+                .chain(history.into_iter().skip(index + 1))
+                .collect()
+        } else {
+            history
+        };
         Self { history, state }
     }
 

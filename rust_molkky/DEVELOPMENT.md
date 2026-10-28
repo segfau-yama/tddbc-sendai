@@ -2,7 +2,29 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## ScoreBoard::newのリファクタリング（今回の変更）
+## ScoreBoard::newを可変ローカル変数なしで構築（今回の変更）
+
+- 対象：src/core/models/score.rsのnewと判定用の非公開メソッド3つ。公開API・採点ルール・addの振る舞いは維持する。
+- レビュー（高）：作業開始時の未コミット変更ではDefaultの削除と全分岐のDisqualified返却が再び含まれていた。既存テストと直前のコミットを基準に振る舞いを確認し、Defaultも復旧する。
+- 設計：new(Vec<Point>)でfoldを使い、合計・連続0点数・状態・最後の補正位置を新しい値として引き継ぐ。ローカルのmut・再代入・pushを使わず、判定はnew内へ直接記述する。
+- 不変条件：投てき順の25点補正、3連続0点での失格、50点勝利、終了後の記録拒否、空履歴のCalculatedを維持する。合計の途中値はi64で計算する。
+- 判断：各投てきでVecを作り直すと履歴長に対して二次時間になるため、最後の補正位置だけ保持し、補正後の履歴は最後に一度だけ生成する。新しい補助メソッド・依存関係は追加しない。
+- [x] 作業開始時のテスト結果と、直前の実装に復旧した変更前の成功を確認する。
+- [x] newを不変な値のfoldへ変更し、判定用の非公開メソッドを削除する。
+- [x] 既存テストで空・履歴保持・補正と再超過・連続0点・終了後拒否・元の値の保持を確認する。
+- [x] build・fmt・Clippy・差分を確認して結果を記録する。
+
+### Red・Green・Refactorと検証結果
+
+- 作業開始時：`cd rust_molkky && cargo test --locked`はDefault欠落によるE0599で失敗した（/tmp/scoreboard-immutable-start.log）。この失敗は新仕様のRed確認として扱わない。
+- Green：直前のコミットの生成処理とDefaultへ復旧し、`cargo test --locked`で既存141件の成功を確認した（/tmp/scoreboard-immutable-baseline.log）。
+- Refactor：可変ローカル変数・再代入・pushをfoldと不変の束縛へ置き換えた。最後の補正位置から履歴を再構成するため、計算量はO(n)を保つ。is_winner/is_disqualified/is_resetは残さず、公開APIや新しい補助メソッド・依存関係は追加していない。
+- 変更後の`cargo test --locked`も141件成功（core65・バイナリ27・CLI1・simulation12・doc36）、失敗・無視0件（/tmp/scoreboard-immutable-final.log）。既存テストは変更していない。
+- `cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --lib -- -D warnings`・`git diff --check`は成功した。
+- `cargo clippy --locked --all-targets -- -D warnings`は既存のtests/tui/controller.rs:77/:103のnonminimal_bool警告2件で失敗した（/tmp/scoreboard-immutable-clippy.log）。HEADにも同じ式があることを確認した。今回の範囲外のため変更していない。
+- 未実施：TUIの手動操作・Javaの検証。今回の依頼の未実装事項はない。
+
+## ScoreBoard::newのリファクタリング（前回の変更）
 
 - 対象：src/core/models/score.rsの生成処理と、tests/core/models/score.rsの既存テスト。呼び出し元のTeam・採点・ゲーム進行・表示とAPI例も全テストで確認する。
 - レビュー（高）：作業開始時の未コミット変更ではDefaultが削除され、全分岐がDisqualifiedを返していた。全履歴のsumと0点の総数では、途中の25点補正・連続0点・終了後の記録拒否を維持できない。根拠は既存の履歴復元・補正・終了後拒否テストとHEADの実装。
