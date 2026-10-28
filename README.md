@@ -104,7 +104,7 @@ is_resetは内部の超過判定です。apply_point・was_resetは削除しま�
 
 ### 採点・試合ルールのデフォルト実装
 
-core/services/molkky.rsのMolkky traitへ、hit・calc_score・judge_game・next_teamを直接実装しています。
+core/services/molkky.rsのMolkky traitへ、validate_unique_ids・hit・calc_score・judge_game・next_teamを直接実装しています。
 SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
 得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
 next_teamは手番フラグの検索だけを行い、順番の計算・失格スキップ・終了判定を行いません。

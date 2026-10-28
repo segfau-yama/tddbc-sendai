@@ -1,28 +1,29 @@
 use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
 use std::collections::HashSet;
 
-pub(crate) fn validate_unique_ids(skittles: &[Skittle]) {
-    let mut ids = HashSet::new();
-    for skittle in skittles {
-        assert!(
-            ids.insert(skittle.id()),
-            "スキットルIDが重複しています: {}",
-            skittle.id()
-        );
-    }
-}
-
 /// クロージャで乱数源や物理世界を捕捉できる、判定関数の借用。ヒープ確保は不要。
 pub type JudgeStrategy<'a> = &'a mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>;
 
 /// 衝突・転倒判定・採点・チーム選択のルール。既定メソッドは現在のシンプルなモルックのルールを使う。
 /// 履歴やFieldを所有せず、手番や得点の更新は呼び出し側が扱う。
 pub trait Molkky {
+    /// 同番号の別個体は許可し、同じIDの二重登録を拒否する。
+    fn validate_unique_ids(&self, skittles: &[Skittle]) {
+        let mut ids = HashSet::new();
+        for skittle in skittles {
+            assert!(
+                ids.insert(skittle.id()),
+                "スキットルIDが重複しています: {}",
+                skittle.id()
+            );
+        }
+    }
+
     /// 判定方法を注入し、同じ個体集合の新しい状態を返す。入力は変更しない。
     fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> Vec<Skittle> {
-        validate_unique_ids(skittles);
+        self.validate_unique_ids(skittles);
         let updated = judge(stick, skittles);
-        validate_unique_ids(&updated);
+        self.validate_unique_ids(&updated);
         let before: HashSet<_> = skittles
             .iter()
             .map(|pin| (pin.id(), pin.number()))
@@ -34,7 +35,7 @@ pub trait Molkky {
 
     /// 位置や投てき方法に依存せず、倒れた番号だけから採点する。
     fn calc_score(&self, knocked_over_skittles: &[Skittle]) -> Point {
-        validate_unique_ids(knocked_over_skittles);
+        self.validate_unique_ids(knocked_over_skittles);
         Point::new(match knocked_over_skittles {
             [skittle] => skittle.number(),
             skittles => i32::try_from(skittles.len()).expect("スキットル本数が得点の範囲外です"),

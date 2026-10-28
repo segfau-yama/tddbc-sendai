@@ -259,3 +259,19 @@ fn 判定は空の集合と並び替えられた同じ個体集合を返せる()
     });
     assert_eq!(updated, [pins[1], pins[0]]);
 }
+
+#[test]
+fn 検証メソッドは番号でなく個体の重複を判定し入力を変えない() {
+    let pins = [Skittle::new(12), Skittle::new(12)];
+    let original = pins;
+    let rules: &dyn Molkky = &SimpleMolkky;
+    rules.validate_unique_ids(&[]);
+    rules.validate_unique_ids(&pins);
+    assert_eq!(pins, original);
+    assert!(
+        std::panic::catch_unwind(|| {
+            SimpleMolkky.validate_unique_ids(&[pins[0], pins[0]]);
+        })
+        .is_err()
+    );
+}

@@ -2,7 +2,21 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## hitへの変更とField/Stickの識別子への縮小（今回の実装）
+## ID重複検証をMolkkyのメソッドへ移動（今回の変更）
+
+- validate_unique_idsを自由関数からMolkkyのデフォルトメソッドへ移す。hit/calc_scoreはself経由、ArrayField生成はSimpleMolkky経由で呼ぶ。自由関数と内部再公開は削除する。重複拒否・同番号の別個体の許可・入力の不変性・dyn Molkky互換性を維持する。
+- [x] 変更前のテストを確認する。
+- [x] メソッド経由の呼び出しのRedを確認する。
+- [x] 実装と参照元を移し、test/build/fmt/Clippy・差分を確認する。
+
+### 検証結果
+
+- 変更前cargo test --lockedは138件成功（/tmp/molkky-validation-baseline.log）。Redはメソッド未実装によるE0599を確認した（/tmp/molkky-validation-red.log）。
+- 関数本体は変えずデフォルトメソッドへ移し、自由関数と再公開を撤去した。新しいテストでdyn Molkky経由の空集合/同番号の別個体の許可、入力不変、同ID拒否を確認した。hit・採点・ArrayField生成での既存の重複拒否も維持した。
+- 最終cargo test --lockedは139件成功（core63・バイナリ27・CLI1・simulation12・doc36）、失敗・無視0件（/tmp/molkky-validation-final.log）。cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkも成功した。
+- メソッドへの移動が対象のため、TUIの手動操作は実施していない。モデル・ルール・依存関係は変更していない。
+
+## hitへの変更とField/Stickの識別子への縮小（前回の実装）
 
 - 対象：最新の2項目を実装する。Molkky::hit(&Stick, &[Skittle], JudgeStrategy)へ変更し、JudgeStrategyは標準FnMutの借用型別名とする。Rustの可変長配列は共有スライスで受け、既存のdyn Molkky利用と入力の不変性を保つ。
 - 判定は更新後の全Skittleを返すため、SkittleState::Stand/Fallと不変更新を追加する。入力/結果のID重複と個体集合の維持を検証する。Shape/Displayの型引数やStickの状態は今回追加しない。
