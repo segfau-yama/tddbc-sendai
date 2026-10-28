@@ -187,18 +187,20 @@ assert_eq!(updated.score_board().total(), 5);
 assert_eq!(original.name(), updated.name());
 ```
 
-## 手番の設定と失格者を外す判断は使用側で行う
+## 手番の切り替えと失格者のスキップはnext_teamで行う
 
 ```rust
 use rust_molkky::{Name, ScoreBoard, Team, Molkky, SimpleMolkky};
 let missed = SimpleMolkky.calc_score(&[]);
 let red = Team::new(Name::new("赤").unwrap()).with_turn(true);
-let red = red.with_score_board(ScoreBoard::new(vec![missed; 3])).with_turn(false);
-let blue = Team::new(Name::new("青").unwrap()).with_turn(true);
-let teams = [red, blue];
-assert_eq!(SimpleMolkky.next_team(&teams).unwrap().id(), teams[1].id());
-// coreはWonを検索するだけで、生存者による勝利は使用側が扱う。
-assert!(SimpleMolkky.judge_game(&teams).is_none());
+let red = red.with_score_board(ScoreBoard::new(vec![missed; 3]));
+let teams = [red, Team::new(Name::new("青").unwrap()), Team::new(Name::new("緑").unwrap())];
+let next = SimpleMolkky.next_team(&teams);
+assert!(!next[0].turn());
+assert!(next[1].turn());
+assert!(!next[2].turn());
+assert!(teams[0].turn());
+assert_eq!(next[1].id(), teams[1].id());
 ```
 
 ## 同番号の別個体を配置し採点できる
@@ -242,7 +244,8 @@ let teams = [
     Team::new(Name::new("赤").unwrap()).with_turn(true),
     Team::new(Name::new("青").unwrap()).with_score_board(won),
 ];
-assert_eq!(SimpleMolkky.next_team(&teams).unwrap().id(), teams[0].id());
+assert_eq!(teams.iter().find(|team| team.turn()).unwrap().id(), teams[0].id());
+assert!(SimpleMolkky.next_team(&teams).iter().all(|team| !team.turn()));
 assert_eq!(SimpleMolkky.judge_game(&teams).unwrap().id(), teams[1].id());
 ```
 
@@ -362,7 +365,9 @@ assert!(!original.turn());
 assert!(active.turn());
 assert_eq!(active.id(), original.id());
 let teams = [active];
-assert_eq!(SimpleMolkky.next_team(&teams).unwrap().id(), original.id());
+let next = SimpleMolkky.next_team(&teams);
+assert_eq!(next[0].id(), original.id());
+assert!(next[0].turn());
 ```
 
 ## 判定関数の型別名はクロージャの可変借用として使える

@@ -36,7 +36,7 @@ pub(crate) fn compose_game(
     message: &str,
 ) -> MolkkyTui {
     let winner = winning_team(rules, teams);
-    let current = rules.next_team(teams);
+    let current = teams.iter().find(|team| team.turn());
     let active = current
         .and_then(|current| teams.iter().position(|team| team.id() == current.id()))
         .unwrap_or(0);

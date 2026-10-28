@@ -5,7 +5,7 @@ use std::collections::HashSet;
 pub type JudgeStrategy<'a> = &'a mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>;
 
 /// 衝突・転倒判定・採点・チーム選択のルール。既定メソッドは現在のシンプルなモルックのルールを使う。
-/// 履歴やFieldを所有せず、手番や得点の更新は呼び出し側が扱う。
+/// 履歴やFieldを所有せず、手番は新しいチーム一覧で返し、得点の更新は呼び出し側が扱う。
 pub trait Molkky {
     /// 同番号の別個体は許可し、同じIDの二重登録を拒否する。
     fn validate_unique_ids(&self, skittles: &[Skittle]) {
@@ -42,7 +42,7 @@ pub trait Molkky {
         })
     }
 
-    /// Wonのチームを返す。手番・失格スキップ・試合進行は呼び出し側が扱う。
+    /// Wonのチームを返す。最後の生存者による勝利はここでは判定しない。
     fn judge_game<'a>(&self, teams: &'a [Team]) -> Option<&'a Team> {
         assert!(!teams.is_empty(), "チームは1件以上必要です");
         let mut ids = HashSet::new();
@@ -57,12 +57,31 @@ pub trait Molkky {
         winner
     }
 
-    /// turn=trueのチームを返す。手番フラグは変更しない。
-    fn next_team<'a>(&self, teams: &'a [Team]) -> Option<&'a Team> {
-        let mut turns = teams.iter().filter(|team| team.turn());
-        let team = turns.next();
+    /// 次の有効チームへ手番を進めた新しい一覧を返す。終了時は全手番を解除する。
+    fn next_team(&self, teams: &[Team]) -> Vec<Team> {
+        let mut turns = teams.iter().enumerate().filter(|(_, team)| team.turn());
+        let current = turns.next().map(|(index, _)| index);
         assert!(turns.next().is_none(), "手番のチームが複数います");
-        team
+        let remaining = teams
+            .iter()
+            .filter(|team| team.score_board().state() != ScoreState::Disqualified)
+            .count();
+        let next = if teams.is_empty()
+            || self.judge_game(teams).is_some()
+            || (teams.len() >= 2 && remaining == 1)
+        {
+            None
+        } else {
+            let start = current.map_or(0, |index| (index + 1) % teams.len());
+            (0..teams.len())
+                .map(|offset| (start + offset) % teams.len())
+                .find(|&index| teams[index].score_board().state() != ScoreState::Disqualified)
+        };
+        teams
+            .iter()
+            .enumerate()
+            .map(|(index, team)| team.with_turn(next == Some(index)))
+            .collect()
     }
 }
 

@@ -15,24 +15,78 @@ fn team(name: &str, points: &[i32]) -> Team {
 }
 
 #[test]
-fn 手番が立ったチームそのものを返し並び順や得点では選ばない() {
+fn 次の手番へ循環し失格を飛ばして元のチームを変更しない() {
     let teams = [
-        team("赤", &[]),
-        team("青", &[0, 0, 0]).with_turn(true),
-        team("緑", &[10; 5]),
+        team("赤", &[]).with_turn(true),
+        team("青", &[0; 3]),
+        team("緑", &[5]),
     ];
     let rules: &dyn Molkky = &SimpleMolkky;
-    let selected = rules.next_team(&teams).unwrap();
-    assert!(std::ptr::eq(selected, &teams[1]));
-    assert_eq!(selected.score_board().state(), ScoreState::Disqualified);
-    assert!(selected.turn());
+    let next = rules.next_team(&teams);
+    assert_eq!(
+        next.iter().map(Team::turn).collect::<Vec<_>>(),
+        [false, false, true]
+    );
+    assert_eq!(
+        teams.iter().map(Team::turn).collect::<Vec<_>>(),
+        [true, false, false]
+    );
+    for (before, after) in teams.iter().zip(&next) {
+        assert_eq!(before.id(), after.id());
+        assert_eq!(before.name(), after.name());
+        assert_eq!(
+            before.score_board().history(),
+            after.score_board().history()
+        );
+        assert_eq!(before.score_board().state(), after.score_board().state());
+    }
+    let wrapped = rules.next_team(&next);
+    assert_eq!(
+        wrapped.iter().map(Team::turn).collect::<Vec<_>>(),
+        [true, false, false]
+    );
 }
 
 #[test]
-fn 手番がなければ空や勝者の有無にかかわらず返さない() {
-    assert!(SimpleMolkky.next_team(&[]).is_none());
-    assert!(SimpleMolkky.next_team(&[team("赤", &[])]).is_none());
-    assert!(SimpleMolkky.next_team(&[team("赤", &[10; 5])]).is_none());
+fn 手番未設定なら先頭の有効チームで開始し単独参加なら同じチームへ戻る() {
+    let teams = [team("赤", &[0; 3]), team("青", &[]), team("緑", &[])];
+    let next = SimpleMolkky.next_team(&teams);
+    assert_eq!(
+        next.iter().map(Team::turn).collect::<Vec<_>>(),
+        [false, true, false]
+    );
+    let solo = SimpleMolkky.next_team(&[team("赤", &[])]);
+    assert!(solo[0].turn());
+    assert!(SimpleMolkky.next_team(&solo)[0].turn());
+}
+
+#[test]
+fn 空と全失格と勝利と最後の生存者では手番を解除する() {
+    assert!(SimpleMolkky.next_team(&[]).is_empty());
+    for teams in [
+        vec![team("赤", &[0; 3]).with_turn(true)],
+        vec![team("赤", &[0; 3]), team("青", &[0; 3]).with_turn(true)],
+        vec![team("赤", &[10; 5]).with_turn(true), team("青", &[])],
+        vec![team("赤", &[0; 3]).with_turn(true), team("青", &[])],
+    ] {
+        let next = SimpleMolkky.next_team(&teams);
+        assert!(next.iter().all(|team| !team.turn()));
+        assert_eq!(next.len(), teams.len());
+    }
+}
+
+#[test]
+fn 失格になった現在のチームから次の有効チームへ進める() {
+    let teams = [
+        team("赤", &[0; 3]).with_turn(true),
+        team("青", &[]),
+        team("緑", &[]),
+    ];
+    let next = SimpleMolkky.next_team(&teams);
+    assert_eq!(
+        next.iter().map(Team::turn).collect::<Vec<_>>(),
+        [false, true, false]
+    );
 }
 
 #[test]

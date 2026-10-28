@@ -25,12 +25,8 @@ pub struct Controller {
 impl Controller {
     pub fn new(names: Vec<Name>) -> Self {
         let throw_counts = vec![0; names.len()];
-        let teams = names
-            .iter()
-            .cloned()
-            .enumerate()
-            .map(|(i, name)| Team::new(name).with_turn(i == 0))
-            .collect();
+        let teams: Vec<_> = names.iter().cloned().map(Team::new).collect();
+        let teams = SimpleMolkky.next_team(&teams);
         let field = StandardFieldGenerator.generate();
         let layout = FieldLayout::new(field.skittles());
         Self {
@@ -76,9 +72,7 @@ impl Controller {
     }
 
     fn move_from(&mut self, dx: i32, dy: i32) {
-        if winning_team(&self.rules, &self.teams).is_some()
-            || self.rules.next_team(&self.teams).is_none()
-        {
+        if winning_team(&self.rules, &self.teams).is_some() || !self.teams.iter().any(Team::turn) {
             return;
         }
         if let Some(position) = self.layout.stick.translated(dx, dy) {
@@ -91,17 +85,12 @@ impl Controller {
         if winning_team(&self.rules, &self.teams).is_some() {
             return;
         }
-        let Some(current) = self.rules.next_team(&self.teams) else {
+        let Some(active) = self.teams.iter().position(Team::turn) else {
             return;
         };
-        if current.score_board().state() == ScoreState::Disqualified {
+        if self.teams[active].score_board().state() == ScoreState::Disqualified {
             return;
         }
-        let active = self
-            .teams
-            .iter()
-            .position(|team| team.id() == current.id())
-            .unwrap();
         let before = self.teams[active].score_board().total();
         let updated = self
             .rules
@@ -133,19 +122,7 @@ impl Controller {
                 .collect(),
         );
         self.message = throw_message(&self.teams[active], turn, before, point);
-        let next = if winning_team(&self.rules, &self.teams).is_some() {
-            None
-        } else {
-            (1..=self.teams.len())
-                .map(|offset| (active + offset) % self.teams.len())
-                .find(|&index| self.teams[index].score_board().state() != ScoreState::Disqualified)
-        };
-        self.teams = self
-            .teams
-            .iter()
-            .enumerate()
-            .map(|(i, team)| team.with_turn(next == Some(i)))
-            .collect();
+        self.teams = self.rules.next_team(&self.teams);
     }
 
     fn render(&self, frame: &mut Frame) {

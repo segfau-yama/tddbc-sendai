@@ -40,7 +40,7 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
         runtime.teams[0].score_board().state(),
         ScoreState::Disqualified
     ));
-    assert!(SimpleMolkky.next_team(&runtime.teams).is_none());
+    assert!(runtime.teams.iter().find(|team| team.turn()).is_none());
     assert_eq!(
         winning_team(&SimpleMolkky, &runtime.teams).unwrap().id(),
         runtime.teams[1].id()
@@ -74,19 +74,19 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
     runtime.field = ArrayField::new(Field::new(), vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
-    assert!(!SimpleMolkky.next_team(&runtime.teams).is_none());
+    assert!(!runtime.teams.iter().find(|team| team.turn()).is_none());
     assert_eq!(
-        SimpleMolkky.next_team(&runtime.teams).unwrap().id(),
+        runtime.teams.iter().find(|team| team.turn()).unwrap().id(),
         runtime.teams[1].id()
     );
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(
-        SimpleMolkky.next_team(&runtime.teams).unwrap().id(),
+        runtime.teams.iter().find(|team| team.turn()).unwrap().id(),
         runtime.teams[2].id()
     );
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(
-        SimpleMolkky.next_team(&runtime.teams).unwrap().id(),
+        runtime.teams.iter().find(|team| team.turn()).unwrap().id(),
         runtime.teams[1].id()
     );
     assert_eq!(runtime.teams[0].score_board().history().len(), 3);
@@ -100,11 +100,11 @@ fn 一チーム開始なら三回連続0点で勝者なし終了する() {
     runtime.teams[0] = runtime.teams[0].with_turn(true);
     runtime.field = ArrayField::new(Field::new(), vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
-    assert!(!SimpleMolkky.next_team(&runtime.teams).is_none());
+    assert!(!runtime.teams.iter().find(|team| team.turn()).is_none());
     for _ in 0..3 {
         runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     }
-    assert!(SimpleMolkky.next_team(&runtime.teams).is_none());
+    assert!(runtime.teams.iter().find(|team| team.turn()).is_none());
     assert!(SimpleMolkky.judge_game(&runtime.teams).is_none());
     assert_eq!(runtime.teams[0].score_board().history().len(), 3);
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
@@ -124,7 +124,12 @@ fn 次のチームも共通のピン集合と棒と表示を使う() {
     controller.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(controller.teams[0].score_board().total(), 5);
     assert_eq!(
-        SimpleMolkky.next_team(&controller.teams).unwrap().id(),
+        controller
+            .teams
+            .iter()
+            .find(|team| team.turn())
+            .unwrap()
+            .id(),
         controller.teams[1].id()
     );
     let moved = controller.layout.positions[&controller.field.skittles()[0].id()];
@@ -176,11 +181,13 @@ fn 棒の表示をピンへ重ねても確率と投てき結果は変わらな�
             winning_team(&SimpleMolkky, &b.teams).map(|team| team.name().as_str())
         );
         assert_eq!(
-            SimpleMolkky
-                .next_team(&a.teams)
+            a.teams
+                .iter()
+                .find(|team| team.turn())
                 .map(|team| team.name().as_str()),
-            SimpleMolkky
-                .next_team(&b.teams)
+            b.teams
+                .iter()
+                .find(|team| team.turn())
                 .map(|team| team.name().as_str())
         );
         for (left, right) in a.teams.iter().zip(&b.teams) {
@@ -230,7 +237,7 @@ fn 使用側で超過補正を表示し次の手番を設定する() {
     assert_eq!(runtime.teams[0].score_board().state(), ScoreState::Reset);
     assert_eq!(runtime.teams[0].score_board().total(), 25);
     assert_eq!(
-        SimpleMolkky.next_team(&runtime.teams).unwrap().id(),
+        runtime.teams.iter().find(|team| team.turn()).unwrap().id(),
         runtime.teams[1].id()
     );
     assert_eq!(runtime.teams.iter().filter(|team| team.turn()).count(), 1);

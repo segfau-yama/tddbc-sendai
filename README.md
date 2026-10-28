@@ -62,7 +62,7 @@ IdはUUID v4で生成し、同名でも別チームは別IDです。cloneや得�
 Name::newはNameErrorを返し、TUIでは不正な名前を端末初期化前に入力エラーとして報告します。
 team.id()で一覧内の順番や名前に依存せず検索できます。同じIDの二重登録はjudge_gameが拒否します。
 Teamはturn: boolを保持し、turn()/with_turn(bool)で参照・不変更新します。初期値はfalseです。
-手番の初期設定・循環・失格者のスキップ・終了時の解除は使用側が行います。
+手番の初期設定・循環・失格者のスキップ・終了時の解除はMolkky::next_teamが行います。
 
 ### Field生成・投てき・採点
 
@@ -107,23 +107,25 @@ is_resetは内部の超過判定です。apply_point・was_resetは削除しま�
 core/services/molkky.rsのMolkky traitへ、validate_unique_ids・hit・calc_score・judge_game・next_teamを直接実装しています。
 SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
 得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
-next_teamは手番フラグの検索だけを行い、順番の計算・失格スキップ・終了判定を行いません。
+next_teamは次の手番を設定した新しいチーム一覧を返します。元の一覧は変更しません。
 TUIはSimpleMolkkyを保持し、その参照を表示用合成にも渡します。coreには端末入出力やゲームの操作ループを置きません。
 Field生成・描画はこのtraitには含めません。
 
 ### チーム選択と使用側の進行
 
 Molkky::judge_game(&teams)はScoreState::Wonのチームを共有参照で返します。WonがなければNoneです。
-Molkky::next_team(&teams)はturn=trueのチームを共有参照で返します。フラグがなければNoneです。
+Molkky::next_team(&teams)は現在の手番の次から循環して失格者を飛ばし、新しいVec<Team>を返します。
+手番未設定なら最初の有効チームへ設定し、単独参加なら同じチームへ戻ります。
+空・全失格・50点勝利・複数参加の最後の生存者の勝利では全フラグを解除します。
 複数勝者・チームIDの重複・複数手番は拒否します。judge_gameは空の参加者も拒否します。
-next_teamは失格や終了を見て手番を推測・変更しません。
+現在の手番の参照はteams.iter().find(|team| team.turn())で取得できます。参照取得時にnext_teamは呼びません。
 
 利用側はScoreBoard::addで得点表を作り、Team::with_score_boardでチームを更新します。
-TUI側で終了後の投てきを停止し、投てき後に次の失格していないチームへwith_turnで手番を設定します。
-終了時は全チームの手番を解除します。activeインデックスはControllerに重複保存しません。
+TUI側で終了後の投てきを停止し、初期化と投てき後にteams = rules.next_team(&teams)で手番を更新します。
+activeインデックスはControllerに重複保存しません。
 TUIの投数はチームごとに保持し、得点履歴が[25]へ圧縮されても投てき番号と投数表示を維持します。
 
-既存アプリの「複数参加から最後の生存者が勝つ」ルールはgame/progress.rsのwinning_teamで扱います。
+既存アプリの「複数参加から最後の生存者が勝つ」ルールはgame/progress.rsのwinning_teamで勝者を取得し、next_teamもこの条件で手番を解除します。
 coreのWon検索と組み合わせますが、得点0の生存者のScoreStateをWonへ書き換えません。
 単独参加・全失格・50点到達の振る舞いは維持します。
 

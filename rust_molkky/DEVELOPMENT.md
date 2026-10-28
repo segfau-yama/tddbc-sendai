@@ -2,7 +2,25 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## ID重複検証をMolkkyのメソッドへ移動（今回の変更）
+## 手番の切り替えをnext_teamへ集約（今回の変更）
+
+- next_team(&[Team]) -> Vec<Team>で次の手番を設定した新しい一覧を返す。元のTeamは変更しない。現在のフラグの次から循環して失格をスキップし、未設定なら最初の有効チームへ設定する。空/全失格/50点勝利/複数参加の最後の生存者の勝利では全フラグを解除する。
+- 現在の手番の参照はturn()の検索で取得する。TUI内の循環・失格スキップ・フラグ更新を撤去し、初期化と投てき後の両方でnext_teamを呼ぶ。judge_gameは引き続きWonだけを返す。入出力・描画はcoreに追加しない。
+- [x] 変更前のテストを確認する。
+- [x] 循環・失格スキップ・初期化・終了時解除・入力不変のRedを確認する。
+- [x] 利用側とAPI例を移行しtest/build/fmt/Clippy・TUI操作・差分を確認する。
+
+### Red・Green・確認結果
+
+- 変更前cargo test --lockedは139件成功（/tmp/next-turn-baseline.log）。新しい一覧を期待するテストを先に書き、旧Option返却との型不一致E0308/E0631/E0599をRedとして確認した（/tmp/next-turn-red.log）。
+- next_teamは共有参照の一覧から、各Team::with_turnで新しい一覧を作る。手番の循環・末尾から先頭への折り返し・失格スキップ・失格した現在のチームからの継続・未設定時の初期化・単独参加・終了時の解除を検証した。ID・名前・得点履歴/状態と元の手番が変わらないことも確認した。
+- TUIの初期化と投てき後はnext_teamへ委譲し、循環/フラグ更新の重複を削除した。参照だけ必要な入力ガード・描画・テストはturn()の検索へ変更した。README/API例も返却型と責務を更新した。
+- 初回の移行でTUI初期化のcollectがスライスと推論されたため、Vecを明示して解消した。この移行エラーは事前のRedとは区別する。
+- 最終cargo test --lockedは141件成功（core65・バイナリ27・CLI1・simulation12・doc36）、失敗・無視0件（/tmp/next-turn-final.log）。既存TUIの失格スキップ・勝利/全失格後の操作停止・共通Field・投数・採点の検証も成功した。cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkは成功。
+- 100列×30行の擬似端末で移動・投てき・青の手番表示・再開・再投てき・終了、panicなし・終了コード0を確認した（/tmp/next-turn-tui.log）。
+- coreへ入出力を追加していない。judge_gameのWon検索、ScoreBoardの補正/失格判定、モデルの不変性、依存関係、Javaは変更していない。
+
+## ID重複検証をMolkkyのメソッドへ移動（前回の変更）
 
 - validate_unique_idsを自由関数からMolkkyのデフォルトメソッドへ移す。hit/calc_scoreはself経由、ArrayField生成はSimpleMolkky経由で呼ぶ。自由関数と内部再公開は削除する。重複拒否・同番号の別個体の許可・入力の不変性・dyn Molkky互換性を維持する。
 - [x] 変更前のテストを確認する。
