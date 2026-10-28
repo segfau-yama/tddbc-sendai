@@ -2,7 +2,9 @@ use super::*;
 use ratatui::{Terminal, backend::TestBackend};
 use rust_molkky::Name;
 use rust_molkky::ScoreState;
+use rust_molkky::Skittles;
 use rust_molkky::Stick;
+use rust_molkky::Teams;
 use rust_molkky::core::{Field, ScoreBoard, Skittle};
 use rust_molkky::simulation::RandomStick;
 
@@ -21,7 +23,7 @@ fn rendered(runtime: &Controller) -> String {
 }
 
 fn almost_disqualified() -> ScoreBoard {
-    let missed = SimpleMolkky.calc_score(&[]);
+    let missed = Skittles::new(&[]).calc_score();
     ScoreBoard::default().add(missed).add(missed)
 }
 
@@ -42,7 +44,7 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
     ));
     assert!(runtime.teams.iter().find(|team| team.turn()).is_none());
     assert_eq!(
-        winning_team(&SimpleMolkky, &runtime.teams).unwrap().id(),
+        winning_team(&runtime.teams).unwrap().id(),
         runtime.teams[1].id()
     );
     let history = runtime.teams[0].score_board().history().to_vec();
@@ -74,7 +76,7 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
     runtime.field = ArrayField::new(Field::new(), vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
-    assert!(!runtime.teams.iter().find(|team| team.turn()).is_none());
+    assert!(runtime.teams.iter().any(Team::turn));
     assert_eq!(
         runtime.teams.iter().find(|team| team.turn()).unwrap().id(),
         runtime.teams[1].id()
@@ -100,12 +102,12 @@ fn 一チーム開始なら三回連続0点で勝者なし終了する() {
     runtime.teams[0] = runtime.teams[0].with_turn(true);
     runtime.field = ArrayField::new(Field::new(), vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
-    assert!(!runtime.teams.iter().find(|team| team.turn()).is_none());
+    assert!(runtime.teams.iter().any(Team::turn));
     for _ in 0..3 {
         runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     }
     assert!(runtime.teams.iter().find(|team| team.turn()).is_none());
-    assert!(SimpleMolkky.judge_game(&runtime.teams).is_none());
+    assert!(Teams::new(&runtime.teams).judge_game().is_none());
     assert_eq!(runtime.teams[0].score_board().history().len(), 3);
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.teams[0].score_board().history().len(), 3);
@@ -177,8 +179,8 @@ fn 棒の表示をピンへ重ねても確率と投てき結果は変わらな�
         a.throw_with_rng(&mut first);
         b.throw_with_rng(&mut second);
         assert_eq!(
-            winning_team(&SimpleMolkky, &a.teams).map(|team| team.name().as_str()),
-            winning_team(&SimpleMolkky, &b.teams).map(|team| team.name().as_str())
+            winning_team(&a.teams).map(|team| team.name().as_str()),
+            winning_team(&b.teams).map(|team| team.name().as_str())
         );
         assert_eq!(
             a.teams
@@ -201,7 +203,7 @@ fn 棒の表示をピンへ重ねても確率と投てき結果は変わらな�
 fn 五十点勝利後は手番を外し使用側で追加投てきを停止する() {
     let mut runtime = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
     let history = [12, 12, 12, 12, 1]
-        .map(|n| SimpleMolkky.calc_score(&[Skittle::new(n)]))
+        .map(|n| Skittles::new(&[Skittle::new(n)]).calc_score())
         .to_vec();
     runtime.teams[0] = runtime.teams[0].with_score_board(ScoreBoard::new(history));
     runtime.field = ArrayField::new(Field::new(), vec![Skittle::new(1)]);
@@ -210,7 +212,7 @@ fn 五十点勝利後は手番を外し使用側で追加投てきを停止す�
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
     assert_eq!(runtime.teams[0].score_board().state(), ScoreState::Won);
     assert_eq!(
-        SimpleMolkky.judge_game(&runtime.teams).unwrap().id(),
+        Teams::new(&runtime.teams).judge_game().unwrap().id(),
         runtime.teams[0].id()
     );
     assert!(runtime.teams.iter().all(|team| !team.turn()));
@@ -227,7 +229,7 @@ fn 五十点勝利後は手番を外し使用側で追加投てきを停止す�
 fn 使用側で超過補正を表示し次の手番を設定する() {
     let mut runtime = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
     let history = [12, 12, 12, 12, 1]
-        .map(|n| SimpleMolkky.calc_score(&[Skittle::new(n)]))
+        .map(|n| Skittles::new(&[Skittle::new(n)]).calc_score())
         .to_vec();
     runtime.teams[0] = runtime.teams[0].with_score_board(ScoreBoard::new(history));
     runtime.field = ArrayField::new(Field::new(), vec![Skittle::new(2)]);

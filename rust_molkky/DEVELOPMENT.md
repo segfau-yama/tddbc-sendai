@@ -2,6 +2,45 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
+## Skittles・Teamsへの集合の責務の分離（今回の変更）
+
+### 設計と対象
+
+- Skittlesは`new(&[Skittle])`で採点・検証対象の一覧を不変借用する。`validate()`で同IDの重複を拒否し、`calc_score() -> Point`はその一覧を検証して採点する。同番号の別個体・空・13本以上を許可する。
+- Teamsは`new(&[Team])`で参加者一覧を不変借用し、`judge_game() -> Option<&Team>`と`next_team() -> Vec<Team>`を持つ。勝者は元の要素への参照、手番更新は新しいチーム一覧で返す。
+- 不変条件：元の一覧・ID・名前・得点を変更しない。ID重複・複数勝者・複数手番の検証を既存の判定経路に維持する。空のnext_teamは許可し、空のjudge_gameは既存どおり拒否する。生成だけでは検証せず、各操作で必要な検証を行う。
+- 判断：所有するVecや可変アクセサは追加せず、既存の配列・スライスをそのまま使う。採点規則はSkittlesへ移し、採点対象の選択は呼び出し側が行う。Molkkyにはhitだけを残し、旧メソッドの互換用委譲は追加しない。Molkkyで採点・勝敗・手番を上書きする旧APIは廃止した。
+- 対象：coreのモデル/サービス/公開API、ArrayField生成、gameの終了判定と表示合成、Controllerの手番更新、対応テスト、READMEと実行可能なAPI例。最後の生存者の勝利はgameへ残す。想定規模は1端末の対話ゲーム（標準12本、少数チーム）。集合の検証・選択は線形時間とする。
+- 範囲外：編集中のScoreBoardとPointのファイル分離は保全し、今回のコミットに含めない。検証用worktreeではScoreBoardとそのPoint公開経路をHEADの検証済み実装に固定する。これ以外のソース・テストは今回の変更を使う。
+
+### テスト計画
+
+- [x] 作業開始時の失敗と、ScoreBoardを保全した検証用コピーの失敗原因を確認する。
+- [x] Skittlesの検証テストで新モデル未実装のRedと実装後のGreenを確認する。
+- [x] 勝者/手番テストをtests/core/models/teams.rsへ移し、新モデル未実装のRedと実装後のGreenを確認する。
+- [x] hitの集合変更拒否の失敗を確認し、生成/採点の個体検証をSkittlesへ移す。
+- [x] 採点テストをtests/core/models/skittles.rsへ移し、全呼び出し元とAPI例を移行する。
+- [x] 全テスト・build・fmt・Clippy・差分を確認し、接続先を含めてレビューする。
+
+### Red・Green・Refactorと検証結果
+
+- 開始時の`cd rust_molkky && cargo test --locked`はScoreBoardのhistory/total欠落によるE0599で失敗した（/tmp/collections-start.log）。この既存のコンパイル失敗は新モデルのRedとして扱わない。
+- 検証用コピーに検証済みScoreBoardと作業中のMolkkyを組み合わせると、既存coreテスト65件中1件が失敗した。`[A,B] -> [A]`の判定結果が拒否されないためである（/tmp/collections-baseline.log）。hitのID/番号集合の一致検証を復旧して解消した。
+- Red：Skittlesを使う検証テスト、Teamsを使う既存の勝者/手番テストをそれぞれ先に変更し、型未実装のE0432を確認した（/tmp/skittles-red.log、/tmp/teams-red.log）。後者に付随した型推論エラーは未実装型に起因する。
+- Green：モデル実装と利用側の移行後、core65件成功を確認した（/tmp/collections-models-green.log）。0/1/複数/同番号/同ID/13本・入力不変の採点テストは仕様と期待値を変えずにSkittlesへ移した。既存テストを削除・無効化していない。
+- 追加確認：同IDの異なる状態も重複とする検証、next_team経由のチームID重複拒否、Skittlesの公開API例と借用中の書き換え拒否を追加した。これらは追加時から成功したため、事前Redとは区別する。
+- Refactor：表示合成から不要になったMolkky引数を削除した。旧Molkkyの勝者上書きを使う表示テストは、Teamsが実際のWonチームを表示へ反映する契約へ更新した。今回触れたTUIテストの既存の二重否定2か所もany(Team::turn)へ簡約した。
+- 検証用worktreeで`cargo test --locked`は145件成功（core67・バイナリ27・CLI1・simulation12・doc38）、失敗・無視0件（/tmp/collections-independent-tests.log）。検証先ごとに独立したtargetを使い、共有キャッシュの結果を最終根拠にしない。
+- `cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --all-targets -- -D warnings`と`git diff --check`は成功した。現作業ツリーのテストは別途実行し、ScoreBoardのhistory/total欠落によるE0599が残ることを確認した（/tmp/collections-working-tree.log）。
+
+### 最終レビュー
+
+- 対象と根拠：新モデルと全呼び出し元、公開API例、既存の集合/採点/手番/終了後停止テストを確認した。追加の依存・コピー・可変API・互換メソッドは導入していない。新モデルの変更に未修正の指摘はない。
+- 修正済みP1：hitは個体の追加・欠落・置換を受理しなくなり、状態の変更と並び替えは引き続き許可する。元の個体・棒・FieldのID保持も既存テストで確認した。
+- 範囲外P1：作業中のScoreBoardにはhistory()/total()がなく、アプリと既存テストがコンパイルできない。問い合わせAPIの復旧が必要で、放置すると実行・退行確認ができない。
+- 範囲外P1：作業中のScoreBoard::newは50点到達・超過をDisqualifiedにし、0点の総数を連続回数として扱う。例えば[10,10,10,10,10]はWon、[0,0,1,0]はCalculatedとなるべきだが、現実装はいずれもDisqualifiedとなる。投てき順の判定・補正へ戻さなければ、Teamsの勝者/手番の前提を満たさない。
+- 未実施：実端末でのTUI手動操作、Javaの検証。モデルの所有型への変更、汎用コレクション、採点方式の追加は今回の範囲外。
+
 ## ScoreBoard::newを可変ローカル変数なしで構築（今回の変更）
 
 - 対象：src/core/models/score.rsのnewと判定用の非公開メソッド3つ。公開API・採点ルール・addの振る舞いは維持する。

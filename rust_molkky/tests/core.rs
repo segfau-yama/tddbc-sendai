@@ -15,3 +15,9 @@ mod team;
 
 #[path = "core/models/stick.rs"]
 mod stick;
+
+#[path = "core/models/skittles.rs"]
+mod skittles;
+
+#[path = "core/models/teams.rs"]
+mod teams;

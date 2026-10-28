@@ -2,6 +2,7 @@ use crate::{
     game::{FieldLayout, compose_game, relocate_skittles, throw_message, winning_team},
     view::molkky::{MIN_HEIGHT, MIN_WIDTH},
 };
+use rust_molkky::Skittles;
 use rust_molkky::simulation::{ArrayField, RandomStick, StandardFieldGenerator};
 use std::io;
 
@@ -9,7 +10,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
 };
-use rust_molkky::core::{Molkky, Name, ScoreState, SimpleMolkky, SkittleState, Team};
+use rust_molkky::core::{Molkky, Name, ScoreState, SimpleMolkky, SkittleState, Team, Teams};
 
 pub struct Controller {
     names: Vec<Name>,
@@ -26,7 +27,7 @@ impl Controller {
     pub fn new(names: Vec<Name>) -> Self {
         let throw_counts = vec![0; names.len()];
         let teams: Vec<_> = names.iter().cloned().map(Team::new).collect();
-        let teams = SimpleMolkky.next_team(&teams);
+        let teams = Teams::new(&teams).next_team();
         let field = StandardFieldGenerator.generate();
         let layout = FieldLayout::new(field.skittles());
         Self {
@@ -72,7 +73,7 @@ impl Controller {
     }
 
     fn move_from(&mut self, dx: i32, dy: i32) {
-        if winning_team(&self.rules, &self.teams).is_some() || !self.teams.iter().any(Team::turn) {
+        if winning_team(&self.teams).is_some() || !self.teams.iter().any(Team::turn) {
             return;
         }
         if let Some(position) = self.layout.stick.translated(dx, dy) {
@@ -82,7 +83,7 @@ impl Controller {
 
     fn throw_with_rng(&mut self, rng: &mut impl rand::Rng) {
         // 終了後はFieldも動かさないよう、乱数生成より先に確認する。
-        if winning_team(&self.rules, &self.teams).is_some() {
+        if winning_team(&self.teams).is_some() {
             return;
         }
         let Some(active) = self.teams.iter().position(Team::turn) else {
@@ -107,7 +108,7 @@ impl Controller {
                     })
             })
             .collect();
-        let point = self.rules.calc_score(&knocked_over);
+        let point = Skittles::new(&knocked_over).calc_score();
         let board = self.teams[active].score_board().add(point);
         self.teams[active] = self.teams[active].with_score_board(board);
         self.throw_counts[active] += 1;
@@ -122,13 +123,12 @@ impl Controller {
                 .collect(),
         );
         self.message = throw_message(&self.teams[active], turn, before, point);
-        self.teams = self.rules.next_team(&self.teams);
+        self.teams = Teams::new(&self.teams).next_team();
     }
 
     fn render(&self, frame: &mut Frame) {
         frame.render_widget(
             compose_game(
-                &self.rules,
                 &self.teams,
                 &self.throw_counts,
                 &self.field,

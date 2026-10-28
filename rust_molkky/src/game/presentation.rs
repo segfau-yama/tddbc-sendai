@@ -4,7 +4,7 @@ use crate::view::{
     team::TeamTui,
 };
 use rust_molkky::core::{
-    CONSECUTIVE_ZERO_LIMIT, Molkky, Point, RESET_SCORE, ScoreBoard, ScoreState, TARGET_SCORE, Team,
+    CONSECUTIVE_ZERO_LIMIT, Point, RESET_SCORE, ScoreBoard, ScoreState, TARGET_SCORE, Team,
 };
 use rust_molkky::simulation::{ArrayField, RandomStick};
 
@@ -27,7 +27,6 @@ pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
 }
 
 pub(crate) fn compose_game(
-    rules: &dyn Molkky,
     teams: &[Team],
     throw_counts: &[usize],
     field: &ArrayField,
@@ -35,7 +34,7 @@ pub(crate) fn compose_game(
     layout: &FieldLayout,
     message: &str,
 ) -> MolkkyTui {
-    let winner = winning_team(rules, teams);
+    let winner = winning_team(teams);
     let current = teams.iter().find(|team| team.turn());
     let active = current
         .and_then(|current| teams.iter().position(|team| team.id() == current.id()))

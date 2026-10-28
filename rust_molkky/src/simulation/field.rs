@@ -1,5 +1,4 @@
-use crate::core::models::{Field, Skittle};
-use crate::core::services::{Molkky, SimpleMolkky};
+use crate::core::models::{Field, Skittle, Skittles};
 
 /// フィールドの識別子と、座標を持たない個体集合を合成する。
 #[derive(Clone)]
@@ -9,7 +8,7 @@ pub struct ArrayField {
 }
 impl ArrayField {
     pub fn new(field: Field, skittles: Vec<Skittle>) -> Self {
-        SimpleMolkky.validate_unique_ids(&skittles);
+        Skittles::new(&skittles).validate();
         Self { field, skittles }
     }
 

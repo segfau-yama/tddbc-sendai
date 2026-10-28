@@ -19,38 +19,37 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 
 | 場所 | 責務 |
 | --- | --- |
-| src/core/models/ | Skittle・SkittleState・Field・Stick・Point・ScoreBoard・Team・Id・Name・ScoreState |
-| src/core/services/ | Molkkyの既定ルール（投てき・採点・Won/手番のチーム選択） |
+| src/core/models/ | Skittle・Skittles・SkittleState・Field・Stick・Point・ScoreBoard・Team・Teams・Id・Name・ScoreState |
+| src/core/services/ | Molkkyの既定ルール（投てき判定） |
 | src/simulation/ | ArrayField、標準Field生成 |
 | src/game/ | coreとviewの合成、表示上の移動、アプリの終了条件 |
 | src/tui/ | 端末入力、得点表の更新と手番設定、描画の呼び出し |
 | src/view/ | 表示専用のPosition、描画構造体、Widget・CanvasDraw |
 
 core/modelsという名前は、エンティティと値オブジェクトの両方をまとめるためのものです。
-Teamは参加チーム、PointやScoreBoardは不変な値として扱います。Molkkyは状態を所有する構造体ではなく、チーム一覧から採点・試合判定を行うルールのtraitです。
+Teamは参加チーム、PointやScoreBoardは不変な値として扱います。SkittlesとTeamsは既存の一覧を読み取り専用で借用するモデルです。Molkkyは投てきの判定方法を注入するtraitです。
 モデルの更新は新しい値を返し、乱数源と端末入出力は呼び出し側で扱います。
 viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示値から描画します。
 
 ### ライブラリの利用
 
 ```rust
+use rust_molkky::Skittles;
+use rust_molkky::Teams;
 use rust_molkky::core::models::{Name, Skittle, Team};
-use rust_molkky::core::services::{Molkky, SimpleMolkky};
-
-let rules = SimpleMolkky;
 let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
-let board = original[0].score_board().add(rules.calc_score(&[Skittle::new(11)]));
+let board = original[0].score_board().add(Skittles::new(&[Skittle::new(11)]).calc_score());
 let updated = original[0].with_score_board(board);
-assert_eq!(original[0].score_board().value(), 0);
-assert_eq!(updated[0].score_board().value(), 11);
-assert!(rules.judge_game(&[updated]).is_none());
+assert_eq!(original[0].score_board().total(), 0);
+assert_eq!(updated.score_board().total(), 11);
+assert!(Teams::new(&[updated]).judge_game().is_none());
 
 ```
 
 MolkkyとSimpleMolkkyはcrate直下・core直下・core/servicesから公開します。
-calc_score・judge_game・next_teamはMolkkyのメソッドです。record_pointは廃止し、得点表の更新は利用側が行います。
+calc_scoreはSkittles、judge_game・next_teamはTeamsのメソッドです。record_pointは廃止し、得点表の更新は利用側が行います。
 PositionとSkittle/Stickの位置APIはcoreから削除しました。Positionはview内の表示専用型です。
-coreのFieldはピン集合を参照するtraitです。位置や世界状態は具体的なField実装が持てます。
+coreのFieldは識別子を持つ構造体です。個体一覧はsimulationのArrayFieldが所有します。
 TUIのControllerはチーム一覧と配列Field・確率設定Stickを個別に保持します。gameがピンのIdと表示座標を対応づけます。
 
 ### チームの識別子と名前
@@ -60,9 +59,17 @@ IdはUUID v4で生成し、同名でも別チームは別IDです。cloneや得�
 名前は前後の空白を除去した後に1〜30文字とし、入力に制御文字が含まれる場合は拒否します。
 文字数はRustのcharsによるUnicodeスカラー値の数です（表示幅や書記素クラスタの数ではありません）。
 Name::newはNameErrorを返し、TUIでは不正な名前を端末初期化前に入力エラーとして報告します。
-team.id()で一覧内の順番や名前に依存せず検索できます。同じIDの二重登録はjudge_gameが拒否します。
+team.id()で一覧内の順番や名前に依存せず検索できます。同じIDの二重登録はTeamsのjudge_game・next_teamが拒否します。
 Teamはturn: boolを保持し、turn()/with_turn(bool)で参照・不変更新します。初期値はfalseです。
-手番の初期設定・循環・失格者のスキップ・終了時の解除はMolkky::next_teamが行います。
+手番の初期設定・循環・失格者のスキップ・終了時の解除はTeams::next_teamが行います。
+
+### 集合のドメインモデル
+
+Skittles::new(&pins)は既存の個体一覧をコピーせず借用します。生成だけでは検証せず、validate()で同IDの重複を拒否します。
+同番号の別個体・空集合・13本以上を許可します。
+hit・calc_score・ArrayField生成はこの検証を使います。Skittles::calc_score()は検証後にその集合だけを採点します。採点対象の選択は呼び出し側が行います。
+Teams::new(&teams)も参加者をコピーせず借用し、judge_game()/next_team()の実行時に従来の不正入力を検証します。
+両モデルは元の一覧を変更しません。可変アクセサや所有するVecは追加していません。
 
 ### Field生成・投てき・採点
 
@@ -73,6 +80,7 @@ JudgeStrategy<'a>は&'a mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>の型�
 判定関数は乱数源や物理世界を捕捉できます。coreは乱数・座標・描画に依存しません。
 
 ```rust
+use rust_molkky::Skittles;
 use rust_molkky::{SkittleState, Stick, Molkky, SimpleMolkky};
 use rust_molkky::simulation::{RandomStick, StandardFieldGenerator};
 let field = StandardFieldGenerator.generate();
@@ -80,7 +88,7 @@ let stick = RandomStick::new(Stick::new(), 1.0);
 let mut rng = rand::rng();
 let updated = SimpleMolkky.hit(stick.stick(), field.skittles(), &mut |_, pins| stick.judge(pins, &mut rng));
 let fallen: Vec<_> = updated.into_iter().filter(|pin| pin.state() == SkittleState::Fall).collect();
-assert_eq!(SimpleMolkky.calc_score(&fallen).value(), 12);
+assert_eq!(Skittles::new(&fallen).calc_score().value(), 12);
 ```
 
 StandardFieldGeneratorは1〜12を各1本生成し、ArrayField::new(field, skittles)は任意の個体集合を保持します。
@@ -100,28 +108,28 @@ ScoreBoard::default()は空履歴・0点・Calculatedです。addは履歴を追
 history()は直近の補正以降の計算用履歴です。投数や全投てきの記録は呼び出し側で管理します。
 Resetは次の通常投てきでCalculatedへ戻ります。Won/Disqualifiedに達した後の追加履歴は生成・追加時に拒否します。
 履歴だけからnewで生成し直す場合、[25]だけでは直前の補正を復元できずCalculatedとなります。得点・連続0点・勝利/失格の判定は維持します。
-is_resetは内部の超過判定です。apply_point・was_resetは削除しました。
+is_reset・apply_point・was_resetは削除しました。
 
-### 採点・試合ルールのデフォルト実装
+### 投てき判定とドメインモデル
 
-core/services/molkky.rsのMolkky traitへ、validate_unique_ids・hit・calc_score・judge_game・next_teamを直接実装しています。
+core/services/molkky.rsのMolkky traitはhitを定義します。採点はSkittles::calc_scoreが担当します。個体IDの検証はSkittles::validate、勝者と手番の選択はTeamsが担当します。
 SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
 得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
 next_teamは次の手番を設定した新しいチーム一覧を返します。元の一覧は変更しません。
-TUIはSimpleMolkkyを保持し、その参照を表示用合成にも渡します。coreには端末入出力やゲームの操作ループを置きません。
+TUIは投てき判定のためにSimpleMolkkyを保持し、表示用合成はTeamsの勝者判定を使います。coreには端末入出力やゲームの操作ループを置きません。
 Field生成・描画はこのtraitには含めません。
 
 ### チーム選択と使用側の進行
 
-Molkky::judge_game(&teams)はScoreState::Wonのチームを共有参照で返します。WonがなければNoneです。
-Molkky::next_team(&teams)は現在の手番の次から循環して失格者を飛ばし、新しいVec<Team>を返します。
+Teams::new(&teams).judge_game()はScoreState::Wonのチームを共有参照で返します。WonがなければNoneです。
+Teams::new(&teams).next_team()は現在の手番の次から循環して失格者を飛ばし、新しいVec<Team>を返します。
 手番未設定なら最初の有効チームへ設定し、単独参加なら同じチームへ戻ります。
 空・全失格・50点勝利・複数参加の最後の生存者の勝利では全フラグを解除します。
 複数勝者・チームIDの重複・複数手番は拒否します。judge_gameは空の参加者も拒否します。
 現在の手番の参照はteams.iter().find(|team| team.turn())で取得できます。参照取得時にnext_teamは呼びません。
 
 利用側はScoreBoard::addで得点表を作り、Team::with_score_boardでチームを更新します。
-TUI側で終了後の投てきを停止し、初期化と投てき後にteams = rules.next_team(&teams)で手番を更新します。
+TUI側で終了後の投てきを停止し、初期化と投てき後にteams = Teams::new(&teams).next_team()で手番を更新します。
 activeインデックスはControllerに重複保存しません。
 TUIの投数はチームごとに保持し、得点履歴が[25]へ圧縮されても投てき番号と投数表示を維持します。
 

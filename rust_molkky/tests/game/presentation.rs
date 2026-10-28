@@ -2,7 +2,8 @@ use super::*;
 use crate::view::position::Position;
 use ratatui::{Terminal, backend::TestBackend};
 use rust_molkky::Name;
-use rust_molkky::core::{Field, Molkky, SimpleMolkky, Skittle};
+use rust_molkky::Skittles;
+use rust_molkky::core::{Field, Skittle};
 use rust_molkky::simulation::RandomStick;
 use rust_molkky::simulation::{ArrayField, StandardFieldGenerator};
 #[test]
@@ -24,15 +25,7 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
     layout
         .positions
         .insert(field.skittles()[2].id(), Position::new(2, 3));
-    let view = compose_game(
-        &SimpleMolkky,
-        &model,
-        &[0, 0],
-        &field,
-        &stick,
-        &layout,
-        "テスト中",
-    );
+    let view = compose_game(&model, &[0, 0], &field, &stick, &layout, "テスト中");
     assert_eq!(view.field.pins.len(), 3);
     assert_eq!(view.field.pins[1].number, 12);
     assert_eq!(view.field.pins[2].number, 12);
@@ -46,7 +39,7 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
     assert_eq!(view.field.pins[0].probability, 0.25);
     layout.stick = Position::new(i32::MAX, i32::MIN);
     assert_eq!(
-        compose_game(&SimpleMolkky, &model, &[0, 0], &field, &stick, &layout, "")
+        compose_game(&model, &[0, 0], &field, &stick, &layout, "")
             .field
             .pins[0]
             .probability,
@@ -60,9 +53,9 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
 fn 補正と失格の説明はドメインの判定結果から作る() {
     let point = |n| {
         if n == 0 {
-            SimpleMolkky.calc_score(&[])
+            Skittles::new(&[]).calc_score()
         } else {
-            SimpleMolkky.calc_score(&[Skittle::new(n)])
+            Skittles::new(&[Skittle::new(n)]).calc_score()
         }
     };
     let board = [12, 12, 12, 12, 1]
@@ -89,7 +82,7 @@ fn 補正と失格の説明はドメインの判定結果から作る() {
 }
 #[test]
 fn 三チームでも勝者の得点行が見える() {
-    let miss = SimpleMolkky.calc_score(&[]);
+    let miss = Skittles::new(&[]).calc_score();
     let disqualified = ScoreBoard::default().add(miss).add(miss).add(miss);
     let game = vec![
         Team::new(Name::new("WINNER").unwrap()),
@@ -103,7 +96,6 @@ fn 三チームでも勝者の得点行が見える() {
         .draw(|frame| {
             frame.render_widget(
                 compose_game(
-                    &SimpleMolkky,
                     &game,
                     &[0, 3, 3],
                     &field,
@@ -129,21 +121,16 @@ fn 三チームでも勝者の得点行が見える() {
 }
 
 #[test]
-fn 表示合成でも渡されたルールの判定を利用する() {
-    struct BlueWins;
-    impl Molkky for BlueWins {
-        fn judge_game<'a>(&self, teams: &'a [Team]) -> Option<&'a Team> {
-            Some(&teams[1])
-        }
-    }
+fn 表示合成でも集合モデルの勝利判定を利用する() {
+    let ten = Skittles::new(&[Skittle::new(10)]).calc_score();
+    let won = ScoreBoard::new(vec![ten; 5]);
     let teams = [
         Team::new(Name::new("赤").unwrap()),
-        Team::new(Name::new("青").unwrap()),
+        Team::new(Name::new("青").unwrap()).with_score_board(won),
     ];
     let field = StandardFieldGenerator.generate();
     let layout = FieldLayout::new(field.skittles());
     let view = compose_game(
-        &BlueWins,
         &teams,
         &[0, 0],
         &field,
@@ -154,5 +141,5 @@ fn 表示合成でも渡されたルールの判定を利用する() {
     assert!(view.banner.contains("青の勝利"));
     assert!(view.teams[1].winner);
     assert!(!view.teams[0].winner);
-    assert_eq!(teams[1].score_board().total(), 0);
+    assert_eq!(teams[1].score_board().total(), 50);
 }

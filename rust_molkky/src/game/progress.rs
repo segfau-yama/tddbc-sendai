@@ -1,8 +1,8 @@
-use rust_molkky::{Molkky, ScoreState, Team};
+use rust_molkky::{ScoreState, Team, Teams};
 
 /// アプリの終了条件。coreのWon判定に、既存の最後の生存者の勝利を組み合わせる。
-pub(crate) fn winning_team<'a>(rules: &dyn Molkky, teams: &'a [Team]) -> Option<&'a Team> {
-    rules.judge_game(teams).or_else(|| {
+pub(crate) fn winning_team(teams: &[Team]) -> Option<&Team> {
+    Teams::new(teams).judge_game().or_else(|| {
         if teams.len() < 2 {
             return None;
         }
