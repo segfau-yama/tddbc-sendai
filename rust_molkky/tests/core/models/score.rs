@@ -1,12 +1,10 @@
-use rust_molkky::ScoreState;
-use rust_molkky::Skittles;
-use rust_molkky::{Point, ScoreBoard, Skittle};
+use rust_molkky::{Molkky, Point, ScoreBoard, ScoreState, SimpleMolkky, Skittle};
 
 fn point(number: i32) -> Point {
     if number == 0 {
-        Skittles::new(&[]).calc_score()
+        SimpleMolkky.calc_score(&[])
     } else {
-        Skittles::new(&[Skittle::new(number)]).calc_score()
+        SimpleMolkky.calc_score(&[Skittle::new(number)])
     }
 }
 
@@ -64,32 +62,26 @@ fn 一回も投てきしていなければ0点になる() {
 #[test]
 fn 一回目に5本倒すと5点になる() {
     let mut board = ScoreBoard::default();
-    board = board.add(
-        Skittles::new(&[
-            Skittle::new(1),
-            Skittle::new(2),
-            Skittle::new(3),
-            Skittle::new(4),
-            Skittle::new(5),
-        ])
-        .calc_score(),
-    );
+    board = board.add(SimpleMolkky.calc_score(&[
+        Skittle::new(1),
+        Skittle::new(2),
+        Skittle::new(3),
+        Skittle::new(4),
+        Skittle::new(5),
+    ]));
     assert_eq!(board.total(), 5);
 }
 
 #[test]
 fn 五本倒した後に11番を1本倒すと16点になる() {
     let mut board = ScoreBoard::default();
-    board = board.add(
-        Skittles::new(&[
-            Skittle::new(1),
-            Skittle::new(2),
-            Skittle::new(3),
-            Skittle::new(4),
-            Skittle::new(5),
-        ])
-        .calc_score(),
-    );
+    board = board.add(SimpleMolkky.calc_score(&[
+        Skittle::new(1),
+        Skittle::new(2),
+        Skittle::new(3),
+        Skittle::new(4),
+        Skittle::new(5),
+    ]));
     board = board.add(point(11));
     assert_eq!(board.total(), 16);
 }
@@ -175,8 +167,8 @@ mod immutability {
 
     #[test]
     fn 点数を追加しても元の得点表の履歴と得点は変わらない() {
-        let five = Skittles::new(&[Skittle::new(5)]).calc_score();
-        let eleven = Skittles::new(&[Skittle::new(11)]).calc_score();
+        let five = SimpleMolkky.calc_score(&[Skittle::new(5)]);
+        let eleven = SimpleMolkky.calc_score(&[Skittle::new(11)]);
         let original = ScoreBoard::default().add(five);
         let updated = original.add(eleven);
         assert_eq!(original.history(), &[five]);

@@ -1,11 +1,10 @@
 use super::*;
 use crate::view::position::Position;
 use ratatui::{Terminal, backend::TestBackend};
-use rust_molkky::Name;
-use rust_molkky::Skittles;
 use rust_molkky::core::{Field, Skittle};
 use rust_molkky::simulation::RandomStick;
 use rust_molkky::simulation::{ArrayField, StandardFieldGenerator};
+use rust_molkky::{Molkky, Name, SimpleMolkky};
 #[test]
 fn 複数モデルから表示を組み立てても得点や配置は変わらない() {
     let model = vec![
@@ -53,9 +52,9 @@ fn 複数モデルから表示を組み立てても得点や配置は変わら�
 fn 補正と失格の説明はドメインの判定結果から作る() {
     let point = |n| {
         if n == 0 {
-            Skittles::new(&[]).calc_score()
+            SimpleMolkky.calc_score(&[])
         } else {
-            Skittles::new(&[Skittle::new(n)]).calc_score()
+            SimpleMolkky.calc_score(&[Skittle::new(n)])
         }
     };
     let board = [12, 12, 12, 12, 1]
@@ -82,7 +81,7 @@ fn 補正と失格の説明はドメインの判定結果から作る() {
 }
 #[test]
 fn 三チームでも勝者の得点行が見える() {
-    let miss = Skittles::new(&[]).calc_score();
+    let miss = SimpleMolkky.calc_score(&[]);
     let disqualified = ScoreBoard::default().add(miss).add(miss).add(miss);
     let game = vec![
         Team::new(Name::new("WINNER").unwrap()),
@@ -121,8 +120,8 @@ fn 三チームでも勝者の得点行が見える() {
 }
 
 #[test]
-fn 表示合成でも集合モデルの勝利判定を利用する() {
-    let ten = Skittles::new(&[Skittle::new(10)]).calc_score();
+fn 表示合成でもドメインサービスの勝利判定を利用する() {
+    let ten = SimpleMolkky.calc_score(&[Skittle::new(10)]);
     let won = ScoreBoard::new(vec![ten; 5]);
     let teams = [
         Team::new(Name::new("赤").unwrap()),

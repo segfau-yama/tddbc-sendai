@@ -1,16 +1,14 @@
 use super::*;
-use rust_molkky::Skittles;
-use rust_molkky::Teams;
-use rust_molkky::{Name, ScoreBoard, Skittle};
+use rust_molkky::{Molkky, Name, ScoreBoard, SimpleMolkky, Skittle};
 
 fn team(name: &str, points: &[i32]) -> Team {
     let history = points
         .iter()
         .map(|&n| {
             if n == 0 {
-                Skittles::new(&[]).calc_score()
+                SimpleMolkky.calc_score(&[])
             } else {
-                Skittles::new(&[Skittle::new(n)]).calc_score()
+                SimpleMolkky.calc_score(&[Skittle::new(n)])
             }
         })
         .collect();
@@ -20,7 +18,7 @@ fn team(name: &str, points: &[i32]) -> Team {
 #[test]
 fn 最後の生存者の勝利は呼び出し側で判定し得点状態は変えない() {
     let teams = [team("赤", &[0; 3]), team("青", &[]), team("緑", &[0; 3])];
-    assert!(Teams::new(&teams).judge_game().is_none());
+    assert!(SimpleMolkky.judge_game(&teams).is_none());
     let winner = winning_team(&teams).unwrap();
     assert!(std::ptr::eq(winner, &teams[1]));
     assert_eq!(winner.score_board().total(), 0);

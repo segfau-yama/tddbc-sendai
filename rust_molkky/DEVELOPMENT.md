@@ -2,6 +2,37 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
+## 集合の規則をMolkkyへ集約（今回の変更）
+
+- 対象：Skittles/Teamsとその公開・登録を削除し、検証・採点・勝者検索・手番更新をcore/services/molkky.rsのMolkky既定メソッドへ移す。すべての呼び出し元、対応テスト、README/API例を移行する。
+- 公開API：validate_skittles(&[Skittle])、calc_score(&[Skittle]) -> Point、judge_game(&[Team]) -> Option<&Team>、next_team(&[Team]) -> Vec<Team>。hitとJudgeStrategyは共有スライスを入力、所有するVecを出力とする。
+- 責務・判断：一覧は標準の配列・Vec・スライスで保持し、集合に関する規則をMolkkyにまとめる。新しいラッパーや互換モデルは追加しない。ScoreBoardは履歴/補正、Team/Skittleは単体の状態を引き続き担当する。
+- 不変条件：同番号の別個体は許可、同IDの重複は拒否、採点0/1/複数本、hitの個体集合保持、Won検索、手番循環・失格スキップ・終了時解除・元の値の保持を維持する。最後の生存者の勝利は既存どおりgameで組み合わせる。
+- 範囲外：編集中のScoreBoardとPoint分離は保全する。検証用worktreeではScoreBoardとPoint公開経路だけをHEADの検証済み実装に固定し、独立したtargetで確認する。
+- [x] 現作業ツリーの失敗と、検証用コピーの変更前の成功を確認する。
+- [x] 検証・採点・手番/勝者テストをMolkkyへ移し、新API未実装のRedを確認する。
+- [x] メソッドと全呼び出し元を移し、Skittles/Teamsのソース・公開・テスト登録を削除する。
+- [x] 廃止するラッパー固有の検証はサービス経由の入力不変・借用制約へ置き換える。
+- [x] 全テスト・build・fmt・Clippy・差分とレビュー結果を記録する。
+
+
+### Red・Green・Refactorと検証結果
+
+- 開始時：現作業ツリーの`cd rust_molkky && cargo test --locked`は、編集中のScoreBoardのhistory/total欠落によるE0599で失敗した（/tmp/service-start.log）。新APIのRedには含めない。
+- 変更前：HEADの検証用worktreeで`cargo test --locked`の147件成功を確認した（/tmp/service-baseline.log）。以降はScoreBoardとPoint公開経路だけを検証済み実装に固定し、独立したtargetで今回の変更を検証した。
+- Red：集合の検証・採点・チーム選択のテストを先にtests/core/services/molkky.rsへ移し、Molkkyのvalidate_skittles/calc_score/judge_game/next_teamが未実装のE0599を確認した（/tmp/service-red.log）。
+- Green：同じ規則をMolkkyの既定メソッドへ移し、すべての利用側をスライス入力へ移行した。判定関数の出力は引き続きVecで所有する。Skittles/Teamsのソース・公開・テスト登録とモデル側のテストファイルを削除した。
+- 既存の検証本体と期待値はサービス用テストへ移した。廃止したas_sliceのテストは、検証後に入力配列を引き続き更新できるテストへ変更した。モデル借用中の書き換え拒否のAPI例は、判定関数の入力スライスを書き換えられない例へ置き換えた。検証を削除・無効化して成功させていない。
+- Refactor：Controllerは保持するrulesから投てき・採点・手番更新を呼ぶ。ArrayFieldの検証とgameの勝者検索もMolkkyへ委譲する。追加のラッパー・依存関係・可変APIは導入していない。
+- 最終`cargo test --locked`は147件成功（core69・バイナリ27・CLI1・simulation12・doc38）、失敗・無視0件（/tmp/service-final-tests.log）。`cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --all-targets -- -D warnings`・`git diff --check`も成功した。
+- ソース・テスト・README/API例にSkittles/Teamsへの参照がないことを検索で確認した。過去の設計判断は履歴としてこの文書に残している。
+
+### 最終レビュー
+
+- 対象：Molkkyの既定メソッド、公開API、全参照元、移動後の検証・採点・チーム選択テスト、API例。想定規模は1端末のゲーム、標準12本と少数チーム。
+- 確認済み：同IDの異なる状態も重複として拒否、同番号別個体と13本以上の採点を許可、入力不変、判定1回、出力の重複/追加/欠落/置換拒否、状態変更/並び替え許可、Won検索、手番の初期化/循環/失格スキップ/終了時解除を維持した。ローカル変数を捕捉する判定関数と、入力の借用期間を超えて結果を保持するテストも成功した。
+- 今回の変更に未修正の指摘はない。範囲外のScoreBoardの未コミット編集によるコンパイル不整合は保全したまま残る。実端末でのTUI操作・Javaの検証は未実施。
+
 ## 判定結果の所有によるライフタイム注釈の簡約（今回の変更）
 
 ### 設計とレビュー範囲

@@ -1,7 +1,6 @@
 use super::*;
 use crate::test_support::ConstantRng;
 use rand::{SeedableRng, rngs::StdRng};
-use rust_molkky::Skittles;
 use rust_molkky::simulation::RandomStick;
 use rust_molkky::simulation::StandardFieldGenerator;
 use rust_molkky::{Molkky, SimpleMolkky, SkittleState};
@@ -36,32 +35,22 @@ fn 同じシードなら点数列と表示移動を再現しピン集合は変�
     );
     let stick = RandomStick::default();
     for _ in 0..100 {
-        let updated_a = SimpleMolkky.hit(
-            stick.stick(),
-            Skittles::new(pins.skittles()),
-            &mut |_, pins| {
-                let pins = pins.as_slice();
-                stick.judge(pins, &mut first)
-            },
-        );
+        let updated_a = SimpleMolkky.hit(stick.stick(), pins.skittles(), &mut |_, pins| {
+            stick.judge(pins, &mut first)
+        });
         let hit_a: Vec<_> = updated_a
             .into_iter()
             .filter(|pin| pin.state() == SkittleState::Fall)
             .collect();
-        let updated_b = SimpleMolkky.hit(
-            stick.stick(),
-            Skittles::new(pins.skittles()),
-            &mut |_, pins| {
-                let pins = pins.as_slice();
-                stick.judge(pins, &mut second)
-            },
-        );
+        let updated_b = SimpleMolkky.hit(stick.stick(), pins.skittles(), &mut |_, pins| {
+            stick.judge(pins, &mut second)
+        });
         let hit_b: Vec<_> = updated_b
             .into_iter()
             .filter(|pin| pin.state() == SkittleState::Fall)
             .collect();
         assert_eq!(&hit_a, &hit_b);
-        assert!((0..=12).contains(&Skittles::new(&hit_a).calc_score().value()));
+        assert!((0..=12).contains(&SimpleMolkky.calc_score(&hit_a).value()));
         a = relocate_skittles(&a, &hit_a, &mut first);
         b = relocate_skittles(&b, &hit_b, &mut second);
         assert_eq!(a, b);

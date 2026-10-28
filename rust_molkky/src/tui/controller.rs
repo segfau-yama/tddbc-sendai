@@ -2,7 +2,6 @@ use crate::{
     game::{FieldLayout, compose_game, relocate_skittles, throw_message, winning_team},
     view::molkky::{MIN_HEIGHT, MIN_WIDTH},
 };
-use rust_molkky::Skittles;
 use rust_molkky::simulation::{ArrayField, RandomStick, StandardFieldGenerator};
 use std::io;
 
@@ -10,7 +9,7 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
 };
-use rust_molkky::core::{Molkky, Name, ScoreState, SimpleMolkky, SkittleState, Team, Teams};
+use rust_molkky::core::{Molkky, Name, ScoreState, SimpleMolkky, SkittleState, Team};
 
 pub struct Controller {
     names: Vec<Name>,
@@ -27,7 +26,7 @@ impl Controller {
     pub fn new(names: Vec<Name>) -> Self {
         let throw_counts = vec![0; names.len()];
         let teams: Vec<_> = names.iter().cloned().map(Team::new).collect();
-        let teams = Teams::new(&teams).next_team();
+        let teams = SimpleMolkky.next_team(&teams);
         let field = StandardFieldGenerator.generate();
         let layout = FieldLayout::new(field.skittles());
         Self {
@@ -93,14 +92,11 @@ impl Controller {
             return;
         }
         let before = self.teams[active].score_board().total();
-        let updated = self.rules.hit(
-            self.stick.stick(),
-            Skittles::new(self.field.skittles()),
-            &mut |_, pins| {
-                let pins = pins.as_slice();
+        let updated = self
+            .rules
+            .hit(self.stick.stick(), self.field.skittles(), &mut |_, pins| {
                 self.stick.judge(pins, rng)
-            },
-        );
+            });
         let knocked_over: Vec<_> = updated
             .iter()
             .copied()
@@ -111,7 +107,7 @@ impl Controller {
                     })
             })
             .collect();
-        let point = Skittles::new(&knocked_over).calc_score();
+        let point = self.rules.calc_score(&knocked_over);
         let board = self.teams[active].score_board().add(point);
         self.teams[active] = self.teams[active].with_score_board(board);
         self.throw_counts[active] += 1;
@@ -126,7 +122,7 @@ impl Controller {
                 .collect(),
         );
         self.message = throw_message(&self.teams[active], turn, before, point);
-        self.teams = Teams::new(&self.teams).next_team();
+        self.teams = self.rules.next_team(&self.teams);
     }
 
     fn render(&self, frame: &mut Frame) {
