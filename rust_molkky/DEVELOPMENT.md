@@ -2,7 +2,33 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
-## Shape・個体状態・hitの判定関数案（今回の設計レビュー・未実装）
+## Displayの表現・hitの維持・動詞形の状態名（今回の設計レビュー・未実装）
+
+- 入力：描画情報をint/2D/3Dなど任意の値にする案、モルックの公開操作としてhitを残す指定、状態名を前置詞なしの動詞形へ統一する指定。前回のhit削除提案は今回の指定で取り下げる。
+- [x] AGENTS.md、現行CanvasDraw、Stick/Skittle、Molkky::throwと直前のレビューを確認する。
+- [x] Displayの意味と型の制約、公開操作の責務、状態名の提案を記録する。
+- [x] 記録だけを変更しgit diff --checkと文書差分を確認する。
+
+### レビュー
+
+- src/view/draw.rs:L3: shrink: 中・標準のstd::fmt::Displayを汎用描画インターフェースとして使わない。Displayは文字列の整形用であり、2D/3D型が実装しても画面描画の契約にはならない。表示データを保持するだけならTにtrait制約を付けず、描画操作は各rendererへ置く。
+- src/core/models/skittle.rs:L6: yagni: 中・全core型へ表示用の型引数を先行伝播させない。現行のviewやgameのIDによる対応を使う。任意の値との合成が必要な箇所ではgame側にmodelとOption<V>を持つ型を用意できるが、全モデルの共通基底にはしない。
+- src/core/services/molkky.rs:L20: shrink: hitを公開するドメイン操作として維持し、判定方式だけを渡された関数に任せる。薄い委譲でも用途に沿うAPI境界には意味があり、行数だけを理由に削除しない。新たなStrategy階層は不要。
+- src/core/models/stick.rs:L3: shrink: 動詞原形に揃えるならStickStateはHold/Fly/Rest、SkittleStateはStand/Fallとする。命名のための共通State traitは追加せず、各enumで意味を定義する。
+
+### 型と責務の補足（概念のみ）
+
+- Rustの表記はフィールドがOption<T>、制約が必要な場合だけT: Traitとなる。ユーザーのDisplayが独自traitなら標準Displayとは別物であり、実際に共通化したい操作を先に決める。intと2D/3Dの値を保持したいだけなら共通traitは不要。
+- coreのSkittle<T>が不透明なTを保持するだけなら、具体的な2D/3Dライブラリへの直接依存を必ず生むわけではない。前回の説明をこの点で補足する。ただし描画型ごとに別のSkittle型となり、採点などへ型引数が伝播することと、表示状態のライフサイクルをcoreが所有することが設計上の負担になる。
+- 合成の一例はgame側のPresented<M, V> { model: M, display: Option<V> }。整数、2D、3DをそれぞれVに選べる。これは実装予定の共通基盤ではなく、必要な箇所で選べる案。同じ個体を複数viewに表示する場合は既存のIdと表示状態の対応付けを使い、coreを表示ごとに複製しない。
+- Vはコンパイル時に決まるため、Optionは実行時にSome/Noneを切り替えるだけで2D/3Dの型を切り替える機能ではない。実行時の切り替えが実際に必要ならenum、共通の動的操作が必要ならtrait objectを検討する。今回から両方は作らない。
+- hitの概念契約はhit(stick, skittles, judge) -> updated_skittles、judgeの境界はFnOnce(&Stick, &[Skittle]) -> Vec<Skittle>。状態を合成型へ持たせる場合には引数と戻り値もその具体型に合わせる。乱数源などは捕捉できる。ID・番号・個体集合の維持を契約とし、採点は今回StandからFallへ変化した個体を対象とする。hitを残すためだけの余分な処理は足さない。
+- Holdは保持中、Flyは飛行中、Restは静止中、Standは直立、Fallは転倒済みと定義する。Fallを落下中の意味では使わない。関数hitは操作、enumは現在状態であり、同じ動詞系の命名でも役割を区別する。これらのenumは未実装。
+- ソース・API・テストは変更しない。文書差分とgit diff --checkのみ確認し、Rustの再テストは実施しない。既存行数の削減は今回確定していない。
+
+net: -0 lines possible.
+
+## Shape・個体状態・hitの判定関数案（前回の設計レビュー・未実装）
 
 - 入力：描画可能なcoreモデルへOptionのShapeを追加する案、Stick/Skittleへの状態追加、Molkky::throwをhitへ改名して判定関数へ委譲する案。最新の指定では判定関数は棒と個体一覧を受け、更新後の全個体一覧を返す。以前のfall案と区別する。
 - [x] AGENTS.md、現行Stick/Skittle、Molkky::throw/calc_score、view、gameの個体IDと表示状態の対応を確認する。
