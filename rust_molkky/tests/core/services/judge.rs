@@ -1,3 +1,4 @@
+use rust_molkky::Name;
 use rust_molkky::{GameStatus, ScoreBoard, Skittle, Team, calc_score, judge_game, record_point};
 
 fn team(name: &str, points: &[i32]) -> Team {
@@ -9,7 +10,7 @@ fn team(name: &str, points: &[i32]) -> Team {
         };
         board.add(calc_score(&pins))
     });
-    Team::new(name).with_score_board(board)
+    Team::new(Name::new(name).unwrap()).with_score_board(board)
 }
 
 #[test]
@@ -99,16 +100,22 @@ fn 記録関数は元の履歴を変えず終了という共通状態を返す()
 
 #[test]
 fn 複数チームを保持し開始時は進行中になる() {
-    let game = vec![Team::new("赤"), Team::new("青")];
+    let game = vec![
+        Team::new(Name::new("赤").unwrap()),
+        Team::new(Name::new("青").unwrap()),
+    ];
     assert_eq!(game.len(), 2);
-    assert_eq!(game[0].name(), "赤");
-    assert_eq!(game[1].name(), "青");
+    assert_eq!(game[0].name().as_str(), "赤");
+    assert_eq!(game[1].name().as_str(), "青");
     assert_eq!(judge_game(&game), GameStatus::InProgress);
 }
 
 #[test]
 fn 同名のチームでも指定したチームだけに記録する() {
-    let mut game = vec![Team::new("同じ名前"), Team::new("同じ名前")];
+    let mut game = vec![
+        Team::new(Name::new("同じ名前").unwrap()),
+        Team::new(Name::new("同じ名前").unwrap()),
+    ];
     let point = calc_score(&[Skittle::new(5)]);
     assert_eq!(point.value(), 5);
     game = record_point(&game, 1, point);
@@ -127,7 +134,10 @@ fn 同名のチームでも指定したチームだけに記録する() {
 }
 
 fn game_at_forty_nine() -> Vec<Team> {
-    let mut game = vec![Team::new("赤"), Team::new("青")];
+    let mut game = vec![
+        Team::new(Name::new("赤").unwrap()),
+        Team::new(Name::new("青").unwrap()),
+    ];
     let twelve = calc_score(&[Skittle::new(12)]);
     for _ in 0..4 {
         game = record_point(&game, 1, twelve);
@@ -148,7 +158,7 @@ mod invalid_operations {
             board = board.add(ten);
         }
         for point in [calc_score(&[]), calc_score(&[Skittle::new(1)])] {
-            let invalid = Team::new("赤").with_score_board(board.add(point));
+            let invalid = Team::new(Name::new("赤").unwrap()).with_score_board(board.add(point));
             assert!(catch_unwind(|| judge_game(&[invalid])).is_err());
         }
         assert_eq!(board.value(), 50);
@@ -164,8 +174,8 @@ mod invalid_operations {
     #[test]
     #[should_panic(expected = "勝者が複数います")]
     fn 勝者が複数いる状態は判定時に拒否する() {
-        let mut red = Team::new("赤");
-        let mut blue = Team::new("青");
+        let mut red = Team::new(Name::new("赤").unwrap());
+        let mut blue = Team::new(Name::new("青").unwrap());
         let ten = calc_score(&[Skittle::new(10)]);
         for _ in 0..5 {
             red = red.with_score_board(red.score_board().add(ten));
@@ -176,7 +186,10 @@ mod invalid_operations {
 
     #[test]
     fn 存在しないチームへの記録を拒否して得点を保つ() {
-        let mut game = vec![Team::new("赤"), Team::new("青")];
+        let mut game = vec![
+            Team::new(Name::new("赤").unwrap()),
+            Team::new(Name::new("青").unwrap()),
+        ];
         game = record_point(&game, 0, calc_score(&[Skittle::new(5)]));
         for index in [2, usize::MAX] {
             let failed = catch_unwind(AssertUnwindSafe(|| {
@@ -261,8 +274,11 @@ mod target_score {
 
 #[test]
 fn 一チームのゲームと既に勝者がいるゲームも表現できる() {
-    assert_eq!(judge_game(&[Team::new("赤")]), GameStatus::InProgress);
-    let mut winner = Team::new("赤");
+    assert_eq!(
+        judge_game(&[Team::new(Name::new("赤").unwrap())]),
+        GameStatus::InProgress
+    );
+    let mut winner = Team::new(Name::new("赤").unwrap());
     let ten = calc_score(&[Skittle::new(10)]);
     for _ in 0..5 {
         winner = winner.with_score_board(winner.score_board().add(ten));
@@ -288,12 +304,15 @@ mod restored_rules {
             };
             board = board.add(point);
         }
-        Team::new(name).with_score_board(board)
+        Team::new(Name::new(name).unwrap()).with_score_board(board)
     }
 
     #[test]
     fn 複数チームから残り一チームになったら勝利する() {
-        let game = vec![team_with_points("赤", &[0, 0, 0]), Team::new("青")];
+        let game = vec![
+            team_with_points("赤", &[0, 0, 0]),
+            Team::new(Name::new("青").unwrap()),
+        ];
         assert_eq!(judge_game(&game), GameStatus::Finished { winner: Some(1) });
         assert!(matches!(judge_game(&game), GameStatus::Finished { .. }));
         assert_eq!(game[1].score_board().value(), 0);
@@ -302,7 +321,10 @@ mod restored_rules {
 
     #[test]
     fn 記録で残り一チームになった時点で終了し元のゲームは変わらない() {
-        let game = vec![team_with_points("赤", &[0, 0]), Team::new("青")];
+        let game = vec![
+            team_with_points("赤", &[0, 0]),
+            Team::new(Name::new("青").unwrap()),
+        ];
         assert!(!matches!(judge_game(&game), GameStatus::Finished { .. }));
         let finished = record_point(&game, 0, calc_score(&[]));
         assert!(matches!(judge_game(&finished), GameStatus::Finished { .. }));
@@ -331,8 +353,8 @@ mod restored_rules {
     fn 失格チームがいても二チーム以上残っていれば継続する() {
         let game = vec![
             team_with_points("赤", &[0, 0, 0]),
-            Team::new("青"),
-            Team::new("緑"),
+            Team::new(Name::new("青").unwrap()),
+            Team::new(Name::new("緑").unwrap()),
         ];
         assert!(game[0].score_board().is_disqualified());
         assert!(!matches!(judge_game(&game), GameStatus::Finished { .. }));
@@ -357,8 +379,8 @@ mod restored_rules {
     fn 三回目の0点で失格にし失格チームへの記録だけを拒否する() {
         let game = vec![
             team_with_points("赤", &[5, 0, 0]),
-            Team::new("青"),
-            Team::new("緑"),
+            Team::new(Name::new("青").unwrap()),
+            Team::new(Name::new("緑").unwrap()),
         ];
         let disqualified = record_point(&game, 0, calc_score(&[]));
         assert!(disqualified[0].score_board().is_disqualified());
@@ -410,7 +432,7 @@ mod restored_rules {
         let game = vec![
             team_with_points("赤", &[0, 0, 0]),
             team_with_points("青", &[12, 12, 12, 12, 1]),
-            Team::new("緑"),
+            Team::new(Name::new("緑").unwrap()),
         ];
         assert!(!matches!(judge_game(&game), GameStatus::Finished { .. }));
         let won = record_point(&game, 1, calc_score(&[Skittle::new(1)]));
@@ -425,11 +447,15 @@ mod immutability {
     use super::*;
     #[test]
     fn ゲームへの記録でも元のゲームと他チームは変わらない() {
-        let original = vec![Team::new("赤"), Team::new("青")];
+        let original = vec![
+            Team::new(Name::new("赤").unwrap()),
+            Team::new(Name::new("青").unwrap()),
+        ];
         let updated = record_point(&original, 0, calc_score(&[Skittle::new(11)]));
         assert_eq!(original[0].score_board().value(), 0);
         assert_eq!(original[1].score_board().value(), 0);
         assert_eq!(updated[0].score_board().value(), 11);
+        assert_eq!(updated[0].id(), original[0].id());
         assert_eq!(updated[1].score_board().value(), 0);
     }
 }
@@ -444,4 +470,11 @@ fn 次チーム判定は無効なインデックスを拒否し勝者なし終�
     assert_eq!(rust_molkky::next_team(&[team("赤", &[10; 5])], 0), None);
     assert_eq!(rust_molkky::next_team(&teams, 0), Some(1));
     assert_eq!(rust_molkky::next_team(&teams, 1), Some(0));
+}
+
+#[test]
+#[should_panic(expected = "チームIDが重複しています")]
+fn 同じidのチームを二重登録できない() {
+    let first = team("赤", &[]);
+    judge_game(&[first.clone(), first]);
 }

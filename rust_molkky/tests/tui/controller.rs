@@ -1,5 +1,6 @@
 use super::*;
 use ratatui::{Terminal, backend::TestBackend};
+use rust_molkky::Name;
 use rust_molkky::core::{Field, ScoreBoard, Skittle, Stick};
 
 fn rendered(runtime: &Controller) -> String {
@@ -23,10 +24,10 @@ fn almost_disqualified() -> ScoreBoard {
 
 #[test]
 fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
-    let mut runtime = Controller::new(vec!["赤".into(), "青".into()]);
+    let mut runtime = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
     runtime.teams = vec![
-        Team::new("赤").with_score_board(almost_disqualified()),
-        Team::new("青"),
+        Team::new(Name::new("赤").unwrap()).with_score_board(almost_disqualified()),
+        Team::new(Name::new("青").unwrap()),
     ];
     runtime.field = Field::new(vec![]);
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
@@ -54,11 +55,15 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
 
 #[test]
 fn 失格チームを飛ばして二チーム以上なら継続する() {
-    let mut runtime = Controller::new(vec!["赤".into(), "青".into(), "緑".into()]);
+    let mut runtime = Controller::new(vec![
+        Name::new("赤").unwrap(),
+        Name::new("青").unwrap(),
+        Name::new("緑").unwrap(),
+    ]);
     runtime.teams = vec![
-        Team::new("赤").with_score_board(almost_disqualified()),
-        Team::new("青"),
-        Team::new("緑"),
+        Team::new(Name::new("赤").unwrap()).with_score_board(almost_disqualified()),
+        Team::new(Name::new("青").unwrap()),
+        Team::new(Name::new("緑").unwrap()),
     ];
     runtime.field = Field::new(vec![]);
     runtime.throw_with_rng(&mut crate::test_support::ConstantRng(0));
@@ -78,7 +83,7 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
 
 #[test]
 fn 一チーム開始なら三回連続0点で勝者なし終了する() {
-    let mut runtime = Controller::new(vec!["赤".into()]);
+    let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
     runtime.field = Field::new(vec![]);
     assert!(!matches!(
         judge_game(&runtime.teams),
@@ -103,7 +108,7 @@ fn 一チーム開始なら三回連続0点で勝者なし終了する() {
 
 #[test]
 fn 次のチームも共通のピン集合と棒と表示を使う() {
-    let mut controller = Controller::new(vec!["赤".into(), "青".into()]);
+    let mut controller = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
     controller.field = Field::new(vec![Skittle::new(5)]);
     controller.stick = Stick::new(1.0);
     let original = controller.layout.positions[&5];
@@ -123,8 +128,8 @@ fn 次のチームも共通のピン集合と棒と表示を使う() {
 #[test]
 fn 棒の表示をピンへ重ねても確率と投てき結果は変わらない() {
     use rand::{SeedableRng, rngs::StdRng};
-    let mut a = Controller::new(vec!["赤".into(), "青".into()]);
-    let mut b = Controller::new(vec!["赤".into(), "青".into()]);
+    let mut a = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
+    let mut b = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
     a.layout.stick = a.layout.positions[&5];
     b.move_from(100, -100);
     a.throw_with_rng(&mut crate::test_support::ConstantRng(u64::MAX));

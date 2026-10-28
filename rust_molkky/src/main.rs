@@ -2,6 +2,7 @@ mod game;
 mod tui;
 mod view;
 
+use rust_molkky::Name;
 use std::io::{self, IsTerminal};
 
 fn main() -> io::Result<()> {
@@ -15,6 +16,11 @@ fn main() -> io::Result<()> {
     if names.is_empty() {
         names = vec!["赤チーム".into(), "青チーム".into()];
     }
+    let names: Vec<Name> = names
+        .iter()
+        .map(|name| Name::new(name))
+        .collect::<Result<_, _>>()
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error.to_string()))?;
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(io::Error::other(
             "対話型ターミナルでcargo runを実行してください",

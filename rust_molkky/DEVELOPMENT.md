@@ -2,6 +2,30 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
+## TeamのUUID識別子と名前の値オブジェクト（今回の変更）
+
+- 要求：チーム一覧で個体を識別するUUIDのId型と、文字入力制約を持つName型を導入する。両型はcore/modelsに置き、Teamの非公開フィールドとして保持する。
+- IdはUUID v4を生成し、clone・得点表の差し替え後も同じ値を保つ。同名の別チームは別ID。チーム一覧に同じIDを重複登録した場合は判定時に拒否する。手番の位置と個体IDは区別し、既存のindexを使う進行APIは維持する。
+- Nameの制約はユーザーの回答により「1〜30文字・制御文字不可」に確定した。前後の空白を除去し、日本語・内部の空白・記号を許可する。文字数はUnicodeスカラー値で数え、書記素クラスタ・表示幅の制限にはしない。制御文字はtrimより前に検証し、先頭末尾の改行やタブも拒否する。
+- [x] 変更前の全テストを確認する。
+- [x] Id生成とTeamのID保持・重複拒否についてRed/Greenを確認する。
+- [x] Nameの制約を確定し、境界・不正入力とUIでのエラー処理を検証する。
+- [x] ドキュメント・既存テストを更新し、test/build/fmt/Clippy・差分を確認する。
+
+### 設計・Red/Green・最終確認
+
+- Id(Uuid)とName(String)は非公開フィールドの値オブジェクト。IdはCopy/Eq/Hash/Displayを備えUUID v4を生成する。UUIDは既存ロック内のuuid 1.29.0をv4機能のみで直接依存に追加し、自作のUUID生成は行わない。ロックの変更はrust_molkkyの依存一覧へのuuid追加のみ。
+- Team::newは文字列から検証済みNameを受け取るAPIへ変更した。id()はId、name()は&Nameを返し、文字列はas_str()/Displayで取得する。with_score_boardとcloneは同じIDを維持する。名前を比較して個体を判定せず、IDで検索できることを並べ替え後も確認した。
+- Name::newはResult<Name, NameError>を返す。Empty/TooLong/ControlCharacterを区別する。旧仕様の空文字許可テストは新仕様へ置き換え、空文字・空白だけの拒否はtests/core/models/name.rsで検証する。同名チームの許可は維持する。
+- 変更前のcargo test --lockedは121件成功（/tmp/team-values-baseline.log）。
+- Red：Id未実装・uuid未導入のE0432/E0433（/tmp/team-id-red.log）、Name/NameError未実装のE0432（/tmp/team-name-red.log）、Team::id未実装のE0599（/tmp/team-identity-red.log）を確認した。重複IDのテストも実装前に追加したが、この段階はコンパイル失敗であり、重複検証だけの実行失敗を確認したとは記録しない。
+- Green：Id/Name/Teamを実装し、既存の呼び出しをName::newへ更新してテストを成功させた。新規テストは対象と同名のtests/core/models/id.rs・name.rs・team.rs、services/judge.rs、tests/main.rsへ配置した。
+- CLIのテストで、mainのResultエラーがDebug表現となりNameError::Emptyだけを表示することが判明した。io::Errorへ表示用文字列を渡して修正し、空白のみ・31文字・改行を含む名前に対し日本語の理由が表示され、panicや端末初期化へ進まないことを確認した。これは実装後の検証で判明したもので、最初のRedとは区別する。
+- API例のName import不足によるドキュメントテスト失敗を修正した。compile_fail例はTeamへの未検証文字列、Nameの直接生成、Idの直接生成の拒否も検証する。
+- 最終cargo test --lockedは133件成功（core82・バイナリ19・CLI1・doc31）、失敗・無視0件。cargo build --locked、cargo fmt --check、cargo clippy --locked --all-targets -- -D warnings、git diff --checkも成功。ログ：/tmp/team-values-final-tests.log。
+- 100列×30行の擬似端末で「 赤 」と「赤」の同名チームを指定して起動し、右矢印・Space投てき・R再開・Q終了を実行。正規化した名前の表示、第1投、終了コード0を確認した（/tmp/team-values-tui.log）。
+- READMEとAPIドキュメントを更新した。手番のインデックスをIDへ置き換える変更やUUIDの保存・復元APIは今回追加していない。Teamの値と履歴は引き続き不変更新であり、Javaは未変更。
+
 ## throw_stickの確率・物理方式への分離案（2026-10-28・設計レビューのみ）
 
 - 対象：src/core/services/throw.rs、Stick、calc_score、Controllerの投てき処理。確率方式に加えて物理方式を利用する場合の改修相談。実装は変更しない。

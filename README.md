@@ -19,7 +19,7 @@ TUIは72列×24行以上の対話型端末で動作します。Space / Enterで�
 
 | 場所 | 責務 |
 | --- | --- |
-| src/core/models/ | Skittle・Stick・Field・Point・ScoreBoard・Team・GameStatusというドメインモデル |
+| src/core/models/ | Skittle・Stick・Field・Point・ScoreBoard・Team・Id・Name・GameStatusというドメインモデル |
 | src/core/services/ | calc_score（採点）、throw_stick（抽選）、judge_game（継続・勝敗判定）、next_team（次チーム）、record_point（記録制約と不変更新） |
 | src/game/ | coreとviewの合成、投てき後の表示上の移動 |
 | src/tui/ | Controllerによる端末入力、操作制御、描画の呼び出し |
@@ -33,10 +33,10 @@ viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示�
 ### ライブラリの利用
 
 ```rust
-use rust_molkky::core::models::{GameStatus, Skittle, Team};
+use rust_molkky::core::models::{GameStatus, Name, Skittle, Team};
 use rust_molkky::core::services::{calc_score, judge_game, record_point};
 
-let original = vec![Team::new("赤"), Team::new("青")];
+let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
 let updated = record_point(&original, 0, calc_score(&[Skittle::new(11)]));
 assert_eq!(original[0].score_board().value(), 0);
 assert_eq!(updated[0].score_board().value(), 11);
@@ -46,6 +46,16 @@ assert_eq!(judge_game(&updated), GameStatus::InProgress);
 従来のrust_molkky::Skittleやrust_molkky::core::calc_score等の公開名も再公開しています。
 PositionとSkittle/Stickの位置APIはcoreから削除しました。Positionはview内の表示専用型です。
 Fieldは全チーム共通のピン集合として残り、位置を持ちません。TUIのControllerがチーム一覧と共通のField・Stickを個別に保持します。
+
+### チームの識別子と名前
+
+Team::new(Name::new("赤").unwrap())で検証済みの名前からチームを作成します。
+IdはUUID v4で生成し、同名でも別チームは別IDです。cloneや得点更新では同じIDを保持します。
+名前は前後の空白を除去した後に1〜30文字とし、入力に制御文字が含まれる場合は拒否します。
+文字数はRustのcharsによるUnicodeスカラー値の数です（表示幅や書記素クラスタの数ではありません）。
+Name::newはNameErrorを返し、TUIでは不正な名前を端末初期化前に入力エラーとして報告します。
+team.id()で一覧内の順番や名前に依存せず検索できます。同じIDの二重登録はjudge_gameが拒否します。
+既存の手番・勝者・記録APIのindexは一覧内の位置として維持しています。
 
 ### 投てきと採点
 

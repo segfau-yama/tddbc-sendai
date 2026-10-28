@@ -1,10 +1,14 @@
 use super::*;
 use crate::view::position::Position;
 use ratatui::{Terminal, backend::TestBackend};
+use rust_molkky::Name;
 use rust_molkky::core::{Field, Skittle, calc_score};
 #[test]
 fn 複数モデルから表示を組み立てても得点や配置は変わらない() {
-    let model = vec![Team::new("赤"), Team::new("青")];
+    let model = vec![
+        Team::new(Name::new("赤").unwrap()),
+        Team::new(Name::new("青").unwrap()),
+    ];
     let field = Field::new(vec![Skittle::new(5)]);
     let stick = Stick::default();
     let mut layout = FieldLayout::default();
@@ -51,7 +55,7 @@ fn 補正と失格の説明はドメインの判定結果から作る() {
             .notice
             .contains("3回連続0点のため失格")
     );
-    let team = Team::new("赤").with_score_board(reset);
+    let team = Team::new(Name::new("赤").unwrap()).with_score_board(reset);
     assert!(throw_message(&team, 6, 49, point(2)).contains("49 → 25"));
 }
 #[test]
@@ -59,9 +63,9 @@ fn 三チームでも勝者の得点行が見える() {
     let miss = calc_score(&[]);
     let disqualified = ScoreBoard::new().add(miss).add(miss).add(miss);
     let game = vec![
-        Team::new("WINNER"),
-        Team::new("OUT_A").with_score_board(disqualified.clone()),
-        Team::new("OUT_B").with_score_board(disqualified),
+        Team::new(Name::new("WINNER").unwrap()),
+        Team::new(Name::new("OUT_A").unwrap()).with_score_board(disqualified.clone()),
+        Team::new(Name::new("OUT_B").unwrap()).with_score_board(disqualified),
     ];
     let mut terminal = Terminal::new(TestBackend::new(100, 30)).unwrap();
     terminal

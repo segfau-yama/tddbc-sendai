@@ -1,20 +1,26 @@
-use super::ScoreBoard;
+use super::{Id, Name, ScoreBoard};
 
 #[derive(Clone)]
 pub struct Team {
-    name: String,
+    id: Id,
+    name: Name,
     score_board: ScoreBoard,
 }
 
 impl Team {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: Name) -> Self {
         Self {
-            name: name.to_owned(),
+            id: Id::new(),
+            name,
             score_board: ScoreBoard::new(),
         }
     }
 
-    pub fn name(&self) -> &str {
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
+    pub fn name(&self) -> &Name {
         &self.name
     }
 
@@ -25,6 +31,7 @@ impl Team {
     #[must_use]
     pub fn with_score_board(&self, score_board: ScoreBoard) -> Self {
         Self {
+            id: self.id,
             name: self.name.clone(),
             score_board,
         }

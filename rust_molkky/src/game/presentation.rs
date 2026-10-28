@@ -62,7 +62,7 @@ pub(crate) fn compose_game(
         .iter()
         .enumerate()
         .map(|(index, team)| TeamTui {
-            name: team.name().to_owned(),
+            name: team.name().as_str().to_owned(),
             board: compose_score(team.score_board()),
             active: index == active,
             winner: winner == Some(index),

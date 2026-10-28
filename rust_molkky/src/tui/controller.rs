@@ -12,11 +12,12 @@ use ratatui::{
     crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
 };
 use rust_molkky::core::{
-    Field, GameStatus, Stick, Team, calc_score, judge_game, next_team, record_point, throw_stick,
+    Field, GameStatus, Name, Stick, Team, calc_score, judge_game, next_team, record_point,
+    throw_stick,
 };
 
 pub struct Controller {
-    names: Vec<String>,
+    names: Vec<Name>,
     teams: Vec<Team>,
     field: Field,
     stick: Stick,
@@ -26,8 +27,8 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub fn new(names: Vec<String>) -> Self {
-        let teams = names.iter().map(|name| Team::new(name)).collect();
+    pub fn new(names: Vec<Name>) -> Self {
+        let teams = names.iter().cloned().map(Team::new).collect();
         Self {
             names,
             teams,
