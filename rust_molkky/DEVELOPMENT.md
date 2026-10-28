@@ -2,6 +2,27 @@
 
 以下の過去の設計レビューは当時の記録です。現在の実装と検証結果は、先頭の実装記録とREADMEを参照してください。
 
+## ScoreBoard::newのリファクタリング（今回の変更）
+
+- 対象：src/core/models/score.rsの生成処理と、tests/core/models/score.rsの既存テスト。呼び出し元のTeam・採点・ゲーム進行・表示とAPI例も全テストで確認する。
+- レビュー（高）：作業開始時の未コミット変更ではDefaultが削除され、全分岐がDisqualifiedを返していた。全履歴のsumと0点の総数では、途中の25点補正・連続0点・終了後の記録拒否を維持できない。根拠は既存の履歴復元・補正・終了後拒否テストとHEADの実装。
+- 設計：new(Vec<Point>)は投てき順に履歴を検証・補正し、最後にSelfを1回生成する。空履歴はCalculated、50点はWon、超過は履歴を[25]にしてReset、3連続0点はDisqualifiedとし、終了後の記録は拒否する。Default・add・読み取りAPIと元の値の不変性を保つ。
+- 判断：非公開フィールド名historyは作業中の変更を維持する。合計は加算時のオーバーフローを避けるためi64を維持し、比較だけの非公開メソッドはnewへ直接記述する。履歴の順序が必要なため一括sumへの置き換えは行わない。
+- [x] 作業開始時の既存テストを実行し、失敗原因を確認する。
+- [x] 既存の順次処理とDefaultを復旧し、リファクタリング前の全テスト成功を確認する。
+- [x] 単純な判定をnewへまとめ、空・履歴保持・49/50/超過・再超過・連続0点・終了後拒否・入力不変の既存テストを再確認する。
+- [x] fmt・Clippy・差分を確認し、結果を記録する。
+
+### Red・Green・Refactorと検証結果
+
+- 作業開始時：`cd rust_molkky && cargo test --locked`はTeam::newから呼ぶScoreBoard::defaultの欠落によるE0599で失敗した（/tmp/scoreboard-start.log）。新仕様のRed確認としては扱わない。
+- Green：DefaultとHEADの順次処理を復旧し、`cargo test --locked`で141件成功、失敗・無視0件を確認した（/tmp/scoreboard-baseline.log）。
+- Refactor：比較だけの非公開メソッド3つを削除し、newで判定を直接読めるようにした。入力名pointsと補正後のhistoryを区別し、Selfの生成を1か所にした。新しい依存・公開API・テストは追加していない。
+- 変更後の`cargo test --locked`も141件成功（core65・バイナリ27・CLI1・simulation12・doc36）、失敗・無視0件（/tmp/scoreboard-final.log）。既存テストの削除・無効化はない。
+- `cargo build --locked`・`cargo fmt --check`・`cargo clippy --locked --lib -- -D warnings`・`git diff --check`は成功した。
+- `cargo clippy --locked --all-targets -- -D warnings`は、今回未変更のtests/tui/controller.rs:77/:103の`!find(...).is_none()`に対する既存のnonminimal_bool警告2件で失敗した（/tmp/scoreboard-clippy.log）。HEADにも同じ式があることを確認し、今回の変更範囲には含めない。
+- 未実施：TUIの手動操作、Javaの検証。今回の範囲で未実装の項目はない。Rust 1.94.0で検証した。
+
 ## 手番の切り替えをnext_teamへ集約（今回の変更）
 
 - next_team(&[Team]) -> Vec<Team>で次の手番を設定した新しい一覧を返す。元のTeamは変更しない。現在のフラグの次から循環して失格をスキップし、未設定なら最初の有効チームへ設定する。空/全失格/50点勝利/複数参加の最後の生存者の勝利では全フラグを解除する。

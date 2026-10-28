@@ -28,7 +28,7 @@ pub enum ScoreState {
 
 #[derive(Clone)]
 pub struct ScoreBoard {
-    score_history: Vec<Point>,
+    history: Vec<Point>,
     state: ScoreState,
 }
 
@@ -40,12 +40,12 @@ impl Default for ScoreBoard {
 
 impl ScoreBoard {
     /// 履歴の途中で終了した後の追加記録も、生成時に拒否する。
-    pub fn new(score_history: Vec<Point>) -> Self {
+    pub fn new(points: Vec<Point>) -> Self {
         let mut total = 0_i64;
         let mut consecutive_zeros = 0;
         let mut state = ScoreState::Calculated;
         let mut history = Vec::new();
-        for point in score_history {
+        for point in points {
             assert!(state != ScoreState::Won, "50点到達後に記録があります");
             assert!(state != ScoreState::Disqualified, "失格後に記録があります");
             total += i64::from(point.value());
@@ -55,11 +55,11 @@ impl ScoreBoard {
             } else {
                 0
             };
-            state = if Self::is_disqualified(consecutive_zeros) {
+            state = if consecutive_zeros >= CONSECUTIVE_ZERO_LIMIT {
                 ScoreState::Disqualified
-            } else if Self::is_winner(total) {
+            } else if total == i64::from(TARGET_SCORE) {
                 ScoreState::Won
-            } else if Self::is_reset(total) {
+            } else if total > i64::from(TARGET_SCORE) {
                 total = i64::from(RESET_SCORE);
                 history = vec![Point::new(RESET_SCORE)];
                 ScoreState::Reset
@@ -67,40 +67,27 @@ impl ScoreBoard {
                 ScoreState::Calculated
             };
         }
-        Self {
-            score_history: history,
-            state,
-        }
+        Self { history, state }
     }
 
     /// 元の履歴を変更せず、新しい履歴を生成時と同じ経路で検証する。
     pub fn add(&self, point: Point) -> Self {
-        let mut history = self.score_history.clone();
+        let mut history = self.history.clone();
         history.push(point);
         Self::new(history)
     }
 
     /// 直近の超過補正で[25]へ置き換えた計算用履歴。全投てきの記録ではない。
     pub fn history(&self) -> &[Point] {
-        &self.score_history
+        &self.history
     }
 
     /// 生成時に補正した履歴から合計を算出する。
     pub fn total(&self) -> i32 {
-        self.score_history.iter().map(Point::value).sum()
+        self.history.iter().map(Point::value).sum()
     }
 
     pub fn state(&self) -> ScoreState {
         self.state
-    }
-
-    fn is_winner(total: i64) -> bool {
-        total == i64::from(TARGET_SCORE)
-    }
-    fn is_disqualified(consecutive_zeros: usize) -> bool {
-        consecutive_zeros >= CONSECUTIVE_ZERO_LIMIT
-    }
-    fn is_reset(total: i64) -> bool {
-        total > i64::from(TARGET_SCORE)
     }
 }
