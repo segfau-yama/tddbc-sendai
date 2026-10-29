@@ -35,8 +35,12 @@ pub fn run(reader: &mut impl BufRead, writer: &mut impl Write, names: &[String])
         output.throw_result(&teams[current], point)?;
 
         let next = rules.next_team(teams).map(Team::id);
+        let winner = rules.judge_game(teams).map(Team::id);
         for team in teams.iter_mut() {
             *team = team.with_turn(next == Some(team.id()));
+            if winner == Some(team.id()) {
+                *team = team.with_score_board(team.score_board().with_win());
+            }
         }
         if next.is_none() {
             output.scoreboard(teams)?;

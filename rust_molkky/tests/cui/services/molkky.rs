@@ -70,3 +70,28 @@ mod throwing {
         );
     }
 }
+
+mod winner_selection {
+    use super::*;
+    use rust_molkky::{Name, ScoreBoard, Team};
+
+    #[test]
+    fn 他チームの失格で勝者を選んでも元の投てき履歴は変更しない() {
+        let rules = CuiMolkky::default();
+        let history = [5, 8]
+            .map(|number| rules.calc_score(&[rust_molkky::Skittle::new(number)]))
+            .to_vec();
+        let original = ScoreBoard::new(history.clone());
+        let disqualified = ScoreBoard::new(vec![rules.calc_score(&[]); 3]);
+        let teams = [
+            Team::new(Name::new("赤")).with_score_board(disqualified),
+            Team::new(Name::new("青")).with_score_board(original.clone()),
+        ];
+        let winner = rules.judge_game(&teams).unwrap();
+        assert!(std::ptr::eq(winner, &teams[1]));
+        assert_eq!(winner.score_board().history(), history);
+        assert_eq!(winner.score_board().total(), 13);
+        assert_eq!(original.history(), history);
+        assert_eq!(original.total(), 13);
+    }
+}

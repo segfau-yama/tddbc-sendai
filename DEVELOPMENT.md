@@ -435,3 +435,28 @@ BONUS AとBは独立した任意課題とし、基本STEPの完了条件へ混�
 - 全体の`cargo test --locked`は、旧SimpleMolkky・JudgeStrategy・空のMolkky実装・削除済みsimulation・rand::RngCore・win_by_defaultを参照する既存テストでコンパイル失敗した。今回のCUI再配置とは別の残課題として記録する。
 - ソース比較：作業開始時のスナップショットとcore以下の全Rustファイルが一致することを確認した。CuiMolkkyが依存する既存のaim/hit抽象化とservicesの公開API変更はコミットへ含め、別途編集中のScoreBoard変更は取り込まない。
 - 最終確認：`cargo build --manifest-path rust_molkky/Cargo.toml --locked`成功。対象ファイルのrustfmtチェックと`git diff --check`成功。コミットにはCuiMolkkyに必要なhit抽象化・旧Strategy/実装型の公開終了だけを含め、ユーザー編集中のjudge_gameとScoreBoardの変更は除外する。
+
+## Rust得点表・Javaテストのエラー修正（2026-10-29）
+
+- 対象：`rust_molkky/tests/core/models/score.rs`と対応する得点表実装、勝敗判定との責務整理、`java_molkky/src/test/java/molkky`の実行確認。
+- 設計：得点表は自チームの投てき履歴・得点・終了状態を扱う。他チームの状態から勝者を決める責務はMolkkyに保つ。旧win_by_defaultのテストは、判定結果を反映するwith_winへ変更し、50点・履歴維持・終了後の記録拒否という期待値はすべて維持する。サービス側には、勝者判定だけでは元の得点表を変更しない検証を追加する。
+- [x] 得点表テストの旧API参照を整理し、失敗を実行できる状態にする。
+- [x] 補正前後の履歴、連続ミス、失格の0点、終了後記録拒否を確認する。
+- [x] JDK 17.0.21+9をJAVA_HOMEで指定してJavaの全28件が成功。失敗・エラー・スキップ0件をJUnit XMLから確認した。
+- [x] 関連テスト、差分、未解決事項を確認し記録する。
+- 変更前：Rustのmodelsテストはwin_by_default欠落でコンパイル失敗。JavaのGradle起動はJAVA_HOME未設定・java未検出で失敗。どちらも振る舞いのRedとしては数えない。
+- Javaの詳細は`java_molkky/DEVELOPMENT.md`へ記録した。Javaソースとテストは修正不要だった。
+
+### Red・Green・Refactorと結果
+
+- Red：旧API参照を整理した後の得点表テストは14件成功・13件失敗。履歴の逐次再生に必要な補正、連続ミスのリセット、失格の0点、終了後記録拒否が期待した理由で失敗した。同じ履歴再生処理の修正で確認するため、既存の関連ケースをまとめて選択した。
+- Green：newで不変のfoldを使って履歴を順に計算し、元の履歴と現在の得点を分けて保持する。addは新しい得点表を返し、元の状態を変更しない。
+- 勝利反映のRed：with_winが元の得点表を返すだけの最小実装では、13点から50点になる期待値で失敗した。履歴を維持して50点・Wonにした新しい得点表を返す実装で成功した。勝者を選ぶ判断はjudge_gameに残した。
+- ゲームループのRed：得点表修正後も単独参加と不戦勝を含む4件が失敗した。judge_gameは単独参加を生存者勝利にしないようにし、runは返された勝者にwith_winを適用することで、同じ期待値の13件すべてが成功した。
+- テスト登録：作業中に旧登録ファイルが削除されたため、その削除を維持して新しい登録へ整理する方針を提示して進めた。core_models.rsは実ソースのモデルテスト49件、application.rsはドメインサービス31件・CUI31件・ゲームループ13件を登録する。旧cui.rsを指すCargo.tomlの明示登録は除去した。
+- 旧Strategyへの委譲回数など廃止されたAPIのテストは、実装型をtrait越しに呼び出すaim/hitの契約へ書き換えた。個体ID・順序・不変性・借用終了後の所有は引き続き検証している。テストの無効化・空のテスト・期待値の緩和は行っていない。
+- 検証：`cd rust_molkky && cargo test --locked`で全124件成功。失敗・無視は0件。勝利反映・単独参加・得点履歴を含め、直前のCUI再配置時に残っていた5件も解消した。
+- Java：JDK 17を指定した`./gradlew test --console=plain`が成功。JUnit XMLを集計して全28件成功・失敗0・エラー0・スキップ0を確認した。JavaのコードとGradle設定は変更不要だった。
+- 旧登録ファイルの削除は新しい登録への移行としてコミットへ含める。別途削除されたgame・simulation・view・tuiのテスト本体と旧API文書は、この修正のコミットへ取り込まない。
+- 未確認：恒久的なJAVA_HOME設定とエディター上の検証は行っていない。今回のJava実行では一時配置のJDKを指定した。
+- 最終確認：`cargo build --locked`、対象Rustファイルのrustfmtチェック、`git diff --check`が成功した。

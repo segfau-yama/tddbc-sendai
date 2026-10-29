@@ -11,9 +11,11 @@ cd rust_molkky
 cargo run --locked
 # 名前を引数で指定する場合
 cargo run --locked -- 赤チーム 青チーム
-# CUIとゲームループのテスト
-cargo test --locked --test cui
-cargo test --locked --test main
+# すべてのRustテスト
+cargo test --locked
+# 対象を絞る場合
+cargo test --locked --test core_models
+cargo test --locked --test application
 ```
 
 | 場所 | 責務 |
@@ -62,11 +64,12 @@ assert_eq!(field.skittles.len(), 12);
 
 ### テストと残課題
 
-テスト本体は対象ファイルに合わせて`tests/cui/models/`、`tests/cui/services/`、`tests/cui/io/`、`tests/cui/run.rs`へ配置します。`tests/cui.rs`と`tests/main.rs`はmodの登録だけを行います。
+テスト本体は対象ファイルに合わせて`tests/core/models/`、`tests/core/services/`、`tests/cui/models/`、`tests/cui/services/`、`tests/cui/io/`、`tests/cui/run.rs`へ配置します。`tests/core_models.rs`と`tests/application.rs`がモジュールを登録します。
 
-現在の作業ツリーでは、CUIの既存テストに得点履歴・失格時の得点・不戦勝の50点付与・単独参加の継続に関する失敗が残っています。今回、編集中のcoreの処理は変更していません。
-全体テストには旧SimpleMolkky・JudgeStrategyや削除済みsimulationを参照するテストも残っています。実行結果と未解決事項は[DEVELOPMENT.md](DEVELOPMENT.md)に記録します。
-API例の`tests/api.md`には旧構成の例も含まれ、現在の自動テストには登録されていません。
+ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
+不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
+
+Rustの全124件が成功しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
 
 ## Java演習環境
 

@@ -39,26 +39,27 @@ impl Default for ScoreBoard {
 
 impl ScoreBoard {
     pub fn new(history: Vec<Point>) -> Self {
-        let mut total = 0;
-        let mut misses = 0;
-        let mut state = ScoreState::Calculated;
-        for point in &history {
-            assert!(
-                !matches!(state, ScoreState::Won | ScoreState::Disqualified),
-                "終了後の投てきは記録できません"
-            );
-            misses = if point.value() == 0 { misses + 1 } else { 0 };
-            total += point.value();
-            (total, state) = if misses == ZERO_POINTS_LIMIT {
-                (0, ScoreState::Disqualified)
-            } else if total == TARGET_SCORE {
-                (total, ScoreState::Won)
-            } else if total > TARGET_SCORE {
-                (RESET_SCORE, ScoreState::Reset)
-            } else {
-                (total, ScoreState::Calculated)
-            };
-        }
+        let (total, _, state) = history.iter().fold(
+            (0, 0, ScoreState::Calculated),
+            |(total, misses, state), point| {
+                assert!(
+                    !matches!(state, ScoreState::Won | ScoreState::Disqualified),
+                    "終了後は投てきを記録できません"
+                );
+                let misses = if point.value() == 0 { misses + 1 } else { 0 };
+                let total = total + point.value();
+                let (total, state) = if misses == ZERO_POINTS_LIMIT {
+                    (0, ScoreState::Disqualified)
+                } else if total == TARGET_SCORE {
+                    (total, ScoreState::Won)
+                } else if total > TARGET_SCORE {
+                    (RESET_SCORE, ScoreState::Reset)
+                } else {
+                    (total, ScoreState::Calculated)
+                };
+                (total, misses, state)
+            },
+        );
         Self {
             history,
             total,
@@ -69,14 +70,14 @@ impl ScoreBoard {
     pub fn add(&self, point: Point) -> Self {
         assert!(
             !matches!(self.state, ScoreState::Won | ScoreState::Disqualified),
-            "終了後の投てきは記録できません"
+            "終了後は投てきを記録できません"
         );
         let mut history = self.history.clone();
         history.push(point);
         Self::new(history)
     }
 
-    pub fn win_by_default(&self) -> Self {
+    pub fn with_win(&self) -> Self {
         Self {
             total: TARGET_SCORE,
             state: ScoreState::Won,

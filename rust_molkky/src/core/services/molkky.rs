@@ -1,4 +1,5 @@
 use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
+use itertools::Itertools;
 
 pub trait Molkky {
     fn aim(&self, stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle>;
@@ -13,19 +14,23 @@ pub trait Molkky {
     }
 
     fn judge_game<'teams>(&self, teams: &'teams [Team]) -> Option<&'teams Team> {
-        if let Some(team) = teams
+        if let Some(won_team) = teams
             .iter()
             .find(|team| team.score_board().state() == ScoreState::Won)
         {
-            return Some(team);
+            return Some(won_team);
+        };
+        if teams.len() < 2 {
+            return None;
         }
-        let mut survived_teams = teams
+        if let Ok(survived_team) = teams
             .iter()
-            .filter(|team| team.score_board().state() != ScoreState::Disqualified);
-        match (survived_teams.next(), survived_teams.next()) {
-            (Some(team), None) if teams.len() > 1 => Some(team),
-            _ => None,
-        }
+            .filter(|team| team.score_board().state() != ScoreState::Disqualified)
+            .exactly_one()
+        {
+            return Some(survived_team);
+        };
+        return None;
     }
 
     fn next_team<'teams>(&self, teams: &'teams [Team]) -> Option<&'teams Team> {

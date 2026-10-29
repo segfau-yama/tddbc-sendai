@@ -1,4 +1,3 @@
-// 削除途中のlibや編集中のサービスを復元せず、実際のモデルだけを検証する。
 extern crate self as rust_molkky;
 
 #[path = "../src/core/models/mod.rs"]

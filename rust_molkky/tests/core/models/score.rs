@@ -279,13 +279,13 @@ mod immutability {
     }
 }
 
-mod forfeit_victory {
+mod victory {
     use super::*;
 
     #[test]
-    fn 他チームの失格で勝利しても投てき履歴を追加しない() {
+    fn 勝利を反映しても投てき履歴を追加しない() {
         let original = board(&[5, 8]);
-        let winner = original.win_by_default();
+        let winner = original.with_win();
         assert_eq!(original.total(), 13);
         assert_eq!(winner.total(), 50);
         assert_eq!(winner.state(), ScoreState::Won);

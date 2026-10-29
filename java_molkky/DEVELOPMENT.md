@@ -296,3 +296,13 @@
 - [NullAwayのGradle導入手順](https://github.com/uber/NullAway#java-non-android)
 - [JSpecifyモードと対応JDK](https://github.com/uber/NullAway/wiki/JSpecify-Support)
 - [Error ProneとJDKの対応](https://errorprone.info/docs/installation#older-versions)
+
+## テストエラーの再確認（2026-10-29）
+
+- 対象：`src/test/java/molkky`のSkittleTest・ThrowTest・ScoreTest。既存の期待値と静的検査を維持する。
+- [x] Eclipse Temurin JDK 17.0.21+9を一時ディレクトリへ用意し、JAVA_HOMEを指定してGradleを起動した。
+- [x] 全28件成功。JUnit XMLの集計で失敗・エラー・スキップはすべて0件だった。
+- 最初の実行はJAVA_HOME未設定・java未検出による環境エラー。JUnitのRed確認ではない。
+- 検証コマンド：`JAVA_HOME=/tmp/molkky-test-jdk17/jdk-17.0.21+9 ./gradlew test --console=plain`。compileJava・compileTestJava・testが実行され、NullAwayを有効にしたまま成功した。
+- 原因はこの実行環境にJavaが見つからないことだった。Javaのプロダクトコード・テスト・Gradle設定は変更していない。JDKの取得はAdoptiumの公式APIを使用し、リポジトリへバイナリは追加していない。
+- 恒久的なJAVA_HOMEの設定とエディター上の動作確認は今回の対象外。
