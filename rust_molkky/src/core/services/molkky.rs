@@ -18,19 +18,20 @@ pub trait Molkky {
         })
     }
 
-    /// 50点到達済みのチームを検索する。手番や得点表は変更しない。
+    /// 50点到達、または他チームが全て失格したときの勝者を返す。
     fn judge_game<'teams>(&self, teams: &'teams [Team]) -> Option<&'teams Team> {
-        if let Some(won_team) = teams
+        if let Some(team) = teams
             .iter()
             .find(|team| team.score_board().state() == ScoreState::Won)
         {
-            return Some(won_team);
-        }
-        else if let Some(survived_team) = teams
-            .iter() // or into_iter()
-            .find(|team| team.score_board().state() != ScoreState::Disqualified)
-        }
             return Some(team);
+        }
+        let mut survived_teams = teams
+            .iter()
+            .filter(|team| team.score_board().state() != ScoreState::Disqualified);
+        match (survived_teams.next(), survived_teams.next()) {
+            (Some(team), None) if teams.len() > 1 => Some(team),
+            _ => None,
         }
     }
 
