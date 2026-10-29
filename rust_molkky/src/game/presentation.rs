@@ -4,7 +4,7 @@ use crate::view::{
     team::TeamTui,
 };
 use rust_molkky::core::{
-    CONSECUTIVE_ZERO_LIMIT, Point, RESET_SCORE, ScoreBoard, ScoreState, TARGET_SCORE, Team,
+    ZERO_POINTS_LIMIT, Point, RESET_SCORE, ScoreBoard, ScoreState, TARGET_SCORE, Team,
 };
 use rust_molkky::simulation::{ArrayField, RandomStick};
 
@@ -16,7 +16,7 @@ pub(crate) fn compose_score(board: &ScoreBoard) -> ScoreBoardTui {
         ));
     }
     if board.state() == ScoreState::Disqualified {
-        notice.push_str(&format!("  {CONSECUTIVE_ZERO_LIMIT}回連続0点のため失格"));
+        notice.push_str(&format!("  {ZERO_POINTS_LIMIT}回連続0点のため失格"));
     }
     ScoreBoardTui {
         value: board.total(),

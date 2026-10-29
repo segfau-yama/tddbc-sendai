@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-rand = "0.9.2"
+rand = "0.10.3"
 ratatui = "0.30.2"
 uuid = { version = "1.29.0", default-features = false, features = ["v4"] }
+itertools = "0.15.0"
