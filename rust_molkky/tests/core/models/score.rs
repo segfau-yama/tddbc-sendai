@@ -1,164 +1,257 @@
-use rust_molkky::{Molkky, Point, ScoreBoard, ScoreState, SimpleMolkky, Skittle};
+use rust_molkky::{Point, ScoreBoard, ScoreState};
 
-fn point(number: i32) -> Point {
-    if number == 0 {
-        SimpleMolkky.calc_score(&[])
-    } else {
-        SimpleMolkky.calc_score(&[Skittle::new(number)])
+fn board(points: &[i32]) -> ScoreBoard {
+    points.iter().fold(ScoreBoard::default(), |board, &value| {
+        board.add(Point::new(value))
+    })
+}
+
+// 得点計算をテスト側へ複製せず、保存された履歴を実際のモデルで再生する。
+fn score_history(board: &ScoreBoard) -> Vec<i32> {
+    let history = board.history();
+    (1..=history.len())
+        .map(|end| ScoreBoard::new(history[..end].to_vec()).total())
+        .collect()
+}
+
+fn assert_recording_rejected(board: &ScoreBoard, value: i32) {
+    let history = board.history();
+    let total = board.total();
+    let state = board.state();
+    assert!(std::panic::catch_unwind(|| board.add(Point::new(value))).is_err());
+    assert_eq!(board.history(), history);
+    assert_eq!(board.total(), total);
+    assert_eq!(board.state(), state);
+}
+
+mod recording {
+    use super::*;
+
+    mod empty {
+        use super::*;
+
+        #[test]
+        fn s02_1_投てき前の得点は零点になる() {
+            let board = ScoreBoard::default();
+            assert_eq!(board.total(), 0);
+            assert!(board.history().is_empty());
+        }
+    }
+
+    mod addition {
+        use super::*;
+
+        #[test]
+        fn s02_2_五点の後に十一点を記録すると十六点になる() {
+            assert_eq!(board(&[5, 11]).total(), 16);
+        }
+
+        #[test]
+        fn s02_2_同じ点数の投てきもそれぞれ加算する() {
+            assert_eq!(board(&[11, 11]).total(), 22);
+        }
+    }
+
+    mod zero_points {
+        use super::*;
+
+        #[test]
+        fn s02_3_零点も一投として残り得点は変わらない() {
+            let board = board(&[11, 0]);
+            assert_eq!(board.total(), 11);
+            assert_eq!(board.history().len(), 2);
+        }
+
+        #[test]
+        fn s02_3_零点の後にも同じ番号の点数を記録できる() {
+            let board = board(&[11, 0, 11]);
+            assert_eq!(board.total(), 22);
+            assert_eq!(board.history().len(), 3);
+        }
     }
 }
 
-fn board(numbers: &[i32]) -> ScoreBoard {
-    let mut board = ScoreBoard::default();
-    for &number in numbers {
-        board = board.add(point(number));
+mod score_history {
+    use super::*;
+
+    #[test]
+    fn s03_1_各投てき終了時の得点を保存履歴から確認できる() {
+        assert_eq!(score_history(&board(&[5, 11, 0, 3])), [5, 16, 16, 19]);
     }
-    board
-}
 
-fn history(board: &ScoreBoard) -> Vec<i32> {
-    board.history().iter().map(Point::value).collect()
-}
+    #[test]
+    fn s03_2_記録がなければ得点推移は空になる() {
+        assert!(score_history(&ScoreBoard::default()).is_empty());
+    }
 
-#[test]
-fn 三回連続0点のチームを失格と判定する() {
-    assert!(!matches!(
-        ScoreBoard::default().state(),
-        ScoreState::Disqualified
-    ));
-    let twice = board(&[5, 0, 0]);
-    assert!(!matches!(twice.state(), ScoreState::Disqualified));
-    let third = twice.add(point(0));
-    assert!(matches!(third.state(), ScoreState::Disqualified));
-    assert_eq!(third.total(), 5);
-    assert!(!matches!(twice.state(), ScoreState::Disqualified));
-    assert!(!matches!(
-        board(&[0, 0, 1, 0, 0]).state(),
-        ScoreState::Disqualified
-    ));
-}
-
-#[test]
-fn 採点側で直近の超過補正と勝利を判定する() {
-    let original = board(&[12, 12, 12, 12, 1]);
-    assert!(!matches!(original.state(), ScoreState::Reset));
-    assert!(!matches!(original.state(), ScoreState::Won));
-    assert!(matches!(original.add(point(1)).state(), ScoreState::Won));
-    let reset = original.add(point(2));
-    assert!(matches!(reset.state(), ScoreState::Reset));
-    assert_eq!(reset.total(), 25);
-    let next = reset.add(point(12));
-    assert!(!matches!(next.state(), ScoreState::Reset));
-    assert_eq!(next.total(), 37);
-}
-
-#[test]
-fn 一回も投てきしていなければ0点になる() {
-    let board = ScoreBoard::default();
-    assert_eq!(board.total(), 0);
-    assert!(board.history().is_empty());
-}
-
-#[test]
-fn 一回目に5本倒すと5点になる() {
-    let mut board = ScoreBoard::default();
-    board = board.add(SimpleMolkky.calc_score(&[
-        Skittle::new(1),
-        Skittle::new(2),
-        Skittle::new(3),
-        Skittle::new(4),
-        Skittle::new(5),
-    ]));
-    assert_eq!(board.total(), 5);
-}
-
-#[test]
-fn 五本倒した後に11番を1本倒すと16点になる() {
-    let mut board = ScoreBoard::default();
-    board = board.add(SimpleMolkky.calc_score(&[
-        Skittle::new(1),
-        Skittle::new(2),
-        Skittle::new(3),
-        Skittle::new(4),
-        Skittle::new(5),
-    ]));
-    board = board.add(point(11));
-    assert_eq!(board.total(), 16);
-}
-
-#[test]
-fn 零点の投てきも履歴に残り現在の得点を変えない() {
-    let board = board(&[11, 0]);
-    assert_eq!(board.total(), 11);
-    assert_eq!(history(&board), [11, 0]);
-}
-
-#[test]
-fn 同じ点数を2回追加しても2回分合計する() {
-    let mut board = ScoreBoard::default();
-    let eleven = point(11);
-    board = board.add(eleven);
-    board = board.add(eleven);
-    assert_eq!(board.total(), 22);
-    assert_eq!(history(&board), [11, 11]);
-}
-
-#[test]
-fn 投てきの点数を順番どおり履歴に保持する() {
-    assert_eq!(history(&board(&[5, 11])), [5, 11]);
-}
-
-#[test]
-fn 得点表に追加しても別の得点表は変わらない() {
-    let original = board(&[5]);
-    let mut updated = board(&[5]);
-    updated = updated.add(point(11));
-    assert_eq!(original.total(), 5);
-    assert_eq!(history(&original), [5]);
-    assert_eq!(updated.total(), 16);
-    assert_eq!(history(&updated), [5, 11]);
+    #[test]
+    fn s03_2_過去の得点を参照しても元の記録を変更しない() {
+        let board = board(&[5, 11]);
+        let history = board.history();
+        assert_eq!(score_history(&board), [5, 16]);
+        assert_eq!(board.total(), 16);
+        assert_eq!(board.history(), history);
+    }
 }
 
 mod target_score {
     use super::*;
 
-    #[test]
-    fn 四十九点はそのまま保持する() {
-        assert_eq!(board(&[12, 12, 12, 12, 1]).total(), 49);
+    mod reaching_target {
+        use super::*;
+
+        #[test]
+        fn s04_1_四十九点なら投てきを続けられる() {
+            let board = board(&[12, 12, 12, 12, 1]);
+            assert_eq!(board.total(), 49);
+            assert_ne!(board.state(), ScoreState::Won);
+            assert_eq!(board.add(Point::new(0)).total(), 49);
+        }
+
+        #[test]
+        fn s04_1_四十八点から二点で五十点到達を判定できる() {
+            let board = board(&[12, 12, 12, 12]).add(Point::new(2));
+            assert_eq!(board.total(), 50);
+            assert_eq!(board.state(), ScoreState::Won);
+        }
+
+        #[test]
+        fn 補正後も五十点到達を逐次追加と一括復元で判定できる() {
+            let points = [12, 12, 12, 12, 3, 12, 12, 1];
+            let added = board(&points);
+            assert_eq!(added.total(), 50);
+            assert_eq!(added.state(), ScoreState::Won);
+            let restored = ScoreBoard::new(points.map(Point::new).to_vec());
+            assert_eq!(restored.total(), 50);
+            assert_eq!(restored.state(), ScoreState::Won);
+            assert_eq!(score_history(&restored), [12, 24, 36, 48, 25, 37, 49, 50]);
+            assert_recording_rejected(&restored, 1);
+            let mut invalid = points.map(Point::new).to_vec();
+            invalid.push(Point::new(0));
+            assert!(std::panic::catch_unwind(|| ScoreBoard::new(invalid)).is_err());
+        }
     }
 
-    #[test]
-    fn 五十点ちょうどはそのまま保持する() {
-        let mut board = board(&[12, 12, 12, 12, 1]);
-        board = board.add(point(1));
-        assert_eq!(board.total(), 50);
+    mod exceeding_target {
+        use super::*;
+
+        #[test]
+        fn s04_2_補正前後すべての得点推移を確認できる() {
+            let board = board(&[12, 12, 12, 12, 3, 10]);
+            assert_eq!(board.total(), 35);
+            assert_eq!(score_history(&board), [12, 24, 36, 48, 25, 35]);
+        }
+
+        #[test]
+        fn s04_2_一括で履歴を復元しても補正後から加算する() {
+            let history = [12, 12, 12, 12, 3, 10].map(Point::new).to_vec();
+            assert_eq!(ScoreBoard::new(history).total(), 35);
+        }
+
+        #[test]
+        fn s04_3_超過後も加算でき再び超過したら二十五点に戻る() {
+            let reset = board(&[12, 12, 12, 12, 1]).add(Point::new(2));
+            assert_eq!(reset.total(), 25);
+            let next = reset.add(Point::new(12));
+            assert_eq!(next.total(), 37);
+            let next = next.add(Point::new(12));
+            assert_eq!(next.total(), 49);
+            assert_eq!(next.add(Point::new(2)).total(), 25);
+        }
     }
 
-    #[test]
-    fn 五十点を超えた投てきで25点に戻る() {
-        let original = board(&[12, 12, 12, 12, 1]);
-        let updated = original.add(point(2));
-        assert_eq!(updated.total(), 25);
-        assert_eq!(history(&updated), [25]);
-        assert_eq!(history(&original), [12, 12, 12, 12, 1]);
-        assert_eq!(original.total(), 49);
+    mod recording_after_end {
+        use super::*;
+
+        #[test]
+        fn s04_4_五十点の後は正の点数を追加できない() {
+            assert_recording_rejected(&board(&[12, 12, 12, 12, 2]), 1);
+        }
+
+        #[test]
+        fn s04_4_五十点の後は零点も追加できない() {
+            assert_recording_rejected(&board(&[12, 12, 12, 12, 2]), 0);
+        }
+
+        #[test]
+        fn s04_4_一括の履歴も五十点到達後の記録を拒否する() {
+            for next in [0, 1] {
+                let history = [12, 12, 12, 12, 2, next].map(Point::new).to_vec();
+                assert!(std::panic::catch_unwind(|| ScoreBoard::new(history)).is_err());
+            }
+        }
+    }
+}
+
+mod disqualification {
+    use super::*;
+
+    mod third_miss {
+        use super::*;
+
+        #[test]
+        fn 通常零点が二回までなら失格にしない() {
+            let board = board(&[12, 0, 0]);
+            assert_eq!(board.total(), 12);
+            assert_ne!(board.state(), ScoreState::Disqualified);
+        }
+
+        #[test]
+        fn 三回連続の通常零点で失格となり得点は零点になる() {
+            let board = board(&[12, 0, 0, 0]);
+            assert_eq!(board.state(), ScoreState::Disqualified);
+            assert_eq!(board.total(), 0);
+        }
+
+        #[test]
+        fn 補正後も三回連続の通常零点で失格となり得点は零点になる() {
+            let reset = board(&[12, 12, 12, 12, 1, 0, 0, 2]);
+            assert_eq!(reset.state(), ScoreState::Reset);
+            let twice = reset.add(Point::new(0)).add(Point::new(0));
+            assert_ne!(twice.state(), ScoreState::Disqualified);
+            let third = twice.add(Point::new(0));
+            assert_eq!(third.state(), ScoreState::Disqualified);
+            assert_eq!(third.total(), 0);
+        }
+
+        #[test]
+        fn 補正を含む一括履歴でも三回連続の通常零点で失格になる() {
+            let history = [12, 12, 12, 12, 1, 0, 0, 2, 0, 0, 0]
+                .map(Point::new)
+                .to_vec();
+            let board = ScoreBoard::new(history);
+            assert_eq!(board.state(), ScoreState::Disqualified);
+            assert_eq!(board.total(), 0);
+        }
+
+        #[test]
+        fn s08_2_正の点数で中断された零点は合計三回以上でも失格にしない() {
+            let board = board(&[0, 0, 1, 0, 0]);
+            assert_eq!(board.total(), 1);
+            assert_ne!(board.state(), ScoreState::Disqualified);
+        }
     }
 
-    #[test]
-    fn 超過後の点数は25点から加算し再び超過しても25点に戻る() {
-        let mut updated = board(&[12, 12, 12, 12, 1, 2]);
-        updated = updated.add(point(12));
-        assert_eq!(updated.total(), 37);
-        assert_eq!(history(&updated), [25, 12]);
-        updated = updated.add(point(12));
-        assert_eq!(updated.total(), 49);
-        updated = updated.add(point(2));
-        assert_eq!(updated.total(), 25);
-        assert_eq!(history(&updated), [25]);
-        let replayed = ScoreBoard::new([12, 12, 12, 12, 1, 2, 12, 12, 2].map(point).to_vec());
-        assert_eq!(replayed.total(), updated.total());
-        assert_eq!(replayed.history(), updated.history());
-        assert_eq!(replayed.state(), ScoreState::Reset);
+    mod recording_after_end {
+        use super::*;
+
+        #[test]
+        fn 失格後は正の点数を追加できない() {
+            assert_recording_rejected(&board(&[12, 0, 0, 0]), 1);
+        }
+
+        #[test]
+        fn 失格後は零点も追加できない() {
+            assert_recording_rejected(&board(&[12, 0, 0, 0]), 0);
+        }
+
+        #[test]
+        fn 一括の履歴も失格後の記録を拒否する() {
+            for next in [0, 1] {
+                let history = [12, 0, 0, 0, next].map(Point::new).to_vec();
+                assert!(std::panic::catch_unwind(|| ScoreBoard::new(history)).is_err());
+            }
+        }
     }
 }
 
@@ -166,128 +259,22 @@ mod immutability {
     use super::*;
 
     #[test]
-    fn 点数を追加しても元の得点表の履歴と得点は変わらない() {
-        let five = SimpleMolkky.calc_score(&[Skittle::new(5)]);
-        let eleven = SimpleMolkky.calc_score(&[Skittle::new(11)]);
-        let original = ScoreBoard::default().add(five);
-        let updated = original.add(eleven);
-        assert_eq!(original.history(), &[five]);
+    fn 得点を追加しても元の履歴と得点は変わらない() {
+        let original = board(&[5]);
+        let history = original.history();
+        let updated = original.add(Point::new(11));
         assert_eq!(original.total(), 5);
-        assert_eq!(updated.history(), &[five, eleven]);
+        assert_eq!(original.history(), history);
         assert_eq!(updated.total(), 16);
     }
-}
-
-mod states {
-    use super::*;
-    use rust_molkky::ScoreState;
 
     #[test]
-    fn 履歴復元で状態と補正済み合計を確定する() {
-        for (points, total, state, expected_history) in [
-            (&[][..], 0, ScoreState::Calculated, &[][..]),
-            (
-                &[12, 12, 12, 12, 1][..],
-                49,
-                ScoreState::Calculated,
-                &[12, 12, 12, 12, 1][..],
-            ),
-            (
-                &[12, 12, 12, 12, 1, 1][..],
-                50,
-                ScoreState::Won,
-                &[12, 12, 12, 12, 1, 1][..],
-            ),
-            (&[12, 12, 12, 12, 3][..], 25, ScoreState::Reset, &[25][..]),
-            (
-                &[12, 12, 12, 12, 3, 1][..],
-                26,
-                ScoreState::Calculated,
-                &[25, 1][..],
-            ),
-            (
-                &[5, 0, 0, 0][..],
-                5,
-                ScoreState::Disqualified,
-                &[5, 0, 0, 0][..],
-            ),
-            (
-                &[0, 0, 1, 0, 0][..],
-                1,
-                ScoreState::Calculated,
-                &[0, 0, 1, 0, 0][..],
-            ),
-        ] {
-            let board = ScoreBoard::new(points.iter().map(|&n| point(n)).collect());
-            assert_eq!(history(&board), expected_history);
-            assert_eq!(board.total(), total);
-            assert_eq!(board.state(), state);
-        }
+    fn 補正後に投てきを続けても元の状態は変わらない() {
+        let original = board(&[12, 12, 12, 12, 3]);
+        let updated = original.add(Point::new(0));
+        assert_eq!(original.state(), ScoreState::Reset);
+        assert_eq!(updated.state(), ScoreState::Calculated);
+        assert_eq!(original.total(), 25);
+        assert_eq!(updated.total(), 25);
     }
-
-    #[test]
-    fn 勝利と失格の後の履歴は生成と追加の両方で拒否する() {
-        for points in [&[10, 10, 10, 10, 10][..], &[5, 0, 0, 0][..]] {
-            let history: Vec<_> = points.iter().map(|&n| point(n)).collect();
-            let board = ScoreBoard::new(history.clone());
-            for next in [point(0), point(1)] {
-                let mut invalid = history.clone();
-                invalid.push(next);
-                assert!(std::panic::catch_unwind(|| ScoreBoard::new(invalid)).is_err());
-                assert!(std::panic::catch_unwind(|| board.add(next)).is_err());
-                assert_eq!(board.history(), history);
-            }
-        }
-    }
-}
-
-#[test]
-fn リセット後の零点で通常状態へ戻しても元の状態は変わらない() {
-    let original = ScoreBoard::new([12, 12, 12, 12, 3].map(point).to_vec());
-    let updated = original.add(point(0));
-    assert_eq!(original.state(), ScoreState::Reset);
-    assert_eq!(original.clone().state(), ScoreState::Reset);
-    assert_eq!(updated.state(), ScoreState::Calculated);
-    assert_eq!(original.total(), 25);
-    assert_eq!(updated.total(), 25);
-    assert_eq!(history(&original), [25]);
-    assert_eq!(history(&updated), [25, 0]);
-    assert_eq!(ScoreBoard::default().state(), ScoreState::Calculated);
-}
-
-#[test]
-fn 超過は連続零点を中断し補正後の三連続零点で失格になる() {
-    let original = board(&[12, 12, 12, 12, 1, 0, 0]);
-    let reset = original.add(point(2));
-    assert_eq!(history(&reset), [25]);
-    let twice = reset.add(point(0)).add(point(0));
-    assert_eq!(twice.state(), ScoreState::Calculated);
-    let third = twice.add(point(0));
-    assert_eq!(third.state(), ScoreState::Disqualified);
-    assert_eq!(third.total(), 25);
-    assert_eq!(history(&third), [25, 0, 0, 0]);
-    let raw = [12, 12, 12, 12, 1, 0, 0, 2, 0, 0, 0].map(point).to_vec();
-    let restored = ScoreBoard::new(raw.clone());
-    assert_eq!(restored.history(), third.history());
-    assert_eq!(restored.state(), third.state());
-    let mut invalid = raw;
-    invalid.push(point(1));
-    assert!(std::panic::catch_unwind(|| ScoreBoard::new(invalid)).is_err());
-    assert!(std::panic::catch_unwind(|| third.add(point(0))).is_err());
-    assert_eq!(original.total(), 49);
-}
-
-#[test]
-fn 補正後も五十点ちょうどで勝利し以後の記録は拒否する() {
-    let raw = [12, 12, 12, 12, 3, 12, 12, 1].map(point).to_vec();
-    let restored = ScoreBoard::new(raw.clone());
-    let added = board(&[12, 12, 12, 12, 3, 12, 12, 1]);
-    assert_eq!(restored.total(), 50);
-    assert_eq!(restored.state(), ScoreState::Won);
-    assert_eq!(history(&restored), [25, 12, 12, 1]);
-    assert_eq!(restored.history(), added.history());
-    let mut invalid = raw;
-    invalid.push(point(0));
-    assert!(std::panic::catch_unwind(|| ScoreBoard::new(invalid)).is_err());
-    assert!(std::panic::catch_unwind(|| restored.add(point(1))).is_err());
 }
