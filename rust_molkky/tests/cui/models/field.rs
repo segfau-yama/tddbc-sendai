@@ -11,7 +11,7 @@ mod initialization {
             field
                 .skittles
                 .iter()
-                .map(|pin| pin.number())
+                .map(|skittle| skittle.number())
                 .collect::<Vec<_>>(),
             (1..=12).collect::<Vec<_>>()
         );
@@ -19,7 +19,7 @@ mod initialization {
             field
                 .skittles
                 .iter()
-                .map(|pin| pin.id())
+                .map(|skittle| skittle.id())
                 .collect::<HashSet<_>>()
                 .len(),
             12
@@ -28,7 +28,7 @@ mod initialization {
             field
                 .skittles
                 .iter()
-                .all(|pin| pin.state() == SkittleState::Stand)
+                .all(|skittle| skittle.state() == SkittleState::Stand)
         );
     }
 }

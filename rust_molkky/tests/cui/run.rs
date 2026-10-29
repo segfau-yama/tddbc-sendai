@@ -1,4 +1,5 @@
 use rust_molkky::cui::run as game;
+use rust_molkky::{Stick, cui::models::CuiStick};
 use std::io::{Cursor, Write};
 use std::process::{Command, Stdio};
 
@@ -8,7 +9,13 @@ fn play(script: &str, names: &[&str]) -> String {
         .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
     let mut output = Vec::new();
-    game::run(&mut Cursor::new(script), &mut output, &names).unwrap();
+    game::run(
+        &mut Cursor::new(script),
+        &mut output,
+        &names,
+        &CuiStick::new(Stick::new(), 1.0),
+    )
+    .unwrap();
     String::from_utf8(output).unwrap()
 }
 
@@ -29,7 +36,13 @@ mod game_loop {
         let names = vec!["赤".to_owned(), "青".to_owned()];
         let mut reader = Cursor::new(script);
         let mut output = Vec::new();
-        game::run(&mut reader, &mut output, &names).unwrap();
+        game::run(
+            &mut reader,
+            &mut output,
+            &names,
+            &CuiStick::new(Stick::new(), 1.0),
+        )
+        .unwrap();
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("赤の勝利です（50点）"));
         assert!(text.contains("赤: 50点 (5投)"));
@@ -139,7 +152,11 @@ mod cli {
         assert!(output.status.success());
         assert!(output.stderr.is_empty());
         let text = String::from_utf8(output.stdout).unwrap();
-        assert!(text.contains("赤: 2点 (1投)"));
+        assert!(
+            [0, 2, 5, 8]
+                .iter()
+                .any(|score| text.contains(&format!("赤: {score}点 (1投)")))
+        );
         assert!(text.contains("終了しました"));
     }
 
@@ -161,5 +178,26 @@ mod cli {
                 .unwrap()
                 .contains("終了しました")
         );
+    }
+}
+
+mod probability {
+    use super::*;
+
+    #[test]
+    fn 確率零では狙った番号を得点にせず手番を進める() {
+        let names = vec!["赤".to_owned(), "青".to_owned()];
+        let mut output = Vec::new();
+        game::run(
+            &mut Cursor::new("5\n8\nq\n"),
+            &mut output,
+            &names,
+            &CuiStick::new(Stick::new(), 0.0),
+        )
+        .unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("赤: 0点 (1投)"));
+        assert!(text.contains("青: 0点 (1投)"));
+        assert!(text.contains("終了しました"));
     }
 }

@@ -3,7 +3,7 @@ TDDBC仙台の備忘録用リポジトリ
 
 ## Rust演習環境
 
-rust_molkkyは、標準入出力でチームの得点を記録するCUIと、ドメインモデルのライブラリです。
+rust_molkkyは、標準入出力で狙う番号を選び、確率で倒れた本の得点を記録するCUIと、ドメインモデルのライブラリです。
 バイナリのmainから`cui::run::run`へ標準入出力を渡します。
 
 ```sh
@@ -21,46 +21,48 @@ cargo test --locked --test application
 | 場所 | 責務 |
 | --- | --- |
 | src/core/models/ | Team・Skittle・ScoreBoardなどのドメインモデル |
-| src/core/services/molkky.rs | aim・hitの抽象宣言、採点・勝者・次のチームの判定 |
+| src/core/services/molkky.rs | aim・throw・hitの抽象宣言、採点・勝者・次のチームの判定 |
 | src/cui/models/teams.rs | Vec<Team>の保持、CUI用の名前検証・Team生成 |
 | src/cui/models/field.rs | 1〜12番のVec<Skittle>の保持 |
-| src/cui/services/molkky.rs | CuiMolkky：入力番号による個体の選択と転倒結果の生成 |
+| src/cui/models/stick.rs | CuiStick：既存のStickと転倒確率の保持 |
+| src/cui/services/molkky.rs | CuiMolkky：入力番号による個体の選択、棒の確率の取得と転倒判定 |
 | src/cui/io/input.rs | Input：入力元の保持、読み取り・変換・検証・再入力 |
 | src/cui/io/output.rs | Output：出力先の保持、プロンプト・得点表・結果の表示 |
 | src/cui/run.rs | チーム設定、投てき・採点・交代・終了のゲームループ |
 
 InputとOutputはプレゼンテーション層の入出力処理なので、ドメインサービスの実装とは別の`io/`へ配置します。
-`Teams`と`Field`は`cui::models`、`CuiMolkky`は`cui::services`、`Input`と`Output`は`cui::io`から公開します。
+`Teams`・`Field`・`CuiStick`は`cui::models`、`CuiMolkky`は`cui::services`、`Input`と`Output`は`cui::io`から公開します。
 
 ### CUIの操作
 
 引数なしでは、チーム数（1以上）と各チーム名を入力します。名前は前後の空白を除いて1〜30文字、制御文字は使用できません。同名でも別のチームとして扱い、入力順に投げます。
 
-- 倒れた番号を空白区切りで入力します。`5`は5点、`5 8`は2点です。番号は1〜12、同じ番号は1回だけ入力できます。
+- 狙う番号を空白区切りで入力します。番号は1〜12、同じ番号は1回だけ入力できます。
+- 通常は狙った各スキットルが独立に50%で倒れます。例えば`5 8`を狙うと、倒れた本に応じて0点・5点・8点・2点のいずれかになります。
 - `0`は倒れた本がない投てきです。
 - `q`またはEOFで終了します。不正な入力は投数と手番を進めず再入力します。
 - 入出力エラーは呼び出し元へ返し、プロンプトは入力待ちの前にflushします。
 
-CUIは入力された転倒結果を記録する方式です。乱数や命中率は使いません。フォルト・記録訂正・各チーム12投制限は含めません。
+転倒判定には既存のrandクレートを使います。50%はこのCUIの既定値です。フォルト・記録訂正・各チーム12投制限は含めません。
 
 ### aimからhitへ渡す
 
 ```rust
 use rust_molkky::{Molkky, Stick};
-use rust_molkky::cui::{models::Field, services::CuiMolkky};
+use rust_molkky::cui::{models::{CuiStick, Field}, services::CuiMolkky};
 
 let field = Field::default();
-let stick = Stick::new();
+let stick = CuiStick::new(Stick::new(), 0.5);
 let rules = CuiMolkky::new(vec![5, 8]);
 let targets = rules.aim(&stick, &field.skittles);
 let fallen = rules.hit(&stick, &targets);
-assert_eq!(rules.calc_score(&fallen).value(), 2);
+println!("{}点", rules.calc_score(&fallen).value());
 assert_eq!(field.skittles.len(), 12);
 ```
 
-`CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、hitは選択された本を転倒状態にした結果を返します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
+`CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、throwはCuiStickの確率（f64、0〜1）を返します。hitはその確率で各個体を判定し、倒れた本だけをFall状態で返します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
 
-`Molkky`を実装する型はaimとhitを定義します。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。
+`Molkky`を実装する型は関連型Stickとaim・throw・hitを定義します。CuiMolkkyのStickはCuiStickです。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
 
 ### テストと残課題
 
@@ -69,7 +71,7 @@ assert_eq!(field.skittles.len(), 12);
 ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
 不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
 
-Rustの全124件が成功しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+Rustの全130件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
 
 ## Java演習環境
 

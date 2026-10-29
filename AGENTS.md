@@ -81,13 +81,13 @@ fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> 
     self.validate_skittles(skittles);
     let before: HashSet<_> = skittles
         .iter()
-        .map(|pin| (pin.id(), pin.number()))
+        .map(|skittle| (skittle.id(), skittle.number()))
         .collect();
     let updated_skittles = judge(stick, skittles);
     self.validate_skittles(&updated_skittles);
     let after: HashSet<_> = updated_skittles
         .iter()
-        .map(|pin| (pin.id(), pin.number()))
+        .map(|skittle| (skittle.id(), skittle.number()))
         .collect();
     assert_eq!(before, after, "判定後のスキットル集合が変わっています");
     updated_skittles

@@ -1,10 +1,14 @@
-use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
+use crate::core::models::{Point, ScoreState, Skittle, Team};
 use itertools::Itertools;
 
 pub trait Molkky {
-    fn aim(&self, stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle>;
+    type Stick;
 
-    fn hit(&self, stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle>;
+    fn aim(&self, stick: &Self::Stick, skittles: &[Skittle]) -> Vec<Skittle>;
+
+    fn throw(&self, stick: &Self::Stick) -> f64;
+
+    fn hit(&self, stick: &Self::Stick, skittles: &[Skittle]) -> Vec<Skittle>;
 
     fn calc_score(&self, fallen_skittles: &[Skittle]) -> Point {
         Point::new(match fallen_skittles {

@@ -1,3 +1,4 @@
+use rust_molkky::cui::models::CuiStick;
 use rust_molkky::cui::services::CuiMolkky;
 use rust_molkky::{Molkky, Name, ScoreBoard, ScoreState, Skittle, SkittleState, Stick, Team};
 
@@ -48,20 +49,20 @@ mod scoring {
 
         #[test]
         fn s01_2_番号五と八の二本なら番号の合計ではなく二点になる() {
-            let pins = [Skittle::new(5), Skittle::new(8)];
-            assert_eq!(CuiMolkky::default().calc_score(&pins).value(), 2);
+            let skittles = [Skittle::new(5), Skittle::new(8)];
+            assert_eq!(CuiMolkky::default().calc_score(&skittles).value(), 2);
         }
 
         #[test]
         fn s01_2_異なる番号の三本なら三点になる() {
-            let pins = [Skittle::new(1), Skittle::new(5), Skittle::new(12)];
-            assert_eq!(CuiMolkky::default().calc_score(&pins).value(), 3);
+            let skittles = [Skittle::new(1), Skittle::new(5), Skittle::new(12)];
+            assert_eq!(CuiMolkky::default().calc_score(&skittles).value(), 3);
         }
 
         #[test]
         fn s01_3_一から十二の標準の十二本なら十二点になる() {
-            let pins: Vec<_> = (1..=12).map(Skittle::new).collect();
-            assert_eq!(CuiMolkky::default().calc_score(&pins).value(), 12);
+            let skittles: Vec<_> = (1..=12).map(Skittle::new).collect();
+            assert_eq!(CuiMolkky::default().calc_score(&skittles).value(), 12);
         }
     }
 
@@ -79,10 +80,10 @@ mod scoring {
 
         #[test]
         fn 元の配列を更新しても取得した点数は変わらない() {
-            let mut pins = [Skittle::new(5)];
-            let point = CuiMolkky::default().calc_score(&pins);
-            pins[0] = Skittle::new(12);
-            assert_eq!(pins[0].number(), 12);
+            let mut skittles = [Skittle::new(5)];
+            let point = CuiMolkky::default().calc_score(&skittles);
+            skittles[0] = Skittle::new(12);
+            assert_eq!(skittles[0].number(), 12);
             assert_eq!(point.value(), 5);
         }
     }
@@ -96,20 +97,24 @@ mod hit {
 
         #[test]
         fn trait越しに狙った個体だけを転倒結果として返す() {
-            let stick = Stick::new();
-            let pins = [Skittle::new(5), Skittle::new(8)];
+            let stick = CuiStick::new(Stick::new(), 1.0);
+            let skittles = [Skittle::new(5), Skittle::new(8)];
             let rules = CuiMolkky::new(vec![5]);
-            let rules: &dyn Molkky = &rules;
-            let targets = rules.aim(&stick, &pins);
+            let rules: &dyn Molkky<Stick = CuiStick> = &rules;
+            let targets = rules.aim(&stick, &skittles);
             let fallen = rules.hit(&stick, &targets);
-            assert_eq!(fallen, [pins[0].with_state(SkittleState::Fall)]);
-            assert!(pins.iter().all(|pin| pin.state() == SkittleState::Stand));
+            assert_eq!(fallen, [skittles[0].with_state(SkittleState::Fall)]);
+            assert!(
+                skittles
+                    .iter()
+                    .all(|skittle| skittle.state() == SkittleState::Stand)
+            );
         }
 
         #[test]
         fn 空の選択から空の転倒結果を返す() {
             let rules = CuiMolkky::default();
-            let stick = Stick::new();
+            let stick = CuiStick::new(Stick::new(), 1.0);
             let targets = rules.aim(&stick, &[]);
             assert!(rules.hit(&stick, &targets).is_empty());
         }
@@ -117,14 +122,14 @@ mod hit {
         #[test]
         fn 狙った個体の並び順を転倒結果でも保つ() {
             let rules = CuiMolkky::new(vec![8, 5]);
-            let stick = Stick::new();
-            let pins = [Skittle::new(5), Skittle::new(8)];
-            let fallen = rules.hit(&stick, &rules.aim(&stick, &pins));
+            let stick = CuiStick::new(Stick::new(), 1.0);
+            let skittles = [Skittle::new(5), Skittle::new(8)];
+            let fallen = rules.hit(&stick, &rules.aim(&stick, &skittles));
             assert_eq!(
                 fallen,
                 [
-                    pins[1].with_state(SkittleState::Fall),
-                    pins[0].with_state(SkittleState::Fall)
+                    skittles[1].with_state(SkittleState::Fall),
+                    skittles[0].with_state(SkittleState::Fall)
                 ]
             );
         }
@@ -137,9 +142,12 @@ mod hit {
         fn 結果は入力と実装の借用期間後も保持できる() {
             let (fallen, id) = {
                 let rules = CuiMolkky::new(vec![12]);
-                let stick = Stick::new();
-                let pins = [Skittle::new(12)];
-                (rules.hit(&stick, &rules.aim(&stick, &pins)), pins[0].id())
+                let stick = CuiStick::new(Stick::new(), 1.0);
+                let skittles = [Skittle::new(12)];
+                (
+                    rules.hit(&stick, &rules.aim(&stick, &skittles)),
+                    skittles[0].id(),
+                )
             };
             assert_eq!(fallen.len(), 1);
             assert_eq!(fallen[0].id(), id);
@@ -343,9 +351,9 @@ mod integration_contract {
     fn 実装で狙った個体を倒し使用側で採点と得点表の更新を行える() {
         let rules = CuiMolkky::new(vec![5]);
         let original = team("赤", &[]).with_turn(true);
-        let pins = [Skittle::new(5), Skittle::new(8)];
-        let stick = Stick::new();
-        let targets = rules.aim(&stick, &pins);
+        let skittles = [Skittle::new(5), Skittle::new(8)];
+        let stick = CuiStick::new(Stick::new(), 1.0);
+        let targets = rules.aim(&stick, &skittles);
         let fallen = rules.hit(&stick, &targets);
         let scored =
             original.with_score_board(original.score_board().add(rules.calc_score(&fallen)));

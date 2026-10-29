@@ -100,7 +100,7 @@ fn parse_numbers(input: &str) -> Result<Vec<i32>, &'static str> {
         numbers.push(number);
     }
     if numbers.is_empty() {
-        return Err("倒れた番号、またはミスの0を入力してください");
+        return Err("狙う番号、またはミスの0を入力してください");
     }
     Ok(numbers)
 }

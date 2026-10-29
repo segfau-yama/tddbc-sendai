@@ -460,3 +460,26 @@ BONUS AとBは独立した任意課題とし、基本STEPの完了条件へ混�
 - 旧登録ファイルの削除は新しい登録への移行としてコミットへ含める。別途削除されたgame・simulation・view・tuiのテスト本体と旧API文書は、この修正のコミットへ取り込まない。
 - 未確認：恒久的なJAVA_HOME設定とエディター上の検証は行っていない。今回のJava実行では一時配置のJDKを指定した。
 - 最終確認：`cargo build --locked`、対象Rustファイルのrustfmtチェック、`git diff --check`が成功した。
+
+## CuiStickとthrowによる確率的な転倒判定（2026-10-30）
+
+- 対象：Molkkyのthrow抽象メソッド、CuiMolkky、CuiStick、ゲームループ・起動元と対応テスト。既存の別途削除中のファイルは変更しない。
+- 期待する振る舞い：aimで選んだ各スキットルを、棒の確率で独立に転倒判定する。hitは転倒した個体だけを返し、ID・順序と元のFieldを保持する。確率の指定がない通常起動では50%を採用する。これはこのCUIの取り決めであり、モルックの公式ルールから導いた値ではない。
+- 設計：Molkkyに関連型Stickと必須メソッド`throw(&self, stick: &Self::Stick) -> f64`を追加する。aim・hitも関連型の棒を受け取る。CuiStickは既存のStickと0〜1の確率を保持し、CuiMolkky::throwはその値を返す。coreからCUI型を参照しない。
+- 入力は倒れた番号から狙う番号へ意味を変更する。runへCuiStickを渡し、通常起動では50%、既存の得点ルールの検証では100%を指定する。乱数源やStrategyを新たに注入するAPIは追加しない。
+- [x] CuiStickの識別子委譲、確率の保持・境界・範囲外を検証する。
+- [x] throwが指定した棒の確率を返し、0%では0本、100%では選択した全個体だけが転倒することを確認する。
+- [x] 既存の採点・終了・不変性・個体IDのテストを100%の棒で維持し、0%のゲームループも検証する。
+- [x] スキットルを扱うイテレータのpinをskittleへ改名し、呼び出し元・表示・READMEを更新する。
+- [x] 全Rustテスト・ビルド・整形・差分を確認する。
+- 変更前：`cargo test --locked`は124件成功。
+
+### Red・Green・Refactorと結果
+
+- Red：`cargo test --locked --test application molkky::probability::`で、throwが固定値0.5を返しhitが全個体を倒す最小実装に対し、棒の確率の取得と0%の転倒判定の2件が期待した理由で失敗した。throwからhitへの確率受け渡しをまとめて確認するため、この2件を同時に選択した。
+- Green：throwはCuiStickの確率を返し、hitは一度取得した確率で各スキットルに`rand::random_bool(probability)`を適用する。既存のrand 0.10.3のAPIをローカルのソースで確認して利用し、新しい依存関係は追加しない。
+- 確率0%と100%を使う検証は毎回同じ結果になる。乱数の頻度を数える不安定な合否判定は追加していない。CLIの既定50%の検証は、入力5・8に対して仕様上可能な0・5・8・2点のいずれかと1投の記録を確認する。従来の厳密な得点・勝敗の期待値は100%のゲームループで引き続き検証する。
+- Refactor：スキットルのイテレータ変数をskittle、一覧をskittlesへ統一した。AGENTS.md内のコード例も同じ命名へそろえた。入力案内とREADMEは狙う番号の選択として更新した。
+- 公開APIの変更：Molkkyの実装は関連型Stickとaim・throw・hitを定義する。traitオブジェクトは`dyn Molkky<Stick = CuiStick>`とする。runの第4引数へ`&CuiStick`を渡す。mainと既存の全呼び出し元を更新した。
+- 検証：`cargo test --manifest-path rust_molkky/Cargo.toml --locked`で全130件成功（application 81件・core_models 49件）。失敗・無視は0件。`cargo build --locked`、対象ファイルのrustfmtチェック、git diff --checkも成功した。ソース・登録済みテスト・AGENTS.mdのコード例にpin/pinsの変数名が残っていないことを検索で確認した。
+- 未実施：Javaの再検証、確率分布の統計的検証、エディター上の確認。Java側の変更はない。

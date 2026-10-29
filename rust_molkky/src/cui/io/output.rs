@@ -26,7 +26,7 @@ impl<W: Write> Output<W> {
 
     pub fn throw_prompt(&mut self, team: &Team) -> io::Result<()> {
         self.prompt(&format!(
-            "{}の投てき（番号を空白区切り、0はミス、qで終了）: ",
+            "{}の投てき（狙う番号を空白区切り、0はミス、qで終了）: ",
             team.name()
         ))
     }

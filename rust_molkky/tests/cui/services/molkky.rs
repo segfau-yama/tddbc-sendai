@@ -1,3 +1,4 @@
+use rust_molkky::cui::models::CuiStick;
 use rust_molkky::{
     Molkky, SkittleState, Stick,
     cui::{models::Field, services::CuiMolkky},
@@ -10,9 +11,9 @@ mod aiming {
     fn 指定番号の既存個体を入力順に選んで返す() {
         let field = Field::default();
         let rules = CuiMolkky::new(vec![12, 5]);
-        let rules: &dyn Molkky = &rules;
+        let rules: &dyn Molkky<Stick = CuiStick> = &rules;
         assert_eq!(
-            rules.aim(&Stick::new(), &field.skittles),
+            rules.aim(&CuiStick::new(Stick::new(), 1.0), &field.skittles),
             [field.skittles[11], field.skittles[4]]
         );
     }
@@ -20,7 +21,7 @@ mod aiming {
     #[test]
     fn 零本の選択は投てきミスとして零点になる() {
         let rules = CuiMolkky::new(Vec::new());
-        let stick = Stick::new();
+        let stick = CuiStick::new(Stick::new(), 1.0);
         let targets = rules.aim(&stick, &Field::default().skittles);
         let fallen = rules.hit(&stick, &targets);
         assert!(fallen.is_empty());
@@ -36,7 +37,7 @@ mod throwing {
         let field = Field::default();
         let original = field.skittles.clone();
         let rules = CuiMolkky::new(vec![5]);
-        let stick = Stick::new();
+        let stick = CuiStick::new(Stick::new(), 1.0);
         let targets = rules.aim(&stick, &field.skittles);
         let fallen = rules.hit(&stick, &targets);
         assert_eq!(fallen, [field.skittles[4].with_state(SkittleState::Fall)]);
@@ -48,7 +49,7 @@ mod throwing {
     #[test]
     fn 次の投てきも同じフィールドから選び前回の転倒を持ち越さない() {
         let field = Field::default();
-        let stick = Stick::new();
+        let stick = CuiStick::new(Stick::new(), 1.0);
         let first = CuiMolkky::new(vec![5]);
         let second = CuiMolkky::new(vec![8, 12]);
         let targets = first.aim(&stick, &field.skittles);
@@ -57,7 +58,10 @@ mod throwing {
         let targets = second.aim(&stick, &field.skittles);
         let fallen = second.hit(&stick, &targets);
         assert_eq!(
-            fallen.iter().map(|pin| pin.id()).collect::<Vec<_>>(),
+            fallen
+                .iter()
+                .map(|skittle| skittle.id())
+                .collect::<Vec<_>>(),
             [field.skittles[7].id(), field.skittles[11].id()]
         );
         assert_eq!(second.calc_score(&fallen).value(), 2);
@@ -66,7 +70,7 @@ mod throwing {
             field
                 .skittles
                 .iter()
-                .all(|pin| pin.state() == SkittleState::Stand)
+                .all(|skittle| skittle.state() == SkittleState::Stand)
         );
     }
 }
@@ -93,5 +97,30 @@ mod winner_selection {
         assert_eq!(winner.score_board().total(), 13);
         assert_eq!(original.history(), history);
         assert_eq!(original.total(), 13);
+    }
+}
+
+mod probability {
+    use super::*;
+
+    #[test]
+    fn throwは渡した棒ごとの確率を返す() {
+        let rules = CuiMolkky::default();
+        for probability in [0.0, 0.25, 0.5, 1.0] {
+            let stick = CuiStick::new(Stick::new(), probability);
+            assert_eq!(rules.throw(&stick), probability);
+        }
+    }
+
+    #[test]
+    fn 確率零なら狙った個体は一本も倒れない() {
+        let field = Field::default();
+        let original = field.skittles.clone();
+        let rules = CuiMolkky::new((1..=12).collect());
+        let stick = CuiStick::new(Stick::new(), 0.0);
+        let targets = rules.aim(&stick, &field.skittles);
+        assert_eq!(targets.len(), 12);
+        assert!(rules.hit(&stick, &targets).is_empty());
+        assert_eq!(field.skittles, original);
     }
 }

@@ -10,5 +10,7 @@ mod molkky;
 mod output;
 #[path = "cui/run.rs"]
 mod run;
+#[path = "cui/models/stick.rs"]
+mod stick;
 #[path = "cui/models/teams.rs"]
 mod teams;

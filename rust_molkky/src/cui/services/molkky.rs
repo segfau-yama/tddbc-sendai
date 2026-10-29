@@ -1,4 +1,5 @@
-use crate::{Molkky, Skittle, SkittleState, Stick};
+use crate::cui::models::CuiStick;
+use crate::{Molkky, Skittle, SkittleState};
 
 #[derive(Default)]
 pub struct CuiMolkky {
@@ -12,18 +13,26 @@ impl CuiMolkky {
 }
 
 impl Molkky for CuiMolkky {
-    fn aim(&self, _stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle> {
+    type Stick = CuiStick;
+
+    fn aim(&self, _stick: &CuiStick, skittles: &[Skittle]) -> Vec<Skittle> {
         self.numbers
             .iter()
-            .filter_map(|number| skittles.iter().find(|pin| pin.number() == *number))
+            .filter_map(|number| skittles.iter().find(|skittle| skittle.number() == *number))
             .copied()
             .collect()
     }
 
-    fn hit(&self, _stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle> {
+    fn throw(&self, stick: &CuiStick) -> f64 {
+        stick.probability()
+    }
+
+    fn hit(&self, stick: &CuiStick, skittles: &[Skittle]) -> Vec<Skittle> {
+        let probability = self.throw(stick);
         skittles
             .iter()
-            .map(|pin| pin.with_state(SkittleState::Fall))
+            .filter(|_| rand::random_bool(probability))
+            .map(|skittle| skittle.with_state(SkittleState::Fall))
             .collect()
     }
 }
