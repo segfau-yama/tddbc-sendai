@@ -1,39 +1,50 @@
 use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
-use itertools::Itertools;
 
 /// クロージャで乱数源や物理世界を捕捉できる、判定関数の可変借用。
 pub type JudgeStrategy<'judge> = &'judge mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>;
 
-/// 個体の検証・投てき判定・採点・勝者と手番の選択をまとめるドメインサービス。
+/// 投てき判定・採点・勝者と次のチームの選択をまとめるドメインサービス。
 /// 履歴や一覧を所有せず、入力を変更しない。
 pub trait Molkky {
     fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> Vec<Skittle> {
-        let updated_skittles = judge(stick, skittles);
-        return updated_skittles;
+        judge(stick, skittles)
     }
 
     /// この一覧を採点する。今回倒れた個体の選別は呼び出し側で行う。
     fn calc_score(&self, fallen_skittles: &[Skittle]) -> Point {
-        return Some(Point::new(match fallen_skittles {
+        Point::new(match fallen_skittles {
             [skittle] => skittle.number(),
             skittles => skittles.len() as i32,
-        }));
+        })
     }
 
-    /// Wonのチームを返す。最後の生存者による勝利はここでは判定しない。
-    fn judge_game(&self, teams: &[Team]) -> &Team {
-        let mut winners = teams
+    /// 50点到達済みのチームを検索する。手番や得点表は変更しない。
+    fn judge_game<'teams>(&self, teams: &'teams [Team]) -> Option<&'teams Team> {
+        teams
             .iter()
-            .filter(|team| team.score_board().state() == ScoreState::Won);
-        let winner = winners.next();
-        winner
+            .find(|team| team.score_board().state() == ScoreState::Won)
     }
 
-    /// 次の有効チームへ手番を進めた新しい一覧を返す。終了時は全手番を解除する。
-    fn next_team(&self, teams: &[Team]) -> &Team {
-        let turns = teams.iter().filter(|team| team.turn());
-        let current = turns.next();
-        current
+    /// 現在の次から失格者を飛ばし、次に投げるチームを参照で返す。
+    fn next_team<'teams>(&self, teams: &'teams [Team]) -> Option<&'teams Team> {
+        let remaining = teams
+            .iter()
+            .filter(|team| team.score_board().state() != ScoreState::Disqualified)
+            .count();
+        // 50点到達、または他の全チームの失格でセットは終了する。
+        if self.judge_game(teams).is_some() || (teams.len() > 1 && remaining == 1) {
+            return None;
+        }
+        let start = teams
+            .iter()
+            .position(Team::turn)
+            .map_or(0, |index| index + 1);
+        teams
+            .iter()
+            .cycle()
+            .skip(start)
+            .take(teams.len())
+            .find(|team| team.score_board().state() != ScoreState::Disqualified)
     }
 }
 

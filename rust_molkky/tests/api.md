@@ -186,7 +186,7 @@ assert_eq!(updated.score_board().total(), 5);
 assert_eq!(original.name(), updated.name());
 ```
 
-## 手番の切り替えと失格者のスキップはnext_teamで行う
+## 次のチームの選択と失格者のスキップはnext_teamで行う
 
 ```rust
 use rust_molkky::{Molkky, Name, ScoreBoard, SimpleMolkky, Team};
@@ -194,13 +194,13 @@ let missed = SimpleMolkky.calc_score(&[]);
 let red = Team::new(Name::new("赤")).with_turn(true);
 let red = red.with_score_board(ScoreBoard::new(vec![missed; 3]));
 let teams = [red, Team::new(Name::new("青")), Team::new(Name::new("緑"))];
-let next = SimpleMolkky.next_team(&teams);
-assert!(!next[0].turn());
-assert!(next[1].turn());
-assert!(!next[2].turn());
+let next = SimpleMolkky.next_team(&teams).unwrap();
+assert!(std::ptr::eq(next, &teams[1]));
 assert!(teams[0].turn());
-assert_eq!(next[1].id(), teams[1].id());
+assert!(!teams[1].turn());
 ```
+
+手番フラグの更新は呼び出し側で行います。next_teamは次のチームの参照だけを返します。
 
 ## 同番号の別個体を配置し採点できる
 
@@ -244,7 +244,7 @@ let teams = [
     Team::new(Name::new("青")).with_score_board(won),
 ];
 assert_eq!(teams.iter().find(|team| team.turn()).unwrap().id(), teams[0].id());
-assert!(SimpleMolkky.next_team(&teams).iter().all(|team| !team.turn()));
+assert!(SimpleMolkky.next_team(&teams).is_none());
 assert_eq!(SimpleMolkky.judge_game(&teams).unwrap().id(), teams[1].id());
 ```
 
@@ -368,9 +368,9 @@ assert!(!original.turn());
 assert!(active.turn());
 assert_eq!(active.id(), original.id());
 let teams = [active];
-let next = SimpleMolkky.next_team(&teams);
-assert_eq!(next[0].id(), original.id());
-assert!(next[0].turn());
+let next = SimpleMolkky.next_team(&teams).unwrap();
+assert_eq!(next.id(), original.id());
+assert!(next.turn());
 ```
 
 ## 判定関数の型別名はクロージャの可変借用として使える
@@ -392,14 +392,15 @@ use rust_molkky::{Stick};
 Stick::new(0.25);
 ```
 
-## 個体検証と採点は同番号の別個体を許可する
+## 入力側で整えた採点対象を渡す
 
 ```rust
 use rust_molkky::{Molkky, SimpleMolkky, Skittle};
-let pins = [Skittle::new(12), Skittle::new(12)];
-SimpleMolkky.validate_skittles(&pins);
+let pins = [Skittle::new(5), Skittle::new(8)];
 assert_eq!(SimpleMolkky.calc_score(&pins).value(), 2);
 ```
+
+ID重複などの入力検証は入力側の責務です。Molkkyにvalidate_skittlesはありません。
 
 ## 判定関数から入力スライスを書き換えることはできない
 

@@ -3,145 +3,69 @@ TDDBC仙台の備忘録用リポジトリ
 
 ## Rust演習環境
 
-rust_molkkyは、モルックの採点・試合管理を行うライブラリとTUIです。
-coreは表示座標を持たず、表示位置を変えても投てきの確率や採点は変わりません。
+rust_molkkyは、モルックのドメインモデルとMolkkyサービスを公開するライブラリです。
+`src/lib.rs`はcoreだけを公開します。CLI・TUI・描画・シミュレーションの実装は削除済みです。
 
 ```sh
 cd rust_molkky
-cargo test --locked
-cargo build --locked
-cargo fmt --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo run --locked -- 赤チーム 青チーム
+cargo check --locked --lib
+cargo test --locked --test core
+cargo test --locked --test models
 ```
 
-TUIは72列×24行以上の対話型端末で動作します。Space / Enterで投てき、矢印キーで棒の表示位置を移動、Rで再開、Q / Esc / Ctrl+Cで終了します。
+サービステストは28件成功しています。モデルのテストには得点履歴・失格・終了後の記録に関する既存13件の失敗があります。
+全体の`cargo test --locked`は、削除済みのCLI・simulationを参照するテストなどでコンパイルに失敗します。
+今回の実行結果と残課題は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
 
 | 場所 | 責務 |
 | --- | --- |
-| src/core/models/ | Skittle・SkittleState・Field・Stick・Point・ScoreBoard・Team・Id・Name・ScoreState |
-| src/core/services/ | Molkkyの既定ルール（個体検証・投てき・採点・勝者検索・手番更新） |
-| src/simulation/ | ArrayField、標準Field生成 |
-| src/game/ | coreとviewの合成、表示上の移動、アプリの終了条件 |
-| src/tui/ | 端末入力、得点表の更新と手番設定、描画の呼び出し |
-| src/view/ | 表示専用のPosition、描画構造体、Widget・CanvasDraw |
-
-core/modelsという名前は、エンティティと値オブジェクトの両方をまとめるためのものです。
-Teamは参加チーム、PointやScoreBoardは不変な値として扱います。集合には標準の配列・Vec・スライスを使います。Molkkyは個体検証・投てき・採点・勝者検索・手番更新をまとめるドメインサービスのtraitです。
-モデルの更新は新しい値を返し、乱数源と端末入出力は呼び出し側で扱います。
-viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示値から描画します。
+| src/core/models/ | Skittle・Point・ScoreBoard・Team・Id・Nameなどのモデル |
+| src/core/services/ | 投てき判定の呼び出し、採点、50点到達済みチームと次のチームの検索 |
 
 ### ライブラリの利用
 
 ```rust
-use rust_molkky::{Molkky, SimpleMolkky};
-use rust_molkky::core::models::{Name, Skittle, Team};
-let original = vec![Team::new(Name::new("赤")), Team::new(Name::new("青"))];
-let board = original[0].score_board().add(SimpleMolkky.calc_score(&[Skittle::new(11)]));
-let updated = original[0].with_score_board(board);
-assert_eq!(original[0].score_board().total(), 0);
-assert_eq!(updated.score_board().total(), 11);
-assert!(SimpleMolkky.judge_game(&[updated]).is_none());
-
+use rust_molkky::{Molkky, Name, SimpleMolkky, Skittle, Team};
+let teams = [
+    Team::new(Name::new("赤")).with_turn(true),
+    Team::new(Name::new("青")),
+];
+let point = SimpleMolkky.calc_score(&[Skittle::new(5)]);
+let scored = teams[0].with_score_board(teams[0].score_board().add(point));
+assert_eq!(scored.score_board().total(), 5);
+assert_eq!(teams[0].score_board().total(), 0);
+let next = SimpleMolkky.next_team(&teams).unwrap();
+assert_eq!(next.id(), teams[1].id());
+assert!(teams[0].turn());
+assert!(SimpleMolkky.judge_game(&teams).is_none());
 ```
 
-MolkkyとSimpleMolkkyはcrate直下・core直下・core/servicesから公開します。
-validate_skittles・calc_score・judge_game・next_team・hitはMolkkyのメソッドです。record_pointは廃止し、得点表の更新は利用側が行います。
-PositionとSkittle/Stickの位置APIはcoreから削除しました。Positionはview内の表示専用型です。
-coreのFieldは識別子を持つ構造体です。個体一覧はsimulationのArrayFieldが所有します。
-TUIのControllerはチーム一覧と配列Field・確率設定Stickを個別に保持します。gameがピンのIdと表示座標を対応づけます。
+モデル・Molkky・SimpleMolkkyはcrate直下およびcoreから公開します。
+Molkkyは状態を持たず、得点表や手番フラグの更新にはモデルの不変更新を使います。
 
-### チームの識別子と名前
+### Molkkyの契約
 
-Team::new(Name::new("赤"))で名前からチームを作成します。
-IdはUUID v4で生成し、同名でも別チームは別IDです。cloneや得点更新では同じIDを保持します。
-Name::new(&str)はNameを直接返し、受け取った文字列をそのまま保持します。
-前後の空白、空文字、文字数、制御文字をモデルでは加工・検証しません。
-入力の検証・正規化はインフラ層の責務とします。現在の作業ツリーではCLI・TUIが削除中で、入力側の検証は未実装です。
-team.id()で一覧内の順番や名前に依存せず検索できます。同じIDの二重登録はMolkkyのjudge_game・next_teamが拒否します。
-Teamはturn: boolを保持し、turn()/with_turn(bool)で参照・不変更新します。初期値はfalseです。
-手番の初期設定・循環・失格者のスキップ・終了時の解除はMolkky::next_teamが行います。
+- `calc_score(&[Skittle]) -> Point`：0本は0点、1本は番号、2本以上は本数です。今回倒れた個体の選別は呼び出し側で行います。
+- `hit(&Stick, &[Skittle], JudgeStrategy<'_>) -> Vec<Skittle>`：注入した判定関数を1回呼び、所有する結果をそのまま返します。
+- `judge_game(&[Team]) -> Option<&Team>`：ScoreState::Wonのチームを検索します。該当しなければNoneです。最後の生存者の得点を50点へ変更する試合進行は、今回の実装範囲に含めません。
+- `next_team(&[Team]) -> Option<&Team>`：現在の手番の次から循環し、失格者を飛ばして選びます。未設定なら先頭の有効チーム、単独参加なら同じ有効チームを選びます。空・全失格・50点到達・複数参加で最後の一チームだけになった場合はNoneです。
 
-### 集合の規則を扱うドメインサービス
+next_teamは元の一覧や手番を変更しません。手番を更新するときは、返されたチームのIDを使って呼び出し側が設定します。
+judge_gameとnext_teamの返す参照はチーム一覧から借用し、サービスの借用期間には依存しません。
+JudgeStrategyは`&mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>`の型別名です。クロージャで乱数源などを捕捉でき、結果は入力の借用期間後も保持できます。
 
-Molkky::validate_skittles(&pins)は同IDの重複を拒否し、同番号の別個体・空集合・13本以上を許可します。
-hitの入出力、calc_score、ArrayField生成で共通の検証を使います。採点対象の選択は呼び出し側が行います。
-judge_gameとnext_teamはチーム一覧の共有スライスを受け取り、元のチームを変更しません。
-Skittle/Teamは単体の状態、ScoreBoardは得点履歴と補正を担当します。
+MolkkyにID重複・複数手番・複数勝者などの入力検証は置きません。入力側で一覧の整合性を確認する方針です。入力側の検証実装は未実装です。
 
-### Field生成・投てき・採点
+### モデルとテスト
 
-FieldとStickは、非公開のIdだけを持つ不変の型です。new()/default()は新しいUUIDを発行し、id()で取得できます。
-simulationのArrayFieldがFieldと個体一覧、RandomStickがStickと検証済み確率を合成します。
-Molkky::hit(&Stick, &[Skittle], JudgeStrategy<'_>)は判定関数を呼び、更新後の全個体をVec<Skittle>として返します。
-JudgeStrategy<'judge>は&'judge mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>の型別名です。'judgeは判定関数の借用期間だけを表し、返却値は入力や判定関数の借用期間に依存しません。
-判定関数は乱数源や物理世界を捕捉できます。coreは乱数・座標・描画に依存しません。
+TeamはId・Name・ScoreBoard・手番を保持します。同名でも別チームは別IDになり、cloneや得点・手番の更新では同じIDを保ちます。
+Name::new(&str)は文字列をそのまま保持するNameを返します。名前の検証・正規化は入力側の責務です。
+Skittleは番号・状態・ID、FieldとStickはIDを保持します。位置や表示座標は扱いません。
+得点表の計算はScoreBoardが担当し、Molkkyへ複製しません。
 
-```rust
-use rust_molkky::{Molkky, SimpleMolkky, SkittleState, Stick};
-use rust_molkky::simulation::{RandomStick, StandardFieldGenerator};
-let field = StandardFieldGenerator.generate();
-let stick = RandomStick::new(Stick::new(), 1.0);
-let mut rng = rand::rng();
-let updated = SimpleMolkky.hit(stick.stick(), field.skittles(), &mut |_, pins| stick.judge(pins, &mut rng));
-let fallen: Vec<_> = updated.into_iter().filter(|pin| pin.state() == SkittleState::Fall).collect();
-assert_eq!(SimpleMolkky.calc_score(&fallen).value(), 12);
-```
-
-StandardFieldGeneratorは1〜12を各1本生成し、ArrayField::new(field, skittles)は任意の個体集合を保持します。
-Field/FieldGeneratorのtraitは廃止しました。座標付きの独自表現はcoreのFieldと合成できます。
-SkittleはId・番号・状態（Stand/Fall）を持ち、同じ12番を2本置けます。newはStand、with_stateは同じIDの新しい値を返します。
-hitは入力と結果のID重複・個体集合の変更を拒否します。判定方法は状態だけを変更し、ID・番号を維持します。
-calc_scoreは渡された採点対象だけを扱います。全個体をそのまま採点せず、今回StandからFallへ変化した個体を呼び出し側で選びます。
-RandomStickの既定確率は0.25で、0〜1以外・NaN・無限大は拒否します。既にFallの個体は再抽選しません。
-この確率方式はゲーム用の簡略モデルです。物理エンジンや表示用の型引数は追加していません。
-
-0本なら0点、1本なら番号、複数本なら本数です。13本以上の変則構成も本数で採点します。
-ScoreBoard::new(history)は生成時に履歴を検証し、Calculated・Reset・Disqualified・Wonの状態を保持します。
-ScoreBoard::default()は空履歴・0点・Calculatedです。addは履歴を追加した新しい得点表を同じ生成経路で作ります。
-公開する問い合わせはhistory()（共有スライス）、total()（正規化済み履歴の合計）、state()（状態）です。
-50点超過で25点となりReset、50点ちょうどでWon、3回連続0点でDisqualifiedになります。
-超過時は履歴を[25]へ置き換え、その後の得点を追記します。25は補正後の基準値であり、1投の得点ではありません。
-history()は直近の補正以降の計算用履歴です。投数や全投てきの記録は呼び出し側で管理します。
-Resetは次の通常投てきでCalculatedへ戻ります。Won/Disqualifiedに達した後の追加履歴は生成・追加時に拒否します。
-履歴だけからnewで生成し直す場合、[25]だけでは直前の補正を復元できずCalculatedとなります。得点・連続0点・勝利/失格の判定は維持します。
-is_reset・apply_point・was_resetは削除しました。
-
-### 投てき判定とドメインモデル
-
-core/services/molkky.rsのMolkky traitへ個体検証・投てき判定・採点・勝者検索・手番更新を集約しています。
-SimpleMolkkyはその既定メソッドをそのまま使う、状態を持たない型です。
-得点履歴・合計・25点補正はScoreBoardが担当し、同じ処理をtraitへ複製していません。
-next_teamは次の手番を設定した新しいチーム一覧を返します。元の一覧は変更しません。
-TUIは投てき・採点・手番更新のためにSimpleMolkkyを保持し、表示用合成もSimpleMolkkyの勝者判定を使います。coreには端末入出力やゲームの操作ループを置きません。
-Field生成・描画はこのtraitには含めません。
-
-### チーム選択と使用側の進行
-
-Molkky::judge_game(&teams)はScoreState::Wonのチームを共有参照で返します。WonがなければNoneです。
-Molkky::next_team(&teams)は現在の手番の次から循環して失格者を飛ばし、新しいVec<Team>を返します。
-手番未設定なら最初の有効チームへ設定し、単独参加なら同じチームへ戻ります。
-空・全失格・50点勝利・複数参加の最後の生存者の勝利では全フラグを解除します。
-複数勝者・チームIDの重複・複数手番は拒否します。judge_gameは空の参加者も拒否します。
-現在の手番の参照はteams.iter().find(|team| team.turn())で取得できます。参照取得時にnext_teamは呼びません。
-
-利用側はScoreBoard::addで得点表を作り、Team::with_score_boardでチームを更新します。
-TUI側で終了後の投てきを停止し、初期化と投てき後にteams = rules.next_team(&teams)で手番を更新します。
-activeインデックスはControllerに重複保存しません。
-TUIの投数はチームごとに保持し、得点履歴が[25]へ圧縮されても投てき番号と投数表示を維持します。
-
-既存アプリの「複数参加から最後の生存者が勝つ」ルールはgame/progress.rsのwinning_teamで勝者を取得し、next_teamもこの条件で手番を解除します。
-coreのWon検索と組み合わせますが、得点0の生存者のScoreStateをWonへ書き換えません。
-単独参加・全失格・50点到達の振る舞いは維持します。
-
-### 表示とテスト
-
-初期表示は投てき側から1・2、3・10・4、5・11・12・6、7・9・8の4段です。座標の数値は描画用で、距離の単位ではありません。
-今回倒れたピンだけを表示上で隣接位置へ移し、その場所でStandへ戻します。Field・Stick・SkittleのIDは変えず、共通の表示を次のチームも使います。
-
-tests/core/models・tests/core/services・tests/game・tests/tui・tests/viewにテストを置き、対象ファイルと同じ名前にしています。
-API利用例と型による制約はtests/api.mdのドキュメントテストで確認します。
-レビュー・設計・Red/Green・検証結果は[rust_molkky/DEVELOPMENT.md](rust_molkky/DEVELOPMENT.md)に記録しています。
+テスト本体は対象ファイル名に対応する`tests/core/models/`と`tests/core/services/`へ置き、modで階層化します。
+`tests/core.rs`はサービスのテストを登録し、`tests/models.rs`はモデルの実ソースを組み込んで検証します。
+API例は`tests/api.md`にあります。この文書には削除済みの構成の例も含まれ、現在の自動テストには登録されていません。
 
 ## Java演習環境
 
