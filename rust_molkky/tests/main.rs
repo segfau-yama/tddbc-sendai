@@ -1,2 +1,2 @@
-#[path = "cui/main.rs"]
-mod cui_main;
+#[path = "cui/run.rs"]
+mod cui_run;

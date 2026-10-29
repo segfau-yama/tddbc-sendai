@@ -1,5 +1,5 @@
-use rust_molkky::cui::output;
-use rust_molkky::{Molkky, Name, ScoreBoard, SimpleMolkky, Skittle, Team};
+use rust_molkky::cui::{io::Output, services::CuiMolkky};
+use rust_molkky::{Molkky, Name, ScoreBoard, Skittle, Team};
 use std::io::{self, Write};
 
 fn team(name: &str, points: &[i32]) -> Team {
@@ -7,9 +7,9 @@ fn team(name: &str, points: &[i32]) -> Team {
         .iter()
         .map(|&number| {
             if number == 0 {
-                SimpleMolkky.calc_score(&[])
+                CuiMolkky::default().calc_score(&[])
             } else {
-                SimpleMolkky.calc_score(&[Skittle::new(number)])
+                CuiMolkky::default().calc_score(&[Skittle::new(number)])
             }
         })
         .collect();
@@ -23,7 +23,7 @@ mod scoreboard {
     fn 名前と得点と投数と手番を表示する() {
         let teams = [team("赤", &[5]).with_turn(true), team("青", &[])];
         let mut buffer = Vec::new();
-        output::scoreboard(&mut buffer, &teams).unwrap();
+        Output::new(&mut buffer).scoreboard(&teams).unwrap();
         let text = String::from_utf8(buffer).unwrap();
         assert!(text.contains("▶ 1. 赤: 5点 (1投)"));
         assert!(text.contains("2. 青: 0点 (0投)"));
@@ -37,7 +37,7 @@ mod scoreboard {
             team("緑", &[10; 5]),
         ];
         let mut buffer = Vec::new();
-        output::scoreboard(&mut buffer, &teams).unwrap();
+        Output::new(&mut buffer).scoreboard(&teams).unwrap();
         let text = String::from_utf8(buffer).unwrap();
         assert!(text.contains("赤: 25点 (5投) [25点に補正]"));
         assert!(text.contains("青: 0点 (4投) [失格]"));
@@ -52,7 +52,7 @@ mod messages {
     fn 勝者の名前と得点を表示する() {
         let winner = team("赤", &[10; 5]);
         let mut buffer = Vec::new();
-        output::finish(&mut buffer, Some(&winner)).unwrap();
+        Output::new(&mut buffer).finish(Some(&winner)).unwrap();
         assert!(
             String::from_utf8(buffer)
                 .unwrap()
@@ -63,7 +63,7 @@ mod messages {
     #[test]
     fn 全失格は勝者なしとして表示する() {
         let mut buffer = Vec::new();
-        output::finish(&mut buffer, None).unwrap();
+        Output::new(&mut buffer).finish(None).unwrap();
         assert!(
             String::from_utf8(buffer)
                 .unwrap()
@@ -94,7 +94,7 @@ mod io_contract {
     #[test]
     fn 入力待ちの前にプロンプトをflushする() {
         let mut writer = PromptWriter::default();
-        output::team_count_prompt(&mut writer).unwrap();
+        Output::new(&mut writer).team_count_prompt().unwrap();
         assert!(writer.flushed);
         assert!(
             String::from_utf8(writer.buffer)
@@ -116,7 +116,7 @@ mod io_contract {
     #[test]
     fn 描画のioエラーを呼び出し側へ返す() {
         assert_eq!(
-            output::quit(&mut FailedWriter).unwrap_err().kind(),
+            Output::new(&mut FailedWriter).quit().unwrap_err().kind(),
             io::ErrorKind::BrokenPipe
         );
     }

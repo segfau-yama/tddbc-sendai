@@ -1,4 +1,4 @@
-use rust_molkky::cui::main as game;
+use rust_molkky::cui::run as game;
 use std::io::{Cursor, Write};
 use std::process::{Command, Stdio};
 

@@ -1,13 +1,9 @@
 use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
 
-pub type JudgeStrategy<'judge> = &'judge mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>;
-
 pub trait Molkky {
     fn aim(&self, stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle>;
 
-    fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> Vec<Skittle> {
-        judge(stick, skittles)
-    }
+    fn hit(&self, stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle>;
 
     fn calc_score(&self, fallen_skittles: &[Skittle]) -> Point {
         Point::new(match fallen_skittles {
@@ -52,7 +48,3 @@ pub trait Molkky {
             .find(|team| team.score_board().state() != ScoreState::Disqualified)
     }
 }
-
-#[derive(Default)]
-pub struct SimpleMolkky;
-impl Molkky for SimpleMolkky {}

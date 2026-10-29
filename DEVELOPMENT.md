@@ -405,3 +405,33 @@ BONUS AとBは独立した任意課題とし、基本STEPの完了条件へ混�
 - [x] 実ソースのcoreモジュールを一時的なrustc入力から参照し、`&dyn Molkky`でaimの戻り値をhitへ渡す呼び出しも含めて型検査に成功した。
 - 変更前の全体確認：`cargo check --manifest-path rust_molkky/Cargo.toml --locked --lib`は既存CUIの`SimpleMolkky`未定義で失敗した。今回の対象外として処理を変更しない。
 - 変更後の検証：`cargo check --manifest-path rust_molkky/Cargo.toml --locked --lib`と`cargo test --manifest-path rust_molkky/Cargo.toml --locked`は既存のSimpleMolkky未定義により失敗。抽象宣言だけで実装の振る舞いを追加していないため、新規の実行テストとRed/Greenは対象外。選択処理とCUIへの接続は未実装。
+
+## CUIのmodels・services・io・runへの再構成（2026-10-29）
+
+- 対象：`rust_molkky/src/cui`、起動元、対応テストとREADME。編集中のcoreの処理を変更せず、現在のaim/hit抽象メソッドを実装する。
+- 設計：InputとOutputはDDDのプレゼンテーション層に当たり、`cui/io/`へ配置する。Inputは読み取り元、Outputは書き込み先を持つ。TeamsはVec<Team>、FieldはVec<Skittle>を持ち、Fieldは1〜12番を一度生成して保持する。CuiMolkkyは検証済みの番号を保持し、aimで既存個体を選び、hitで選んだ本を転倒結果として返す。入力・中断・ioエラーはioモジュール、ゲーム進行はrunが扱う。
+- このCUIは倒れた番号を記録する方式を維持する。入力された番号をaimで個体に対応付け、hitはその個体を倒れた本として返す。命中率や乱数による投てきは追加しない。
+- [x] Teams・Field・CuiMolkky・Input・Outputを指定の責務で配置し、runと起動元を接続する。
+- [x] aimからhitへ渡す選択結果・個体ID・入力順・空の選択・元のField不変を確認する。
+- [x] チーム数・名前・投てき番号の既存の入力検証を維持し、対応するファイルへテストを移す。
+- [x] q・EOF・ioエラー・プロンプトのflushを維持する。
+- [x] CUIと既存ゲームループのテスト、ビルド、差分を確認して結果を記録する。
+- 変更前の状態：既存CUIが削除済みSimpleMolkkyを参照してコンパイルできない。coreのScoreBoard・Molkky・services/mod.rsはユーザー編集中であり、採点と勝者・手番の判定処理自体は今回変更しない。
+
+### 実装・検証結果
+
+- Red：`cargo test --locked --test cui molkky::`で、選択せず全12本を返す最小実装に対して4件とも期待した理由で失敗した。選択・空の選択・個体ID保持・投てき間の独立性は同じaimの選択処理に依存するため、まとめて選択した。変更前のSimpleMolkky未定義によるコンパイル失敗はRed確認には含めない。
+- Green：入力番号に対応する既存個体を入力順に選ぶ実装にし、同じ4件が成功した。hitの結果だけにFallを設定し、Field全体は保持する。
+- Refactor：テスト本体も`tests/cui/models/`・`services/`・`io/`・`run.rs`へ移動した。旧TeamSetupの予定人数はInput内で管理し、旧ThrowInputの検証はInputへ移した。名前の入力規則はCUIモデルTeamsが保持する。旧main/input/output/modelモジュールの互換ラッパーは追加しない。
+- `cargo check --manifest-path rust_molkky/Cargo.toml --locked --lib --bins`成功。実バイナリの標準入力操作、名前の引数、設定途中EOFの既存テストも成功した。
+- `cargo test --manifest-path rust_molkky/Cargo.toml --locked --test cui`：29件成功・1件失敗。`--test main`：9件成功・4件失敗。失敗した期待値は削除・緩和していない。
+
+| 未解決の検証 | 入力・期待値と原因 | 優先度 |
+| --- | --- | --- |
+| 出力：補正後も5投を表示 | 12,12,12,12,3の履歴がScoreBoardで25点1件に置き換わるため、5投の表示にならない | 高・既存core |
+| run：単独参加の継続・連続ミス・超過後の継続（3件） | judge_gameが未失格の単独参加者も勝者として返すため、最初の投てきで終了する。ScoreBoardの累計ミス・履歴消失の問題も未解決 | 高・既存core |
+| run：最後の生存者に50点 | judge_gameは勝者を返すが、残ったチームへの50点付与は未実装 | 高・既存仕様差分 |
+
+- 全体の`cargo test --locked`は、旧SimpleMolkky・JudgeStrategy・空のMolkky実装・削除済みsimulation・rand::RngCore・win_by_defaultを参照する既存テストでコンパイル失敗した。今回のCUI再配置とは別の残課題として記録する。
+- ソース比較：作業開始時のスナップショットとcore以下の全Rustファイルが一致することを確認した。CuiMolkkyが依存する既存のaim/hit抽象化とservicesの公開API変更はコミットへ含め、別途編集中のScoreBoard変更は取り込まない。
+- 最終確認：`cargo build --manifest-path rust_molkky/Cargo.toml --locked`成功。対象ファイルのrustfmtチェックと`git diff --check`成功。コミットにはCuiMolkkyに必要なhit抽象化・旧Strategy/実装型の公開終了だけを含め、ユーザー編集中のjudge_gameとScoreBoardの変更は除外する。

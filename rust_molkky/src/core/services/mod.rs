@@ -1,3 +1,3 @@
 mod molkky;
 
-pub use molkky::{JudgeStrategy, Molkky, SimpleMolkky};
+pub use molkky::Molkky;
