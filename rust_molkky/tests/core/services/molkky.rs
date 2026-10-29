@@ -11,7 +11,7 @@ fn team(name: &str, points: &[i32]) -> Team {
             }
         })
         .collect();
-    Team::new(Name::new(name).unwrap()).with_score_board(ScoreBoard::new(history))
+    Team::new(Name::new(name)).with_score_board(ScoreBoard::new(history))
 }
 
 #[test]
@@ -261,7 +261,7 @@ mod team_selection {
                 }
             })
             .collect();
-        Team::new(Name::new(name).unwrap()).with_score_board(ScoreBoard::new(history))
+        Team::new(Name::new(name)).with_score_board(ScoreBoard::new(history))
     }
 
     #[test]

@@ -25,10 +25,10 @@ fn almost_disqualified() -> ScoreBoard {
 
 #[test]
 fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
-    let mut runtime = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
+    let mut runtime = Controller::new(vec![Name::new("赤"), Name::new("青")]);
     runtime.teams = vec![
-        Team::new(Name::new("赤").unwrap()).with_score_board(almost_disqualified()),
-        Team::new(Name::new("青").unwrap()),
+        Team::new(Name::new("赤")).with_score_board(almost_disqualified()),
+        Team::new(Name::new("青")),
     ];
     runtime.teams[0] = runtime.teams[0].with_turn(true);
     runtime.field = ArrayField::new(Field::new(), vec![]);
@@ -58,15 +58,11 @@ fn 残り一チームの勝利後は履歴と配置と棒を変えない() {
 
 #[test]
 fn 失格チームを飛ばして二チーム以上なら継続する() {
-    let mut runtime = Controller::new(vec![
-        Name::new("赤").unwrap(),
-        Name::new("青").unwrap(),
-        Name::new("緑").unwrap(),
-    ]);
+    let mut runtime = Controller::new(vec![Name::new("赤"), Name::new("青"), Name::new("緑")]);
     runtime.teams = vec![
-        Team::new(Name::new("赤").unwrap()).with_score_board(almost_disqualified()),
-        Team::new(Name::new("青").unwrap()),
-        Team::new(Name::new("緑").unwrap()),
+        Team::new(Name::new("赤")).with_score_board(almost_disqualified()),
+        Team::new(Name::new("青")),
+        Team::new(Name::new("緑")),
     ];
     runtime.teams[0] = runtime.teams[0].with_turn(true);
     runtime.field = ArrayField::new(Field::new(), vec![]);
@@ -94,7 +90,7 @@ fn 失格チームを飛ばして二チーム以上なら継続する() {
 
 #[test]
 fn 一チーム開始なら三回連続0点で勝者なし終了する() {
-    let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
+    let mut runtime = Controller::new(vec![Name::new("赤")]);
     runtime.teams[0] = runtime.teams[0].with_turn(true);
     runtime.field = ArrayField::new(Field::new(), vec![]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
@@ -112,7 +108,7 @@ fn 一チーム開始なら三回連続0点で勝者なし終了する() {
 
 #[test]
 fn 次のチームも共通のピン集合と棒と表示を使う() {
-    let mut controller = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
+    let mut controller = Controller::new(vec![Name::new("赤"), Name::new("青")]);
     controller.field = ArrayField::new(Field::new(), vec![Skittle::new(5)]);
     controller.layout = FieldLayout::new(controller.field.skittles());
     controller.stick = RandomStick::new(Stick::new(), 1.0);
@@ -163,8 +159,8 @@ fn 次のチームも共通のピン集合と棒と表示を使う() {
 #[test]
 fn 棒の表示をピンへ重ねても確率と投てき結果は変わらない() {
     use rand::{SeedableRng, rngs::StdRng};
-    let mut a = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
-    let mut b = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
+    let mut a = Controller::new(vec![Name::new("赤"), Name::new("青")]);
+    let mut b = Controller::new(vec![Name::new("赤"), Name::new("青")]);
     a.layout.stick = a.layout.positions[&a.field.skittles()[4].id()];
     b.move_from(100, -100);
     a.throw_with_rng(&mut crate::test_support::ConstantRng(u64::MAX));
@@ -197,7 +193,7 @@ fn 棒の表示をピンへ重ねても確率と投てき結果は変わらな�
 
 #[test]
 fn 五十点勝利後は手番を外し使用側で追加投てきを停止する() {
-    let mut runtime = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
+    let mut runtime = Controller::new(vec![Name::new("赤"), Name::new("青")]);
     let history = [12, 12, 12, 12, 1]
         .map(|n| SimpleMolkky.calc_score(&[Skittle::new(n)]))
         .to_vec();
@@ -223,7 +219,7 @@ fn 五十点勝利後は手番を外し使用側で追加投てきを停止す�
 
 #[test]
 fn 使用側で超過補正を表示し次の手番を設定する() {
-    let mut runtime = Controller::new(vec![Name::new("赤").unwrap(), Name::new("青").unwrap()]);
+    let mut runtime = Controller::new(vec![Name::new("赤"), Name::new("青")]);
     let history = [12, 12, 12, 12, 1]
         .map(|n| SimpleMolkky.calc_score(&[Skittle::new(n)]))
         .to_vec();
@@ -244,7 +240,7 @@ fn 使用側で超過補正を表示し次の手番を設定する() {
 
 #[test]
 fn 履歴を圧縮しても投てき番号とチームの投数は巻き戻らない() {
-    let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
+    let mut runtime = Controller::new(vec![Name::new("赤")]);
     runtime.field = ArrayField::new(Field::new(), vec![Skittle::new(12)]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());
     runtime.stick = RandomStick::new(Stick::new(), 1.0);
@@ -266,7 +262,7 @@ fn 履歴を圧縮しても投てき番号とチームの投数は巻き戻ら�
 
 #[test]
 fn 既に倒れた個体を加点せず移動せず次の投てき前に立て直す() {
-    let mut runtime = Controller::new(vec![Name::new("赤").unwrap()]);
+    let mut runtime = Controller::new(vec![Name::new("赤")]);
     let fallen = Skittle::new(12).with_state(SkittleState::Fall);
     runtime.field = ArrayField::new(Field::new(), vec![fallen, Skittle::new(5)]);
     runtime.layout = FieldLayout::new(runtime.field.skittles());

@@ -36,7 +36,7 @@ viewはcoreを参照せず、gameが渡す番号・得点・確率等の表示�
 ```rust
 use rust_molkky::{Molkky, SimpleMolkky};
 use rust_molkky::core::models::{Name, Skittle, Team};
-let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
+let original = vec![Team::new(Name::new("赤")), Team::new(Name::new("青"))];
 let board = original[0].score_board().add(SimpleMolkky.calc_score(&[Skittle::new(11)]));
 let updated = original[0].with_score_board(board);
 assert_eq!(original[0].score_board().total(), 0);
@@ -53,11 +53,11 @@ TUIのControllerはチーム一覧と配列Field・確率設定Stickを個別に
 
 ### チームの識別子と名前
 
-Team::new(Name::new("赤").unwrap())で検証済みの名前からチームを作成します。
+Team::new(Name::new("赤"))で名前からチームを作成します。
 IdはUUID v4で生成し、同名でも別チームは別IDです。cloneや得点更新では同じIDを保持します。
-名前は前後の空白を除去した後に1〜30文字とし、入力に制御文字が含まれる場合は拒否します。
-文字数はRustのcharsによるUnicodeスカラー値の数です（表示幅や書記素クラスタの数ではありません）。
-Name::newはNameErrorを返し、TUIでは不正な名前を端末初期化前に入力エラーとして報告します。
+Name::new(&str)はNameを直接返し、受け取った文字列をそのまま保持します。
+前後の空白、空文字、文字数、制御文字をモデルでは加工・検証しません。
+入力の検証・正規化はインフラ層の責務とします。現在の作業ツリーではCLI・TUIが削除中で、入力側の検証は未実装です。
 team.id()で一覧内の順番や名前に依存せず検索できます。同じIDの二重登録はMolkkyのjudge_game・next_teamが拒否します。
 Teamはturn: boolを保持し、turn()/with_turn(bool)で参照・不変更新します。初期値はfalseです。
 手番の初期設定・循環・失格者のスキップ・終了時の解除はMolkky::next_teamが行います。

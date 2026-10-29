@@ -70,7 +70,7 @@ assert_eq!(board.history().iter().map(|point| point.value()).collect::<Vec<_>>()
 
 ```rust
 use rust_molkky::{Molkky, Name, SimpleMolkky, Skittle, Team};
-let mut teams = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
+let mut teams = vec![Team::new(Name::new("赤")), Team::new(Name::new("青"))];
 let ten = SimpleMolkky.calc_score(&[Skittle::new(10)]);
 for _ in 0..5 {
     let board = teams[1].score_board().add(ten);
@@ -93,7 +93,7 @@ board.history()[0] = SimpleMolkky.calc_score(&[Skittle::new(12)]);
 
 ```compile_fail
 use rust_molkky::{Molkky, Name, SimpleMolkky, Team};
-let teams = vec![Team::new(Name::new("赤").unwrap())];
+let teams = vec![Team::new(Name::new("赤"))];
 let borrowed: &[Team] = &teams;
 borrowed[0] = borrowed[0].with_score_board(borrowed[0].score_board().add(SimpleMolkky.calc_score(&[])));
 ```
@@ -126,7 +126,7 @@ SimpleMolkky.hit(&Stick::default(), None, &mut |_, pins| pins.to_vec());
 
 ```rust
 use rust_molkky::{Molkky, Name, SimpleMolkky, Skittle, SkittleState, Stick, Team};
-let original = vec![Team::new(Name::new("赤").unwrap()), Team::new(Name::new("青").unwrap())];
+let original = vec![Team::new(Name::new("赤")), Team::new(Name::new("青"))];
 let pins = [Skittle::new(5), Skittle::new(12)];
 let updated_pins = SimpleMolkky.hit(&Stick::new(), &pins, &mut |_, pins| {
         vec![pins[0].with_state(SkittleState::Fall), pins[1]]
@@ -178,7 +178,7 @@ assert_eq!(updated.history(), &[five, eleven]);
 
 ```rust
 use rust_molkky::{Molkky, Name, ScoreBoard, SimpleMolkky, Skittle, Team};
-let original = Team::new(Name::new("赤").unwrap());
+let original = Team::new(Name::new("赤"));
 let point = SimpleMolkky.calc_score(&[Skittle::new(5)]);
 let updated = original.with_score_board(ScoreBoard::default().add(point));
 assert_eq!(original.score_board().total(), 0);
@@ -191,9 +191,9 @@ assert_eq!(original.name(), updated.name());
 ```rust
 use rust_molkky::{Molkky, Name, ScoreBoard, SimpleMolkky, Team};
 let missed = SimpleMolkky.calc_score(&[]);
-let red = Team::new(Name::new("赤").unwrap()).with_turn(true);
+let red = Team::new(Name::new("赤")).with_turn(true);
 let red = red.with_score_board(ScoreBoard::new(vec![missed; 3]));
-let teams = [red, Team::new(Name::new("青").unwrap()), Team::new(Name::new("緑").unwrap())];
+let teams = [red, Team::new(Name::new("青")), Team::new(Name::new("緑"))];
 let next = SimpleMolkky.next_team(&teams);
 assert!(!next[0].turn());
 assert!(next[1].turn());
@@ -219,7 +219,7 @@ assert_eq!(SimpleMolkky.calc_score(&[first]).value(), 12);
 
 ```compile_fail
 use rust_molkky::{Name, ScoreBoard, Team};
-let team = Team::new(Name::new("赤").unwrap());
+let team = Team::new(Name::new("赤"));
 *team.score_board() = ScoreBoard::default();
 ```
 
@@ -240,8 +240,8 @@ assert_eq!(board.total(), 5);
 use rust_molkky::{Molkky, Name, ScoreBoard, SimpleMolkky, Skittle, Team};
 let won = ScoreBoard::new(vec![SimpleMolkky.calc_score(&[Skittle::new(10)]); 5]);
 let teams = [
-    Team::new(Name::new("赤").unwrap()).with_turn(true),
-    Team::new(Name::new("青").unwrap()).with_score_board(won),
+    Team::new(Name::new("赤")).with_turn(true),
+    Team::new(Name::new("青")).with_score_board(won),
 ];
 assert_eq!(teams.iter().find(|team| team.turn()).unwrap().id(), teams[0].id());
 assert!(SimpleMolkky.next_team(&teams).iter().all(|team| !team.turn()));
@@ -263,8 +263,8 @@ Skittle::new(5).position();
 
 ```rust
 use rust_molkky::{Molkky, Name, SimpleMolkky, Team};
-let first = Team::new(Name::new("赤").unwrap());
-let second = Team::new(Name::new("赤").unwrap());
+let first = Team::new(Name::new("赤"));
+let second = Team::new(Name::new("赤"));
 assert_ne!(first.id(), second.id());
 let id = first.id();
 let original = vec![first, second];
@@ -273,17 +273,20 @@ assert_eq!(updated.id(), id);
 assert_eq!(updated.name().as_str(), "赤");
 ```
 
-## 不正な名前はチームを生成する前に拒否する
+## 名前は入力側から渡された文字列をそのまま保持する
 
 ```rust
-use rust_molkky::{Name, NameError};
-assert_eq!(Name::new("　"), Err(NameError::Empty));
-assert_eq!(Name::new("赤\n青"), Err(NameError::ControlCharacter));
-assert_eq!(Name::new(&"赤".repeat(31)), Err(NameError::TooLong));
-assert_eq!(Name::new(" 赤 ").unwrap().as_str(), "赤");
+use rust_molkky::Name;
+assert_eq!(Name::new(" 赤 ").as_str(), " 赤 ");
+assert_eq!(Name::new("").as_str(), "");
+assert_eq!(Name::new("赤\n青").as_str(), "赤\n青");
+let long_name = "赤".repeat(31);
+assert_eq!(Name::new(&long_name).as_str(), long_name);
 ```
 
-## 未検証の文字列やUUIDを直接フィールドへ入れられない
+検証・正規化は入力側の責務です。入力側の検証実装は今回追加していません。
+
+## チーム名にはNameを渡し各型の内部フィールドは直接構築できない
 
 ```compile_fail
 use rust_molkky::{Team};
@@ -322,7 +325,7 @@ use rust_molkky::{Molkky, Name, SimpleMolkky, Skittle, Team};
 struct MyMolkky;
 impl Molkky for MyMolkky {}
 let rules: &dyn Molkky = &MyMolkky;
-let original = vec![Team::new(Name::new("赤").unwrap())];
+let original = vec![Team::new(Name::new("赤"))];
 let pins = rules.hit(&rust_molkky::Stick::new(), &[Skittle::new(12)], &mut |_, pins| pins.to_vec());
 let board = original[0].score_board().add(SimpleMolkky.calc_score(&pins));
 let updated = original[0].with_score_board(board);
@@ -359,7 +362,7 @@ board.state = ScoreState::Won;
 
 ```rust
 use rust_molkky::{Molkky, Name, SimpleMolkky, Team};
-let original = Team::new(Name::new("赤").unwrap());
+let original = Team::new(Name::new("赤"));
 let active = original.with_turn(true);
 assert!(!original.turn());
 assert!(active.turn());

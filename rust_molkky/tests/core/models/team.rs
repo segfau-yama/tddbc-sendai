@@ -5,7 +5,7 @@ mod creation {
 
     #[test]
     fn 名前を保持し得点表は零点から始まる() {
-        let team = Team::new(Name::new("赤チーム").unwrap());
+        let team = Team::new(Name::new("赤チーム"));
         assert_eq!(team.name().as_str(), "赤チーム");
         assert_eq!(team.score_board().total(), 0);
         assert!(team.score_board().history().is_empty());
@@ -17,7 +17,7 @@ mod independent_scores {
 
     #[test]
     fn 得点表を差し替えても元のチームは変わらない() {
-        let original = Team::new(Name::new("赤").unwrap());
+        let original = Team::new(Name::new("赤"));
         let updated = original.with_score_board(ScoreBoard::new(vec![Point::new(11)]));
         assert_eq!(original.score_board().total(), 0);
         assert!(original.score_board().history().is_empty());
@@ -28,9 +28,8 @@ mod independent_scores {
 
     #[test]
     fn チームごとに得点表を独立して保持する() {
-        let red = Team::new(Name::new("赤").unwrap())
-            .with_score_board(ScoreBoard::new(vec![Point::new(5)]));
-        let blue = Team::new(Name::new("青").unwrap());
+        let red = Team::new(Name::new("赤")).with_score_board(ScoreBoard::new(vec![Point::new(5)]));
+        let blue = Team::new(Name::new("青"));
         let updated = red.with_score_board(red.score_board().add(Point::new(11)));
         assert_eq!(red.score_board().total(), 5);
         assert_eq!(updated.score_board().total(), 16);
@@ -43,8 +42,8 @@ mod identity {
 
     #[test]
     fn 同じ名前でも別のチームとして識別できる() {
-        let first = Team::new(Name::new("同じ名前").unwrap());
-        let second = Team::new(Name::new("同じ名前").unwrap());
+        let first = Team::new(Name::new("同じ名前"));
+        let second = Team::new(Name::new("同じ名前"));
         assert_eq!(first.name(), second.name());
         assert_ne!(first.id(), second.id());
         assert_eq!(first.clone().id(), first.id());
@@ -52,9 +51,9 @@ mod identity {
 
     #[test]
     fn 一覧の順番を変えても識別子で元のチームを参照できる() {
-        let red = Team::new(Name::new("赤").unwrap());
+        let red = Team::new(Name::new("赤"));
         let id = red.id();
-        let mut teams = [red, Team::new(Name::new("青").unwrap())];
+        let mut teams = [red, Team::new(Name::new("青"))];
         teams.swap(0, 1);
         assert_eq!(
             teams
@@ -73,7 +72,7 @@ mod turn {
 
     #[test]
     fn 手番だけを更新し元の値と得点を保持する() {
-        let original = Team::new(Name::new("赤").unwrap());
+        let original = Team::new(Name::new("赤"));
         let active = original.with_turn(true);
         assert!(!original.turn());
         assert!(active.turn());

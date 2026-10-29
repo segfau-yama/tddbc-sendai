@@ -8,8 +8,8 @@ use rust_molkky::{Molkky, Name, SimpleMolkky};
 #[test]
 fn 複数モデルから表示を組み立てても得点や配置は変わらない() {
     let model = vec![
-        Team::new(Name::new("赤").unwrap()),
-        Team::new(Name::new("青").unwrap()).with_turn(true),
+        Team::new(Name::new("赤")),
+        Team::new(Name::new("青")).with_turn(true),
     ];
     let field = ArrayField::new(
         Field::new(),
@@ -76,7 +76,7 @@ fn 補正と失格の説明はドメインの判定結果から作る() {
             .notice
             .contains("3回連続0点のため失格")
     );
-    let team = Team::new(Name::new("赤").unwrap()).with_score_board(reset);
+    let team = Team::new(Name::new("赤")).with_score_board(reset);
     assert!(throw_message(&team, 6, 49, point(2)).contains("49 → 25"));
 }
 #[test]
@@ -84,9 +84,9 @@ fn 三チームでも勝者の得点行が見える() {
     let miss = SimpleMolkky.calc_score(&[]);
     let disqualified = ScoreBoard::default().add(miss).add(miss).add(miss);
     let game = vec![
-        Team::new(Name::new("WINNER").unwrap()),
-        Team::new(Name::new("OUT_A").unwrap()).with_score_board(disqualified.clone()),
-        Team::new(Name::new("OUT_B").unwrap()).with_score_board(disqualified),
+        Team::new(Name::new("WINNER")),
+        Team::new(Name::new("OUT_A")).with_score_board(disqualified.clone()),
+        Team::new(Name::new("OUT_B")).with_score_board(disqualified),
     ];
     let field = StandardFieldGenerator.generate();
     let layout = FieldLayout::new(field.skittles());
@@ -124,8 +124,8 @@ fn 表示合成でもドメインサービスの勝利判定を利用する() {
     let ten = SimpleMolkky.calc_score(&[Skittle::new(10)]);
     let won = ScoreBoard::new(vec![ten; 5]);
     let teams = [
-        Team::new(Name::new("赤").unwrap()),
-        Team::new(Name::new("青").unwrap()).with_score_board(won),
+        Team::new(Name::new("赤")),
+        Team::new(Name::new("青")).with_score_board(won),
     ];
     let field = StandardFieldGenerator.generate();
     let layout = FieldLayout::new(field.skittles());
