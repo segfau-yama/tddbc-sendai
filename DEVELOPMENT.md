@@ -353,3 +353,11 @@ BONUS AとBは独立した任意課題とし、基本STEPの完了条件へ混�
 - Red/Green：構文・型エラーの解消を確認した。コンパイルエラーを振る舞いのRed確認としては扱わない。生存者判定の追加テストは成功を確認した。
 - 全体検証：`cargo test --locked`は既存のsimulationテストのimport不整合と、modelsテストが呼ぶ`win_by_default`の欠落によりコンパイル失敗。別途編集中のScoreBoardとviewテスト配置は変更しない。
 - 制限：不戦勝時の50点付与は今回の修正に含めない。
+
+## coreのコメント削除（2026-10-29）
+
+- 対象：`rust_molkky/src/core`以下の通常コメント・ドキュメントコメント。ユーザー編集中の処理とテストは変更しない。
+- [x] コメントを全て削除し、コメントを除く各行が変更前と一致することを確認した。
+- [x] 変更前後の既存テスト結果を比較し、同じ22件成功・9件失敗であることを確認した。
+- 変更前：`cargo test --manifest-path rust_molkky/Cargo.toml --locked --test core`は22件成功・9件失敗。既存の失敗として記録する。
+- 検証：`cargo check --manifest-path rust_molkky/Cargo.toml --locked --lib --bins`成功。コメント検索は該当なし。処理変更のないリファクタリングのためRed/Greenは対象外。既存の9件の失敗は未修正。

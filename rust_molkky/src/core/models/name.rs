@@ -1,6 +1,5 @@
 use std::fmt;
 
-/// 入力側で整えた名前を、そのまま保持する。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Name(String);
 
