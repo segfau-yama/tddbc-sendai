@@ -16,9 +16,12 @@ fn team(name: &str, points: &[i32]) -> Team {
 }
 
 #[test]
-fn 最後の生存者の勝利は呼び出し側で判定し得点状態は変えない() {
+fn 最後の生存者を勝者として返し得点状態は変えない() {
     let teams = [team("赤", &[0; 3]), team("青", &[]), team("緑", &[0; 3])];
-    assert!(SimpleMolkky.judge_game(&teams).is_none());
+    assert!(std::ptr::eq(
+        SimpleMolkky.judge_game(&teams).unwrap(),
+        &teams[1]
+    ));
     let winner = winning_team(&teams).unwrap();
     assert!(std::ptr::eq(winner, &teams[1]));
     assert_eq!(winner.score_board().total(), 0);

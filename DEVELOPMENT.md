@@ -340,3 +340,16 @@ BONUS AとBは独立した任意課題とし、基本STEPの完了条件へ混�
 - 検証：文書のみの変更のためRustテストとRed/Green/Refactorの実行は対象外。別途編集中のSTEP.md、rust_molkky/DEVELOPMENT.mdとソースの変更・削除は取り込まない。
 
 - 確認結果：git diff --check成功。STUDY_AI.mdはHEADとバイト単位で一致し、変更していないことを確認した。
+
+## judge_gameのコンパイルエラー修正（2026-10-29）
+
+- 対象：`rust_molkky/src/core/services/molkky.rs`と呼び出し側。戻り値は`Option<&Team>`を維持する。
+- 指摘・高：未定義の`team`の参照、対応しない閉じ括弧、勝者なしの場合の戻り値不足でコンパイルできなかった。
+- 判断：50点到達を優先し、2チーム以上の参加者のうち生存者が1チームだけならその参照を返す。得点の更新や新しい結果型は追加しない。CUI側の重複した生存者判定を除去する。
+- [x] 50点到達済みのチームを返す。
+- [x] 2チーム・3チームで最後の生存者を返す。
+- [x] 空・単独参加・全失格・生存者が複数の場合は勝者なしになる。
+- 検証：`cd rust_molkky && cargo check --locked --lib --bins`成功。`cargo test --locked --test core`は31件成功。
+- Red/Green：構文・型エラーの解消を確認した。コンパイルエラーを振る舞いのRed確認としては扱わない。生存者判定の追加テストは成功を確認した。
+- 全体検証：`cargo test --locked`は既存のsimulationテストのimport不整合と、modelsテストが呼ぶ`win_by_default`の欠落によりコンパイル失敗。別途編集中のScoreBoardとviewテスト配置は変更しない。
+- 制限：不戦勝時の50点付与は今回の修正に含めない。

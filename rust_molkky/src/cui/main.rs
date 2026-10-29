@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, Write};
 
 use super::{input, output};
-use crate::{Molkky, ScoreState, SimpleMolkky, Team};
+use crate::{Molkky, SimpleMolkky, Team};
 
 pub fn run(reader: &mut impl BufRead, writer: &mut impl Write, names: &[String]) -> io::Result<()> {
     let Some(mut teams) = input::teams(reader, writer, names)? else {
@@ -22,24 +22,6 @@ pub fn run(reader: &mut impl BufRead, writer: &mut impl Write, names: &[String])
         let board = teams[current].score_board().add(point);
         teams[current] = teams[current].with_score_board(board);
         output::throw_result(writer, &teams[current], point)?;
-
-        if rules.judge_game(&teams).is_none() && teams.len() > 1 {
-            let survivor = {
-                let mut remaining = teams
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, team)| team.score_board().state() != ScoreState::Disqualified);
-                match (remaining.next(), remaining.next()) {
-                    (Some((index, _)), None) => Some(index),
-                    _ => None,
-                }
-            };
-            // 最後の生存者には投てきを記録せず、得点だけ50点を付与する。
-            if let Some(index) = survivor {
-                let board = teams[index].score_board().win_by_default();
-                teams[index] = teams[index].with_score_board(board);
-            }
-        }
 
         let next = rules.next_team(&teams).map(Team::id);
         for team in &mut teams {

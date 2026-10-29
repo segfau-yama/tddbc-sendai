@@ -153,6 +153,35 @@ mod hit {
 mod winner_selection {
     use super::*;
 
+    mod last_survivor {
+        use super::*;
+
+        #[test]
+        fn 二チームで相手が失格したら生存者を返す() {
+            let teams = [team("赤", &[0; 3]), team("青", &[5])];
+            let winner = SimpleMolkky.judge_game(&teams).unwrap();
+            assert!(std::ptr::eq(winner, &teams[1]));
+        }
+
+        #[test]
+        fn 三チームで他が全て失格したら生存者を返す() {
+            let teams = [team("赤", &[0; 3]), team("青", &[5]), team("緑", &[0; 3])];
+            let winner = SimpleMolkky.judge_game(&teams).unwrap();
+            assert!(std::ptr::eq(winner, &teams[1]));
+        }
+
+        #[test]
+        fn 単独参加と全失格と生存者が複数の場合は勝者を返さない() {
+            for teams in [
+                vec![team("赤", &[])],
+                vec![team("赤", &[0; 3]), team("青", &[0; 3])],
+                vec![team("赤", &[0; 3]), team("青", &[]), team("緑", &[])],
+            ] {
+                assert!(SimpleMolkky.judge_game(&teams).is_none());
+            }
+        }
+    }
+
     mod no_winner {
         use super::*;
 
