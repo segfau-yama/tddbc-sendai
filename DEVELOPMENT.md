@@ -396,3 +396,12 @@ BONUS AとBは独立した任意課題とし、基本STEPの完了条件へ混�
 - 入力やエラー処理をCuiMolkkyのhit実装内で完結させてもよい。Inputが形式検証と再入力、Outputが案内を担い、それらをhitから利用できる。入力を必ずrunで先に済ませる必要があるという前回の制限を訂正する。
 - `Vec<Skittle>`で十分なのは、実装側で処理を完結し、正常な投てき結果だけを返す場合。q・EOFでrunへ終了を通知する要件まで含める場合は、その通知方法を決める必要がある。空Vecは0本の投てきとして使うため、終了の代用にしない。新しい戻り値型は今回決めず、ソースも変更しない。
 - 検証：ソース参照による確認のみ。テスト未実施。
+
+## Molkkyへのaim抽象メソッド追加（2026-10-29）
+
+- 対象：`src/core/services/molkky.rs`。最新のユーザー指定に従い、デフォルト実装を持たない必須メソッドを追加する。
+- 公開API：`aim(&self, stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle>`。戻り値は狙う個体の一覧とし、`hit(stick, &targets)`へ渡す。選択方法・入力・検証は実装側が担当する。
+- [x] aimの抽象宣言だけを追加し、編集中の既存処理を維持した。
+- [x] 実ソースのcoreモジュールを一時的なrustc入力から参照し、`&dyn Molkky`でaimの戻り値をhitへ渡す呼び出しも含めて型検査に成功した。
+- 変更前の全体確認：`cargo check --manifest-path rust_molkky/Cargo.toml --locked --lib`は既存CUIの`SimpleMolkky`未定義で失敗した。今回の対象外として処理を変更しない。
+- 変更後の検証：`cargo check --manifest-path rust_molkky/Cargo.toml --locked --lib`と`cargo test --manifest-path rust_molkky/Cargo.toml --locked`は既存のSimpleMolkky未定義により失敗。抽象宣言だけで実装の振る舞いを追加していないため、新規の実行テストとRed/Greenは対象外。選択処理とCUIへの接続は未実装。

@@ -3,6 +3,8 @@ use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
 pub type JudgeStrategy<'judge> = &'judge mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>;
 
 pub trait Molkky {
+    fn aim(&self, stick: &Stick, skittles: &[Skittle]) -> Vec<Skittle>;
+
     fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> Vec<Skittle> {
         judge(stick, skittles)
     }
