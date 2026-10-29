@@ -69,6 +69,74 @@
 - 最初から成功したテストや環境エラーを、Red確認済みとして記録しない。
 - 既存の記録を更新し、未実装事項と実装済みの内容を区別する。
 
+## 製造
+- ゴールとしてソースコードが動くことよりもソースコードの可読性と保守性が高いことを重視してください。
+- ドメイン層では検証や変換を行わず、インフラ層で検証や変換を済ませてください。例えば標準入力を受け取ってチームを設定する構造体があるとして、ドメインモデルにあった形に検証して変換するのが適切です。
+- 煩雑になりそうな箇所は擬似コードとして実装してもいいです。
+- 悪い例、良い例に関して以下に提示します。
+### 悪い例
+エラーハンドリングや速くプログラム作成することを重視しすぎてコードが肥大化している。
+```rust
+fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> Vec<Skittle> {
+    self.validate_skittles(skittles);
+    let before: HashSet<_> = skittles
+        .iter()
+        .map(|pin| (pin.id(), pin.number()))
+        .collect();
+    let updated_skittles = judge(stick, skittles);
+    self.validate_skittles(&updated_skittles);
+    let after: HashSet<_> = updated_skittles
+        .iter()
+        .map(|pin| (pin.id(), pin.number()))
+        .collect();
+    assert_eq!(before, after, "判定後のスキットル集合が変わっています");
+    updated_skittles
+}
+
+fn next_team(&self, teams: &[Team]) -> Vec<Team> {
+    let mut turns = teams.iter().enumerate().filter(|(_, team)| team.turn());
+    let current = turns.next().map(|(index, _)| index);
+    assert!(turns.next().is_none(), "手番のチームが複数います");
+    let remaining = teams
+        .iter()
+        .filter(|team| team.score_board().state() != ScoreState::Disqualified)
+        .count();
+    let next = if teams.is_empty()
+        || self.judge_game(teams).is_some()
+        || (teams.len() >= 2 && remaining == 1)
+    {
+        None
+    } else {
+        let start = current.map_or(0, |index| (index + 1) % teams.len());
+        (0..teams.len())
+            .map(|offset| (start + offset) % teams.len())
+            .find(|&index| teams[index].score_board().state() != ScoreState::Disqualified)
+    };
+    teams
+        .iter()
+        .enumerate()
+        .map(|(index, team)| team.with_turn(next == Some(index)))
+        .collect()
+}
+```
+### 良い例
+最小限のプログラムを作成して、動くことより、可読性と保守性が高いことを目指している。
+```rust
+fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> Vec<Skittle> {
+    let updated_skittles = judge(stick, skittles);
+    if updated_skittles.iter().counts().any(|(k, v)| v > 1) {
+        return updated_skittles;
+    }
+    return updated_skittles;
+}
+
+fn next_team(&self, teams: &[Team]) -> Option<&Team> {
+    let turns = teams.iter().filter(|team| team.turn());
+    let current = turns.next();
+    current
+}
+```
+
 ## 検証コマンド
 
 - Rust：`cd rust_molkky && cargo test`

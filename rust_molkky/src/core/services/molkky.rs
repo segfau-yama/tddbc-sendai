@@ -1,5 +1,4 @@
 use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
-use std::collections::HashSet;
 use itertools::Itertools;
 
 /// クロージャで乱数源や物理世界を捕捉できる、判定関数の可変借用。
@@ -10,25 +9,19 @@ pub type JudgeStrategy<'judge> = &'judge mut dyn FnMut(&Stick, &[Skittle]) -> Ve
 pub trait Molkky {
     fn hit(&self, stick: &Stick, skittles: &[Skittle], judge: JudgeStrategy<'_>) -> Vec<Skittle> {
         let updated_skittles = judge(stick, skittles);
-        if updated_skittles.iter().counts().any(|(k, v)| v > 1) {
-            return updated_skittles;
-        }
         return updated_skittles;
     }
 
     /// この一覧を採点する。今回倒れた個体の選別は呼び出し側で行う。
-    fn calc_score(&self, fallen_skittles: &[Skittle]) -> Option<Point> {
-        if fallen_skittles.iter().counts().any(|(k, v)| v > 1) {
-            return Some(Point::new(match fallen_skittles {
-                [skittle] => skittle.number(),
-                skittles => skittles.len() as i32,
-            }));
-        }
-        return None;
+    fn calc_score(&self, fallen_skittles: &[Skittle]) -> Point {
+        return Some(Point::new(match fallen_skittles {
+            [skittle] => skittle.number(),
+            skittles => skittles.len() as i32,
+        }));
     }
 
     /// Wonのチームを返す。最後の生存者による勝利はここでは判定しない。
-    fn judge_game(&self, teams: &[Team]) -> Option<&Team> {
+    fn judge_game(&self, teams: &[Team]) -> &Team {
         let mut winners = teams
             .iter()
             .filter(|team| team.score_board().state() == ScoreState::Won);
@@ -37,7 +30,7 @@ pub trait Molkky {
     }
 
     /// 次の有効チームへ手番を進めた新しい一覧を返す。終了時は全手番を解除する。
-    fn next_team(&self, teams: &[Team]) -> Option<&Team> {
+    fn next_team(&self, teams: &[Team]) -> &Team {
         let turns = teams.iter().filter(|team| team.turn());
         let current = turns.next();
         current
