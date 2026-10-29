@@ -3,24 +3,41 @@ TDDBC仙台の備忘録用リポジトリ
 
 ## Rust演習環境
 
-rust_molkkyは、モルックのドメインモデルとMolkkyサービスを公開するライブラリです。
-`src/lib.rs`はcoreだけを公開します。CLI・TUI・描画・シミュレーションの実装は削除済みです。
+rust_molkkyは、標準入出力でチームの得点を記録するCUIと、ドメインモデルのライブラリです。
+`src/lib.rs`はcoreとcuiを公開し、バイナリのmainはcui/main.rsへ標準入出力を渡します。
 
 ```sh
 cd rust_molkky
-cargo check --locked --lib
-cargo test --locked --test core
-cargo test --locked --test models
+cargo run --locked
+# 名前を引数で指定する場合
+cargo run --locked -- 赤チーム 青チーム
+# 関連テスト
+cargo test --locked --test core --test models --test cui --test main
 ```
 
-サービステストは28件成功しています。モデルのテストには得点履歴・失格・終了後の記録に関する既存13件の失敗があります。
-全体の`cargo test --locked`は、削除済みのCLI・simulationを参照するテストなどでコンパイルに失敗します。
+関連テスト120件が成功しています。得点履歴・失格・終了後の記録の既存13件の不具合も修正しました。
+全体の`cargo test --locked`には、削除済みsimulationと旧rand::RngCoreを参照するテストのコンパイルエラーが残っています。
 今回の実行結果と残課題は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
 
 | 場所 | 責務 |
 | --- | --- |
 | src/core/models/ | Skittle・Point・ScoreBoard・Team・Id・Nameなどのモデル |
 | src/core/services/ | 投てき判定の呼び出し、採点、50点到達済みチームと次のチームの検索 |
+| src/cui/input.rs | 標準入力、行末・q・EOFの扱い、入力エラー時の再入力 |
+| src/cui/model.rs | チーム数・名前・投てき番号の検証とTeam/Skittleの生成 |
+| src/cui/main.rs | 採点とチーム更新、交代・終了のゲームループ |
+| src/cui/output.rs | プロンプト、得点表、投てき結果、終了の表示 |
+
+### CUIの操作
+
+引数なしでは、チーム数（1以上）と各チーム名を入力します。名前は前後の空白を除いて1〜30文字、制御文字は使用できません。同名でも別のチームとして扱います。最初に入力したチームから順番に投げます。
+
+- 倒れた番号を空白区切りで入力します。`5`は5点、`5 8`は2点です。番号は1〜12、同じ番号は1回だけ入力できます。
+- `0`はミスです。3回連続でミスすると失格・0点になります。
+- `q`またはEOFで終了します。不正な入力は投数と手番を進めず再入力します。
+- 50点ちょうどで勝利し、超過すると25点へ戻ります。他の全チームが失格した場合は、残ったチームが50点の勝者になります。
+
+画面は行単位で出力し、対話型端末以外でも操作できます。フォルト、記録訂正、各チーム12投制限、乱数による投てきは今回含めません。
 
 ### ライブラリの利用
 
@@ -47,24 +64,24 @@ Molkkyは状態を持たず、得点表や手番フラグの更新にはモデ�
 
 - `calc_score(&[Skittle]) -> Point`：0本は0点、1本は番号、2本以上は本数です。今回倒れた個体の選別は呼び出し側で行います。
 - `hit(&Stick, &[Skittle], JudgeStrategy<'_>) -> Vec<Skittle>`：注入した判定関数を1回呼び、所有する結果をそのまま返します。
-- `judge_game(&[Team]) -> Option<&Team>`：ScoreState::Wonのチームを検索します。該当しなければNoneです。最後の生存者の得点を50点へ変更する試合進行は、今回の実装範囲に含めません。
+- `judge_game(&[Team]) -> Option<&Team>`：ScoreState::Wonのチームを検索します。該当しなければNoneです。最後の生存者への50点付与は、CUIのゲームループがScoreBoard::win_by_defaultで行います。
 - `next_team(&[Team]) -> Option<&Team>`：現在の手番の次から循環し、失格者を飛ばして選びます。未設定なら先頭の有効チーム、単独参加なら同じ有効チームを選びます。空・全失格・50点到達・複数参加で最後の一チームだけになった場合はNoneです。
 
 next_teamは元の一覧や手番を変更しません。手番を更新するときは、返されたチームのIDを使って呼び出し側が設定します。
 judge_gameとnext_teamの返す参照はチーム一覧から借用し、サービスの借用期間には依存しません。
 JudgeStrategyは`&mut dyn FnMut(&Stick, &[Skittle]) -> Vec<Skittle>`の型別名です。クロージャで乱数源などを捕捉でき、結果は入力の借用期間後も保持できます。
 
-MolkkyにID重複・複数手番・複数勝者などの入力検証は置きません。入力側で一覧の整合性を確認する方針です。入力側の検証実装は未実装です。
+Molkkyに入力形式や重複の検証は置きません。CUIの入力モデルが番号の範囲・重複や名前を検証し、TeamのIDを新しく生成します。手番はゲームループが一つだけ設定します。
 
 ### モデルとテスト
 
 TeamはId・Name・ScoreBoard・手番を保持します。同名でも別チームは別IDになり、cloneや得点・手番の更新では同じIDを保ちます。
-Name::new(&str)は文字列をそのまま保持するNameを返します。名前の検証・正規化は入力側の責務です。
+Name::new(&str)は文字列をそのまま保持するNameを返します。名前の検証・正規化はcui/model.rsのTeamSetupが担当します。
 Skittleは番号・状態・ID、FieldとStickはIDを保持します。位置や表示座標は扱いません。
-得点表の計算はScoreBoardが担当し、Molkkyへ複製しません。
+得点表の計算はScoreBoardが担当し、CUIやMolkkyへ複製しません。history()は補正前の投てきも含めて全点数を保持します。win_by_default()は投てきを増やさず50点の勝者にした新しい得点表を返します。
 
 テスト本体は対象ファイル名に対応する`tests/core/models/`と`tests/core/services/`へ置き、modで階層化します。
-`tests/core.rs`はサービスのテストを登録し、`tests/models.rs`はモデルの実ソースを組み込んで検証します。
+`tests/core.rs`はサービス、`tests/cui.rs`は入力・変換・出力、`tests/main.rs`はゲームループと実バイナリのテストを登録します。テスト本体は対応するtests/cui/以下へ置きます。`tests/models.rs`はモデルの実ソースを組み込んで検証します。
 API例は`tests/api.md`にあります。この文書には削除済みの構成の例も含まれ、現在の自動テストには登録されていません。
 
 ## Java演習環境

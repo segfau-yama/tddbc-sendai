@@ -1,10 +1,8 @@
-use std::vec;
-
 pub const TARGET_SCORE: i32 = 50;
 pub const RESET_SCORE: i32 = 25;
 pub const ZERO_POINTS_LIMIT: usize = 3;
 
-/// 非負の点数。投てきの得点に加え、履歴中では超過補正後の25点も表す。
+/// 1回の投てきで得た非負の点数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Point(i32);
 
@@ -31,6 +29,7 @@ pub enum ScoreState {
 #[derive(Clone)]
 pub struct ScoreBoard {
     history: Vec<Point>,
+    total: i32,
     state: ScoreState,
 }
 
@@ -43,42 +42,57 @@ impl Default for ScoreBoard {
 impl ScoreBoard {
     /// 履歴の途中で終了した後の追加記録も、生成時に拒否する。
     pub fn new(history: Vec<Point>) -> Self {
-        let total: i32 = history.iter().map(|point| point.value()).sum();
-        let zero_points = history.iter().filter(|point| point.value() == 0).count();
-        if total == TARGET_SCORE {
-            return Self {
-                history: history,
-                state: ScoreState::Won,
+        let mut total = 0;
+        let mut misses = 0;
+        let mut state = ScoreState::Calculated;
+        for point in &history {
+            assert!(
+                !matches!(state, ScoreState::Won | ScoreState::Disqualified),
+                "終了後の投てきは記録できません"
+            );
+            misses = if point.value() == 0 { misses + 1 } else { 0 };
+            total += point.value();
+            // 連続ミスによる失格は、それまでの得点にかかわらず0点にする。
+            (total, state) = if misses == ZERO_POINTS_LIMIT {
+                (0, ScoreState::Disqualified)
+            } else if total == TARGET_SCORE {
+                (total, ScoreState::Won)
+            } else if total > TARGET_SCORE {
+                (RESET_SCORE, ScoreState::Reset)
+            } else {
+                (total, ScoreState::Calculated)
             };
         }
-        if total > TARGET_SCORE {
-            return Self {
-                history: vec![Point::new(RESET_SCORE)],
-                state: ScoreState::Reset,
-            };
+        Self {
+            history,
+            total,
+            state,
         }
-        if zero_points >= ZERO_POINTS_LIMIT {
-            return Self {
-                history: history,
-                state: ScoreState::Disqualified,
-            };
-        }
-        return Self {
-            history: history,
-            state: ScoreState::Calculated,
-        };
     }
 
     /// 元の履歴を変更せず、新しい履歴を生成時と同じ経路で検証する。
     pub fn add(&self, point: Point) -> Self {
+        assert!(
+            !matches!(self.state, ScoreState::Won | ScoreState::Disqualified),
+            "終了後の投てきは記録できません"
+        );
         let mut history = self.history.clone();
         history.push(point);
         Self::new(history)
     }
 
-    /// 生成時に補正した履歴から合計を算出する。
+    /// 他チームの失格による勝利。投てき履歴を増やさず50点にする。
+    pub fn win_by_default(&self) -> Self {
+        Self {
+            total: TARGET_SCORE,
+            state: ScoreState::Won,
+            ..self.clone()
+        }
+    }
+
+    /// 各投てきの補正と失格を反映した現在の得点。
     pub fn total(&self) -> i32 {
-        self.history.iter().map(Point::value).sum()
+        self.total
     }
 
     pub fn history(&self) -> Vec<Point> {
