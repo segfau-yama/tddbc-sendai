@@ -1,5 +1,17 @@
 # 開発支援方針の記録
 
+## 得点定数をScoreBoardのimplへ移動（2026-11-02）
+
+- 対象：最新main（f03cf1c）のsrc内の定数を全件確認する。TARGET_SCORE/RESET_SCORE/ZERO_POINTS_LIMITをScoreBoardの公開関連定数に移し、内部参照はSelf::へ統一する。モジュールからの再公開は削除する。値・採点・勝敗・入出力は変更しない。
+- 他の既存定数はsrc内に存在しないため、追加の集約や新しい定数は不要と判断した。公開APIの利用側はScoreBoard::定数名で参照する。
+- 初回の手元には古い履歴が残っていた。通常pushが拒否されたため最新mainを取得し、新ブランチで作り直した。旧履歴のTUI変更や文書は取り込まない。
+- [x] 最新mainの既存テストで変更前を確認する。
+- [x] 3定数の配置と参照、再公開を更新する。
+- [x] 既存テスト・整形・Clippy・差分を確認する。
+- 結果：振る舞いを変えない移動なので既存テストを使用し、新規テストやRed確認は追加していない。cargo test --lockedは変更前後とも130件成功（81+49）、失敗・無視0件（/tmp/constants-current-baseline.log、/tmp/constants-current-final.log）。cargo fmt --checkとgit diff --checkも成功した。
+- Clippy --locked --all-targets -- -D warningsは変更対象外のsrc/core/services/molkky.rs:37のneedless_returnで停止した。origin/mainにも同じreturn Noneが存在することを確認し、定数移動の差分には含めていない。旧履歴に対する157件の成功結果は最新版の検証結果として使用しない。
+
+
 ## CUIモルックの作成（2026-10-29）
 
 - 対象：`cui/input.rs`で標準入力と再入力、`cui/model.rs`で入力の変換・検証とTeam/Skittle生成、`cui/main.rs`でゲームループ、`cui/output.rs`で表示を担当する。バイナリのmainは標準入出力を渡すだけにする。

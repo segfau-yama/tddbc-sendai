@@ -1,7 +1,3 @@
-pub const TARGET_SCORE: i32 = 50;
-pub const RESET_SCORE: i32 = 25;
-pub const ZERO_POINTS_LIMIT: usize = 3;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Point(i32);
 
@@ -38,6 +34,10 @@ impl Default for ScoreBoard {
 }
 
 impl ScoreBoard {
+    pub const TARGET_SCORE: i32 = 50;
+    pub const RESET_SCORE: i32 = 25;
+    pub const ZERO_POINTS_LIMIT: usize = 3;
+
     pub fn new(history: Vec<Point>) -> Self {
         let (total, _, state) = history.iter().fold(
             (0, 0, ScoreState::Calculated),
@@ -48,12 +48,12 @@ impl ScoreBoard {
                 );
                 let misses = if point.value() == 0 { misses + 1 } else { 0 };
                 let total = total + point.value();
-                let (total, state) = if misses == ZERO_POINTS_LIMIT {
+                let (total, state) = if misses == Self::ZERO_POINTS_LIMIT {
                     (0, ScoreState::Disqualified)
-                } else if total == TARGET_SCORE {
+                } else if total == Self::TARGET_SCORE {
                     (total, ScoreState::Won)
-                } else if total > TARGET_SCORE {
-                    (RESET_SCORE, ScoreState::Reset)
+                } else if total > Self::TARGET_SCORE {
+                    (Self::RESET_SCORE, ScoreState::Reset)
                 } else {
                     (total, ScoreState::Calculated)
                 };
@@ -79,7 +79,7 @@ impl ScoreBoard {
 
     pub fn with_win(&self) -> Self {
         Self {
-            total: TARGET_SCORE,
+            total: Self::TARGET_SCORE,
             state: ScoreState::Won,
             ..self.clone()
         }
