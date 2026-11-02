@@ -3,7 +3,7 @@ TDDBC仙台の備忘録用リポジトリ
 
 ## Rust演習環境
 
-rust_molkkyは、標準入出力で狙う番号を選び、確率で倒れた本の得点を記録するCUIと、ドメインモデルのライブラリです。
+rust_molkkyは、標準入出力で遊ぶCUI、DioxusとRapier2Dによる見下ろし型GUI、共通のcoreライブラリです。
 バイナリのmainから`cui::run::run`へ標準入出力を渡します。
 
 ```sh
@@ -29,6 +29,11 @@ cargo test --locked --test application
 | src/cui/io/input.rs | Input：入力元の保持、読み取り・変換・検証・再入力 |
 | src/cui/io/output.rs | Output：出力先の保持、プロンプト・得点表・結果の表示 |
 | src/cui/run.rs | チーム設定、投てき・採点・交代・終了のゲームループ |
+| src/gui_2d/app.rs | GUIの進行・標準配置とcontroller/view/servicesの合成 |
+| src/gui_2d/controller.rs / controller.js | 入力の解釈・座標変換とDOMのcapture・時刻通知 |
+| src/gui_2d/services/molkky.rs | Rapierによる投擲・物理更新・転倒判定、coreルールの利用 |
+| src/gui_2d/view/ | SVG、速度メーター、得点表、結果表示 |
+| src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
 
 InputとOutputはプレゼンテーション層の入出力処理なので、ドメインサービスの実装とは別の`io/`へ配置します。
 `Teams`・`Field`・`CuiStick`は`cui::models`、`CuiMolkky`は`cui::services`、`Input`と`Output`は`cui::io`から公開します。
@@ -71,13 +76,58 @@ assert_eq!(field.skittles.len(), 12);
 ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
 不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
 
-既定のテスト134件、gui_2d featureありでは158件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+既定のテスト134件、gui_2d featureありでは168件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+
+### GUI 2Dの起動
+
+赤チーム・青チームで開始します。フィールド内で左ボタンを押し、マウスで照準を合わせて離すと投擲します。領域外での解放も処理し、focus喪失時は蓄力を取り消します。停止後に採点・交代し、勝者が決まると結果を表示します。
+
+Web版にはPython 3と、Cargo.lockに対応するwasm-bindgen-cli 0.2.129を使います。
+
+```sh
+cd rust_molkky
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.129 --locked
+./scripts/gui_2d_web.sh
+# http://127.0.0.1:8080 を開く。Ctrl+Cで終了。
+```
+
+デスクトップ版は次のコマンドで起動します。LinuxではGTK/WebKit等の開発ライブラリが必要です。Debian/Ubuntu系では、pkg-config、libgtk-3-dev、libwebkit2gtk-4.1-dev、libxdo-dev、libayatana-appindicator3-dev、libssl-devとCコンパイラを用意してください。
+
+```sh
+cd rust_molkky
+cargo run --locked --no-default-features --features gui_2d_desktop --bin gui_2d
+```
+
+CUIは既定のcui feature、GUIはgui_2d_webまたはgui_2d_desktopを選択します。Webの起動スクリプトはCUI依存を除外し、UUIDのjs機能を有効にします。単なるgui_2d featureはヘッドレスのテスト・ライブラリ利用向けで、起動時はレンダラーを選択してください。
+
+`app.rs`が標準配置、controller/view/servicesの合成、固定刻みの更新、停止後の一度だけの採点・交代・終了を扱います。全チームで同じフィールドと棒を共有し、移動後の位置とIdを保ちます。操作用の初期投擲距離は1mです。高さ方向の転倒は物理サービスの力積による近似です。画面外へ移動した物体も見えるよう表示範囲を広げます。
+
+### GUIの検証
+
+```sh
+cd rust_molkky
+cargo test --locked --features gui_2d
+cargo test --locked --no-default-features --features gui_2d
+cargo clippy --locked --all-targets --features gui_2d -- -D warnings
+```
+
+Webを起動した状態で、実DOMの入力確認も実行できます。次はLinux用の例です。Playwrightは検証時だけ使用し、ゲームの実行依存には含めません。
+
+```sh
+cd rust_molkky
+npm install --prefix /tmp/molkky-browser-tools --no-save playwright
+/tmp/molkky-browser-tools/node_modules/.bin/playwright install chromium
+NODE_PATH=/tmp/molkky-browser-tools/node_modules node tests/gui_2d/controller.js
+```
+
+既存Chromiumを使う場合はCHROMIUM_PATH、別の起動URLを使う場合はGUI_URLを指定します。Chromiumでcapture・取消・リサイズ・領域外解放・採点・失格・勝利・終了後の入力無効化を確認しました。Linuxデスクトップは仮想画面で起動・投擲・交代を確認済みです。Windows/macOSの実機確認は行っていません。
 
 ### GUI 2Dの描画部品
 
-`src/gui_2d/view/`にDioxusのElementを返す関数を実装しています。`gui_2d` featureを有効にすると、`gui_2d::view`から`field`、`skittle`、`stick`、`speedometer`、`scores`、`result`を利用できます。
+`src/gui_2d/view/`にDioxusのElementを返す関数を実装しています。`gui_2d` featureを有効にすると、`gui_2d::view`から`field`、`skittle`、`stick`、`speedometer`、`scores`、`result`、`aim`を利用できます。
 
-フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。棒・スキットルの位置や寸法は呼び出し側が渡します。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。入力・appへの接続・GUIの起動処理は後続段階です。
+フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。棒・スキットルの位置や寸法はappが渡します。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。aimは照準の線と目標を表示します。
 
 ```sh
 cd rust_molkky
@@ -85,7 +135,7 @@ cargo test --locked --features gui_2d --test gui_2d
 cargo build --locked --features gui_2d
 ```
 
-描画はdioxus-ssrによるHTML/SVG出力で検証します。ブラウザーやデスクトップでの実画面操作はまだ確認していません。既存CUIの起動方法は変わりません。
+描画はdioxus-ssrによるHTML/SVG出力と、Chromium・LinuxのWebKitデスクトップで確認しています。既存CUIの起動方法は変わりません。
 
 ### GUI 2Dの投擲サービス
 
@@ -102,7 +152,7 @@ cargo build --locked --features gui_2d
 
 GUIのthrowのThrowOutputは開始の成否を示すboolです。CUIの確率f64と同じ単位には扱いません。既存APIの利用側はthrowの可変参照と関連型ThrowOutputの指定へ移行してください。
 
-呼び出し側は固定時間ごとにstepし、途中のposeを描画できます。hitの結果はその投擲中の蓄積結果です。停止後に一度だけcalc_scoreへ渡し、得点表を更新して勝者・次手番を判定する進行処理は後続appで実装します。次のthrowでピンの位置を保持して立て直し、速度・角速度・前回の衝突記録を消します。
+呼び出し側は固定時間ごとにstepし、途中のposeを描画できます。hitの結果はその投擲中の蓄積結果です。停止後に一度だけcalc_scoreへ渡し、得点表を更新して勝者・次手番を判定する進行処理をappで実装しています。次のthrowでピンの位置を保持して立て直し、速度・角速度・前回の衝突記録を消します。
 
 転倒は高さ方向の横倒しを接触力積で近似します。寸法・質量・減衰・転倒閾値はGuiMolkkyの関連定数へまとめたシミュレーション用の設定値です。物理テストでは高速衝突、弱い衝突、連鎖衝突、停止・再投擲を確認しています。
 
@@ -112,7 +162,7 @@ GUIのthrowのThrowOutputは開始の成否を示すboolです。CUIの確率f64
 
 ControllerはReady時の左ボタン押下を受け付け、同じpointerの移動と解放を処理します。previewは経過時間による速度（0〜10m/s、往復2秒）と目標を持つGuiStickを返し、releaseは同じ計算で一度だけ入力を確定します。領域外の移動では最後の有効な照準を保持します。cancel_pointerは該当pointerの取消、cancelはfocus喪失などでの全入力破棄に使います。
 
-この段階は入力解釈までです。後続appがDOMのpointer captureを設定・解除し、イベントと時刻を渡してGamePhaseを更新します。releaseの結果を受け取っただけでは投擲開始とはせず、GuiMolkky::throwの成否で判定します。app・GUI起動と実画面での入力確認はまだ実装していません。
+controller.jsがDOMのpointer captureを設定・解除し、イベントとperformance.nowの時刻をRustへ渡します。appがControllerで入力を解釈してGamePhaseを更新し、GuiMolkky::throwの成否で投擲開始を判定します。Webとdesktopで同じdocument::evalの接続を使います。
 
 ## Java演習環境
 

@@ -1,5 +1,37 @@
 # 開発支援方針の記録
 
+## gui_2dのapp・DOM接続・起動を実装（今回の一段階）
+
+- 今回は明示指定されたapp・DOMイベント接続・GUI起動を一つの接続段階として実装する。coreの採点・勝敗・手番と既存controller/view/GuiMolkkyを使い、追加のルールや物理方式は作らない。
+- AppStateはGame/Controller/GuiMolkkyを一つずつ保持し、Ready→Charging→Simulating→Ready/Finishedを管理する。固定刻みの更新を積算し、停止時だけ一度採点・得点表更新・勝者/次手番の判定を行う。タブ復帰時は1フレーム250msまで物理時間を進める。
+- 標準の番号配列は手前から1/2、3/10/4、5/11/12/6、7/9/8。間隔は物理の半径に合わせる。見下ろし操作用の初期投擲距離は1mとし、公式競技の距離再現とは区別する。全チームで同じField/Stickを使い、移動後の位置とIdを保持する。
+- DOM側は標準Pointer EventsとrequestAnimationFrameを使う。Webとdesktop WebViewで同じJSをdocument::evalで接続し、左マウスの同期的なcapture、解放、取消、focus喪失を扱う。入力解釈と座標変換はRust controllerへ渡し、ゲーム進行をJSへ複製しない。evalはアンマウント時に停止させる。
+- CargoはCUIを既定featureにし、GUI Web/desktopを選択する。CUIの既定起動方法を維持し、WebではCUIの端末/乱数依存を除外する。UUIDはWebでjsを有効にする。新たなgui_2dバイナリを追加する。
+
+### テストリスト
+
+- [x] 変更前GUI featureあり158件成功。リモートとの差分なし。
+- [x] 初期配置・最初の手番・描画部品の合成を確認する。
+- [x] 押下・照準・メーター・解放・取消を接続し、投擲の成否で状態を更新する。
+- [x] 物理停止後の一度だけの採点と手番交代、勝利・超過・失格・勝者なし終了を確認する。
+- [x] Web/desktopの起動設定とビルドを確認する。実行できない環境の制約は区別して記録する。
+- [x] ブラウザーで実DOMのcapture・領域外解放・focus喪失・得点更新・結果表示を確認する。
+- [x] 既定CUI、feature分離、全テスト・fmt・Clippy・差分を確認しcommit・通常pushする。
+
+### 実行・レビュー結果
+
+- Red：app.rsにテスト登録だけを置き、tests/gui_2d/app.rsのテストから未実装AppState/DomEventを参照して失敗を確認した（/tmp/gui-app-red.log）。テスト本体はtests以下に置き、物理結果を受け取るprivateな境界をテストするためapp.rsのcfg(test)から登録している。
+- Green：appの10件で、標準配置・初期手番・部品合成、取消と無効な投擲、非有限/負の時刻、実際の物理停止待ちと一度だけの採点、タブ復帰の更新上限、複数本採点、超過25点、50点、連続ミス失格、最後の生存者、単独失格を確認した。採点境界のテストでは転倒結果を固定し、物理方式の差し替え用traitは追加していない。
+- Web：wasm32ターゲットを導入し、cargo build --locked --no-default-features --features gui_2d_web --bin gui_2d --target wasm32-unknown-unknownが成功。Dioxus最小構成ではweb_sys::Window::locationが未定義だったため、同じweb-sysのLocation featureだけを有効にした。Webビルド用の準備エラーであり、アプリのRedには数えない。wasm-bindgen 0.2.129で生成したWeb版を起動した。
+- DOM：tests/gui_2d/controller.jsをChromiumで実行し成功。12個体、右ボタン無視、capture設定、blur取消、lost capture取消、リサイズ後の照準、メーター、領域外解放、5回のミスによる失格/最後の生存者の勝利、履歴、終了後の入力無効化を実際のDOMで確認した。pageerrorとアプリのalertは0件。capture喪失のテストは、pending captureを実際に成立させてから解除し、次のpointerイベントでlostpointercaptureを配送する手順へ修正した。
+- desktop：最初はGTK/WebKitの開発ライブラリ不足でビルドできなかった。Debianパッケージを/workspace/.cloud-tools/desktopへ展開し、pkg-configの参照先と開発用symlinkを整えてビルド成功。Xvfbで起動し、描画・タイトル・蓄力・領域外解放・採点・交代を確認した。WebKitの固定helperパスは検証用prootで対応し、headless環境ではWebKit sandboxを無効にした。これはローカルの検証環境だけの設定で、起動スクリプトやアプリの設定には入れていない。Windows/macOSは未実行。
+- 構成：CUIはdefault featureとして維持し、既存81件は引き続き既定テストで実行する。GUI-onlyではCUIをビルドしないため、そのCLIテストターゲットにrequired-featuresを指定した。viewのテストfixtureもCUI依存を取り除いた。Cargo.lockの既存バージョンは削除・更新せず、主にdesktopレンダラーの依存433件を追加した。CSSはview/style.cssへまとめ、JSはDOMと時計の通知だけとし、採点・勝敗・物理計算を持たせない。
+- 最終確認：cargo test --locked --features gui_2dは168件（app10+既存81+49+28）、既定は134件、--no-default-features --features gui_2dは87件が成功、失敗・無視0件。cargo fmt --check、cargo clippy --locked --all-targets --features gui_2d -- -D warnings、JS/シェルの構文確認、git diff --checkも成功。CUIはcargo run --lockedへqを入力して既定の入口と正常終了を確認した。
+- 照準の接続：Appの照準候補表示のテストを先に追加し、class=aimedがない失敗を確認した（/tmp/molkky-aim-red.log）。GuiMolkky::aimを呼び、候補の枠を強調する表示を接続して成功した。候補外も物理対象に含める仕様は維持する。
+- 成功ログ：Rustの全体は/tmp/molkky-final-tests.log、/tmp/molkky-default-tests.log、/tmp/molkky-gui-only-tests.log。Web/desktopのビルドは/tmp/molkky-web-build.log、/tmp/molkky-desktop-build.log。実DOMの最終結果は/tmp/molkky-browser-final.log。Linuxでは/tmp/molkky-desktop-scored.pngで採点後の交代も目視確認した。
+- 残る確認範囲：WebはChromium、desktopはLinuxの仮想画面での検証。タッチ入力、チーム設定画面、再試合、公式競技距離の再現は今回の範囲に含めていない。指定された接続・起動の段階を終えたらcommit・通常pushして停止する。
+
+
 ## gui_2dのcontrollerを実装（今回の一段階）
 
 - 残っているcontroller/app/起動のうち、今回はcontrollerの入力解釈だけを実装して停止する。先に全段階を実装しないという合意を維持する。追加依存やcore/models/view/servicesの変更は行わない。

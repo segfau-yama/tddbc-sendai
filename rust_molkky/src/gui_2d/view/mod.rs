@@ -10,4 +10,4 @@ pub use result::result;
 pub use score::scores;
 pub use skittle::skittle;
 pub use speedometer::speedometer;
-pub use stick::stick;
+pub use stick::{aim, stick};

@@ -2,6 +2,37 @@ use super::models::{GamePhase, GuiStick};
 use dioxus::html::input_data::MouseButton;
 use std::time::Duration;
 
+#[derive(serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(crate) enum DomEvent {
+    Press(PointerSample),
+    Move(PointerSample),
+    Release(PointerSample),
+    Cancel { pointer_id: i32 },
+    Blur,
+    Frame { time: f64 },
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct PointerSample {
+    pub pointer_id: i32,
+    pub button: i16,
+    pub cursor: [f64; 2],
+    pub rect: [f64; 4],
+    pub bounds: [f32; 4],
+    pub time: f64,
+}
+
+impl PointerSample {
+    pub fn target(&self) -> Option<[f32; 2]> {
+        screen_to_world(self.cursor, self.rect, self.bounds)
+    }
+}
+
+pub(crate) fn timestamp(milliseconds: f64) -> Option<Duration> {
+    Duration::try_from_secs_f64(milliseconds / 1000.0).ok()
+}
+
 /// cursor/rectはCSSピクセル。rectはborderを除くSVG領域、boundsはworldの[x,y,幅,高さ]。
 pub fn screen_to_world(cursor: [f64; 2], rect: [f64; 4], bounds: [f32; 4]) -> Option<[f32; 2]> {
     if !cursor.iter().chain(rect.iter()).all(|v| v.is_finite())
