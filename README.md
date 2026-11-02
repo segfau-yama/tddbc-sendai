@@ -71,7 +71,21 @@ assert_eq!(field.skittles.len(), 12);
 ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
 不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
 
-Rustの全130件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+既定のテスト134件、gui_2d featureありでは142件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+
+### GUI 2Dの描画部品
+
+`src/gui_2d/view/`にDioxusのElementを返す関数を実装しています。`gui_2d` featureを有効にすると、`gui_2d::view`から`field`、`skittle`、`stick`、`speedometer`、`scores`、`result`を利用できます。
+
+フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。棒・スキットルの位置や寸法は呼び出し側が渡します。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。入力・物理計算・GUIの起動処理は後続段階です。
+
+```sh
+cd rust_molkky
+cargo test --locked --features gui_2d --test gui_2d
+cargo build --locked --features gui_2d
+```
+
+描画はdioxus-ssrによるHTML/SVG出力で検証します。ブラウザーやデスクトップでの実画面操作はまだ確認していません。既存CUIの起動方法は変わりません。
 
 ## Java演習環境
 

@@ -1,5 +1,35 @@
 # 開発支援方針の記録
 
+## gui_2dのviewを実装（今回の一段階）
+
+- 対象はview/{field,skittle,stick,speedometer,score,result}.rsのみ。app/controller/GuiMolkky、Rapier、GUI起動、入力イベントは実装せず、この段階で停止する。coreと既存modelsは変更しない。
+- Dioxus 0.7.10のminimalを任意feature gui_2dで有効にする。Web/desktopランタイムやOS依存は今回導入しない。HTML/SVGの検証には公式のdioxus-ssr::render_elementをdev-dependencyとして使う。
+- viewはElementを返す関数で構成し、coreを読み取り、個体やチームを重複所有しない。フィールドは呼び出し側の範囲とchildrenを描画し、位置・回転は引数で受け取る。標準配置や物理更新は決めない。SVGはworldのY上向きを反転し、番号の文字は読みやすい向きへ戻す。
+- 棒は位置・回転（ラジアン）・長さ・幅で丸い端の棒を描く。スキットルは番号とStand/Fallを描き分ける。寸法・入力値の検証や画面からworldへの入力座標変換は呼び出し側の責務とする。
+- 速度メーターはnativeのmeterとm/s表示を使い、速度の時間変化や入力処理は持たない。得点表はTeam/ScoreBoardの既存total/history/state/turnを表示する。勝者は呼び出し側のOption<&Team>を受け取り、viewでjudge_gameを複製しない。
+
+### テストリスト
+
+- [x] 変更前cargo test --locked --quiet：134件成功、失敗・無視0件。リモートとの差分なし。
+- [x] SVGのフィールド範囲、Y方向、childrenの合成を確認する。
+- [x] スキットルの番号と転倒状態、棒の位置・回転・寸法を確認する。
+- [x] 速度値・上限とm/s表示を確認する。
+- [x] 得点表のチーム名、現在手番、履歴・合計・計算状態と文字のエスケープを確認する。
+- [x] 渡された勝者と勝者なしの結果表示を確認する。
+- [x] 未実装viewのRed→Green、featureあり/なしの全テスト・build・fmt・Clippy・差分を確認する。
+- [x] viewだけをcommit・通常pushし、次段階へ進まず提示する。
+
+### 実行・レビュー結果
+
+- Red：tests/gui_2d/view/のテストを先に追加し、cargo test --features gui_2d --test gui_2dで未実装viewのE0432を確認した（/tmp/gui-views-red.log）。依存導入に伴うCargo.lock更新後は--lockedで検証した。
+- 実装途中：SVGのaria_labelはDioxusのSVG属性として未定義だったため、標準のaria-label属性へ修正した。また、SSRは名前の特殊文字を数値文字参照へエスケープする。初期テストが名前付き文字参照だけを期待していたため、HTMLとして有効な両表現を許可した。描画側のエスケープは変更せず、テストの準備上の問題として扱う。
+- Green：描画テスト8件と既存models4件が成功。フィールドのviewBox/Y反転と子要素、転倒状態、棒の角度・寸法、meterの速度・上限、名前のエスケープ、得点表の履歴・合計・状態、勝者/勝者なしを確認した。現在手番はaria-currentと可視の▶で示す。
+- 全体：cargo test --locked --quietは134件、--features gui_2d付きは142件（81+49+12）が成功、失敗・無視0件。cargo build --lockedはfeatureあり/なしの両方が成功。cargo fmt --check、git diff --checkも成功した。
+- Clippy：--all-targets --features gui_2d -- -D warningsは既存core/services/molkky.rs:37のneedless_returnで停止する。同lintだけをCLIの-A clippy::needless_returnで除外した確認は成功した。core修正やソースへのallow追加は行わない。
+- 依存の境界：cargo tree --locked -e normal --depth 1で既定の実行時依存にDioxusが含まれないことを確認した。dioxus-ssrはテスト用の依存。Cargo.lockの既存依存の表記変更は同名パッケージの別バージョン追加による識別子の明確化であり、既存パッケージの更新は行っていない。
+- レビュー：viewはElement生成だけを行い、core/modelsやCUIに差分がない。入力イベント、状態更新、タイマー、標準配置、物理、勝利/採点の再実装は含めない。HTML/SVG出力の検証であり、ブラウザー・デスクトップでの見た目と実操作は未確認。GUI用ランタイムと起動入口は今回追加せず、次段階へは進まない。
+
+
 ## gui_2dのmodelsを先に実装（2026-11-02）
 
 - 今回の範囲はmodelsのみ。後続は入力・表示、GuiMolkkyへのRapier統合、coreとの接続へ段階的に進める。physics.rsは作らず、各段階の差分を提示して停止する。
