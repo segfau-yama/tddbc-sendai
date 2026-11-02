@@ -1,5 +1,33 @@
 # 開発支援方針の記録
 
+## gui_2dのmodelsを先に実装（2026-11-02）
+
+- 今回の範囲はmodelsのみ。後続は入力・表示、GuiMolkkyへのRapier統合、coreとの接続へ段階的に進める。physics.rsは作らず、各段階の差分を提示して停止する。
+- GuiFieldはcoreのFieldとVec<Skittle>を合成し、全チームで共有する。通常は1〜12番を立った状態で作るが、既存のFieldと個体集合も受け取れる。番号ではなくIdで個体を保持する。
+- GuiStickはcoreのStick、目標位置Option<[f32; 2]>（フィールド内のメートル座標）、初速f32（m/s）を保持する。未照準はNone、初速は0。初速を確率として制限しない。入力の検証・変換は後続controllerで扱う。
+- GameはVec<Team>、共通のGuiField/GuiStick、GamePhaseを所有する。Readyから開始する。GUIのアプリ状態として公開フィールドを持ちappが更新する。coreモデルの内部は変更せず、Teamの更新には既存with_*を使う。GuiField/GuiStickは非公開フィールドと読み取り専用アクセサを持つ値とする。
+- GamePhaseはReady/Charging/Simulating/Finishedのみ。手番初期化・状態遷移・採点・勝敗判定はモデルへ実装しない。チーム・スキットルのcoreモデルを描画部品へ複製せず、所有元を一か所にする。
+- pose.rs、teams.rs、Rapierワールド、サービス、view/controller、GUI起動、追加依存、coreトレイトの変更は今回作らない。目標位置の配列は一時的な素朴な表現であり、物理導入時に採用エンジンの座標型との接続を決める。
+
+### テストリストと進行
+
+- [x] 変更前cargo test --locked --quiet：130件成功、失敗・無視0件。リモートmainと作業元の差分なし。
+- [x] Field：通常の12個体・Stand・一意なIdと、渡されたField/個体集合の保持を確認する。
+- [x] Stick：未照準/速度0の初期状態、coreの棒のId、確率ではない初速と目標の保持を確認する。
+- [x] Game：チームのId・手番を保持し、共通Field/StickとReadyで開始する。
+- [x] 未実装APIによるRed→models実装のGreen→全テスト・build・fmt・Clippy・差分を確認する。
+- [x] modelsだけをcommit・pushし、次段階へ進まず提示する。
+
+### 実行・レビュー結果
+
+- Red：tests/gui_2d/models/{field,stick,game}.rsの4件を先に追加し、cargo test --locked --test gui_2dで未公開gui_2dモジュールによるE0433を確認した。実行時の振る舞いの失敗とは区別する。
+- Green：modelsと公開modを追加し、同じコマンドで4件成功。独自フィールドの同番号個体もIdを作り直さず保持すること、初速6m/sが確率の上限1で制限されないこと、既存のチームId・手番を保持することを確認した。
+- Refactor：GameはGUIの状態保持だけとし、coreルールの呼び出しや状態遷移メソッドを追加していない。非公開のField/Stick内部へ可変参照を公開せず、未使用のwith_*や汎用インターフェースも作らない。GuiStickの更新は同じcore::Stickを渡した値の置き換えで表せる。
+- 全体：cargo test --locked --quietは134件成功（既存81+49、新規4）、失敗・無視0件。cargo build --locked、cargo fmt --check、git diff --checkも成功した。
+- Clippy：cargo clippy --locked --all-targets -- -D warningsは既存のcore/services/molkky.rs:37のneedless_returnで停止する。今回このcoreファイルには差分がない。同じコマンドでこのlintだけをCLI引数-A clippy::needless_returnで除外すると成功した。ソースへのallow追加や既存警告の隠蔽はしていない。
+- スコープ：Cargo.toml/lock、core、CUIは変更していない。GUIを起動する入口、入力、view、GuiMolkky、Rapier物理計算は未実装であり、GUIのビルド・実画面操作は検証していない。次段階へは自動で進まない。
+
+
 ## 得点定数をScoreBoardのimplへ移動（2026-11-02）
 
 - 対象：最新main（f03cf1c）のsrc内の定数を全件確認する。TARGET_SCORE/RESET_SCORE/ZERO_POINTS_LIMITをScoreBoardの公開関連定数に移し、内部参照はSelf::へ統一する。モジュールからの再公開は削除する。値・採点・勝敗・入出力は変更しない。
