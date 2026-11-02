@@ -1,5 +1,36 @@
 # 開発支援方針の記録
 
+## gui_2dのcontrollerを実装（今回の一段階）
+
+- 残っているcontroller/app/起動のうち、今回はcontrollerの入力解釈だけを実装して停止する。先に全段階を実装しないという合意を維持する。追加依存やcore/models/view/servicesの変更は行わない。
+- screen_to_worldはSVGの中央寄せ・アスペクト比維持に合わせ、描画領域のCSSピクセル矩形とworldの[x,y,幅,高さ]からY上向きの座標へ変換する。余白や領域外、非有限値、正でない寸法はNone。矩形はborderを除いた描画領域とする。
+- Controllerは押下中のpointer_id・開始時刻・最後の有効な目標だけを保持する。Ready時の左ボタンだけを受け付け、別ポインターや重複押下、計算中・終了後の押下は無視する。phaseは参照するだけで、状態遷移はappが行う。
+- 速度は経過時間の三角波（0〜10m/s、往復2秒）とし、フレーム数に依存しない。previewとreleaseは同じ計算を使って同じcore::StickのIdを持つ新しいGuiStickを返す。開始前の時刻は経過0として扱う。
+- 領域外の移動は最後の有効な照準を保持する。解放は座標変換に依存せず、同じpointerの左ボタン解放で一度だけGuiStickを返す。pointer cancel/lost captureでは該当pointerだけ、focus喪失では全入力を破棄する。
+- この段階はDOMに触れない。後続appがpointer captureを実際に設定・解除し、pointer/blur等のイベントをcontrollerへ渡す。実時間時計、描画ループ、物理・採点・状態遷移・Web/desktop起動は今回作らない。
+
+### テストリスト
+
+- [x] 変更前GUI featureあり150件成功。リモートとの差分なし。
+- [x] 画面の位置・拡縮・Y反転と縦横の余白を考慮して座標変換できる。
+- [x] 不正な座標・寸法と領域外を拒否する。
+- [x] Ready時の左ボタンだけ開始し、別pointerや再押下では上書きしない。
+- [x] 時間ベースで速度が上下し、表示値と解放時の初速が一致する。
+- [x] 有効な移動だけ目標を更新し、領域外でも同じpointerの解放は処理する。
+- [x] 解放は一度だけ。取消・focus喪失は投擲せず入力を破棄する。
+- [x] Red/Green、featureあり/なしの全テスト・build・fmt・Clippy・差分を確認する。
+- [x] controllerの段階だけをcommit・通常pushして停止する。
+
+### 実行・レビュー結果
+
+- Red：tests/gui_2d/controller.rsのテスト8件を先に登録し、cargo test --locked --features gui_2d --test gui_2d controllerで未実装controllerのE0432を確認した（/tmp/gui-controller-red.log）。
+- Green：同じコマンドで8件成功。中心・角・余白・範囲外・不正寸法の座標変換、左ボタンとpointerの所有、経過時間の速度、移動と領域外解放、解放の重複防止、個別取消とfocus喪失を確認した。
+- Refactor：テスト名のReadyを日本語へ変更しnon_snake_case警告を解消した。ControllerはChargeのOptionだけを持ち、開始フラグとpointer状態の二重管理やイベント用traitは作らない。開始時刻から算出し、フレームごとに速度を増減して誤差を積み上げる実装は使わない。
+- 全体：cargo test --locked --features gui_2d --quietは158件（81+49+28）、featureなしは134件成功、失敗・無視0件。cargo build --lockedはfeatureあり/なしとも成功。cargo fmt --check、cargo clippy --locked --all-targets --features gui_2d -- -D warnings、git diff --checkも成功した。
+- 境界の確認：追加依存なし。Cargo.toml/lock、core/CUI、既存models/view/servicesに差分がない。ControllerはDOMや時計の取得、物理・採点・勝者判定を行わず、GamePhaseを変更しない。各入力から新しいGuiStickを作り、渡されたcore::StickのIdを保つ。
+- 残り：DOMイベント接続・pointer capture・実時間の更新・標準配置・appでの一度だけの採点・GUI起動は次段階。今回の検証は入力解釈のテストであり、実画面での操作は行っていない。
+
+
 ## gui_2dのservicesへRapierを統合（今回の一段階）
 
 - 対象はgui_2d/services/molkky.rsのGuiMolkky。physics.rsは作らず、Rapier 0.36.1のPhysicsWorldを使う。app/controller、GUI起動、実時間のループ、得点表や手番の更新は今回実装しない。

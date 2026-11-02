@@ -1,0 +1,125 @@
+use super::models::{GamePhase, GuiStick};
+use dioxus::html::input_data::MouseButton;
+use std::time::Duration;
+
+/// cursor/rectはCSSピクセル。rectはborderを除くSVG領域、boundsはworldの[x,y,幅,高さ]。
+pub fn screen_to_world(cursor: [f64; 2], rect: [f64; 4], bounds: [f32; 4]) -> Option<[f32; 2]> {
+    if !cursor.iter().chain(rect.iter()).all(|v| v.is_finite())
+        || !bounds.iter().all(|v| v.is_finite())
+        || rect[2] <= 0.0
+        || rect[3] <= 0.0
+        || bounds[2] <= 0.0
+        || bounds[3] <= 0.0
+    {
+        return None;
+    }
+    let [x, y, width, height] = bounds.map(f64::from);
+    // SVG既定のxMidYMid meetと同じ拡縮・中央寄せ。余白をフィールドに含めない。
+    let scale = (rect[2] / width).min(rect[3] / height);
+    if !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    let left = rect[0] + (rect[2] - width * scale) / 2.0;
+    let top = rect[1] + (rect[3] - height * scale) / 2.0;
+    let local_x = (cursor[0] - left) / scale;
+    let local_y = (cursor[1] - top) / scale;
+    if !(0.0..=width).contains(&local_x) || !(0.0..=height).contains(&local_y) {
+        return None;
+    }
+    let point = [(x + local_x) as f32, (y + height - local_y) as f32];
+    point.iter().all(|v| v.is_finite()).then_some(point)
+}
+
+struct Charge {
+    pointer_id: i32,
+    started_at: Duration,
+    target: [f32; 2],
+}
+
+/// 入力の所有と蓄力だけを管理する。DOMのcaptureとGamePhase更新はappが行う。
+#[derive(Default)]
+pub struct Controller {
+    charge: Option<Charge>,
+}
+
+impl Controller {
+    pub const MAX_SPEED: f32 = 10.0;
+    pub const CHARGE_PERIOD: Duration = Duration::from_secs(2);
+
+    pub fn pointer_id(&self) -> Option<i32> {
+        self.charge.as_ref().map(|charge| charge.pointer_id)
+    }
+
+    pub fn press(
+        &mut self,
+        phase: GamePhase,
+        pointer_id: i32,
+        button: Option<MouseButton>,
+        target: Option<[f32; 2]>,
+        now: Duration,
+    ) -> bool {
+        if phase != GamePhase::Ready
+            || button != Some(MouseButton::Primary)
+            || self.charge.is_some()
+        {
+            return false;
+        }
+        let Some(target) = target.filter(|p| p.iter().all(|v| v.is_finite())) else {
+            return false;
+        };
+        self.charge = Some(Charge {
+            pointer_id,
+            started_at: now,
+            target,
+        });
+        true
+    }
+
+    pub fn move_to(&mut self, pointer_id: i32, target: Option<[f32; 2]>) {
+        let Some(charge) = self.charge.as_mut() else {
+            return;
+        };
+        if charge.pointer_id == pointer_id
+            && let Some(target) = target.filter(|p| p.iter().all(|v| v.is_finite()))
+        {
+            charge.target = target;
+        }
+    }
+
+    pub fn preview(&self, stick: &GuiStick, now: Duration) -> Option<GuiStick> {
+        let charge = self.charge.as_ref()?;
+        let elapsed = now.saturating_sub(charge.started_at).as_secs_f64();
+        let phase =
+            (elapsed % Self::CHARGE_PERIOD.as_secs_f64()) / Self::CHARGE_PERIOD.as_secs_f64();
+        let speed = (1.0 - (phase * 2.0 - 1.0).abs()) as f32 * Self::MAX_SPEED;
+        Some(GuiStick::new(*stick.stick(), Some(charge.target), speed))
+    }
+
+    /// 座標を引数に取らないため、領域外での解放でも最後の有効な目標を使える。
+    pub fn release(
+        &mut self,
+        pointer_id: i32,
+        button: Option<MouseButton>,
+        stick: &GuiStick,
+        now: Duration,
+    ) -> Option<GuiStick> {
+        if self.pointer_id() != Some(pointer_id) || button != Some(MouseButton::Primary) {
+            return None;
+        }
+        let shot = self.preview(stick, now);
+        self.charge = None;
+        shot
+    }
+
+    /// pointercancel/lostpointercapture用。他のpointerの取消は無視する。
+    pub fn cancel_pointer(&mut self, pointer_id: i32) {
+        if self.pointer_id() == Some(pointer_id) {
+            self.charge = None;
+        }
+    }
+
+    /// focus喪失など、入力全体を破棄する場合に使う。
+    pub fn cancel(&mut self) {
+        self.charge = None;
+    }
+}
