@@ -11,7 +11,7 @@ mod aiming {
     fn 指定番号の既存個体を入力順に選んで返す() {
         let field = Field::default();
         let rules = CuiMolkky::new(vec![12, 5]);
-        let rules: &dyn Molkky<Stick = CuiStick> = &rules;
+        let rules: &dyn Molkky<Stick = CuiStick, ThrowOutput = f64> = &rules;
         assert_eq!(
             rules.aim(&CuiStick::new(Stick::new(), 1.0), &field.skittles),
             [field.skittles[11], field.skittles[4]]
@@ -105,7 +105,7 @@ mod probability {
 
     #[test]
     fn throwは渡した棒ごとの確率を返す() {
-        let rules = CuiMolkky::default();
+        let mut rules = CuiMolkky::default();
         for probability in [0.0, 0.25, 0.5, 1.0] {
             let stick = CuiStick::new(Stick::new(), probability);
             assert_eq!(rules.throw(&stick), probability);

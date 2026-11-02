@@ -11,6 +11,10 @@ mod field_view;
 #[cfg(feature = "gui_2d")]
 #[path = "gui_2d/view/result.rs"]
 mod result_view;
+
+#[cfg(feature = "gui_2d")]
+#[path = "gui_2d/services/molkky.rs"]
+mod molkky;
 #[cfg(feature = "gui_2d")]
 #[path = "gui_2d/view/score.rs"]
 mod score_view;

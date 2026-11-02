@@ -1,5 +1,36 @@
 # 開発支援方針の記録
 
+## gui_2dのservicesへRapierを統合（今回の一段階）
+
+- 対象はgui_2d/services/molkky.rsのGuiMolkky。physics.rsは作らず、Rapier 0.36.1のPhysicsWorldを使う。app/controller、GUI起動、実時間のループ、得点表や手番の更新は今回実装しない。
+- aimは投擲方向の直線上にある候補を選ぶ。候補外のピンも物理ワールドに残し、連鎖衝突を扱う。throwは目標とm/sの初速を使って棒へ速度を設定する。stepは1/60秒進め、個体ごとの接触力積の最大値を記録し、hitは閾値以上の個体だけをFallとして返す。Idと番号は再生成しない。
+- 物理の所有はGuiMolkkyだけ。coreのStick/Skittleの複製リストやTeamは保持せず、ボディとIdの対応、初期投擲位置、今回の衝突記録、計算中かを保持する。位置と回転は読み取り用poseでviewへ渡せる。通常12本の小さな対応表なので描画用の逆引きは走査する。
+- coreの最小API変更：throwを&mut selfにして関連型ThrowOutputを追加する。CUIはf64の確率を維持し、GUIは開始できたかのboolを返す。RefCellや同名の別throwを追加しない。CUIのhitは棒の確率を直接参照して既存動作を保つ。dyn Molkkyの関連型指定と既存throwテストの可変束縛も移行する。採点・勝者・次手番の実装は変更しない。
+- ゼロ重力、円のスキットル、Y軸に沿ったカプセルの棒、線形/角減衰、棒のCCDを採用する。寸法はm、質量はkg、力積はN·s、角度はラジアン。値はGuiMolkkyの関連定数へまとめる。高さ方向の転倒を接触力積で近似するもので、実際の横倒しの再現とは区別する。
+- 1回のthrowから停止まで、再投擲は受け付けない。未照準・同一点・非有限値・正でない速度・別の棒は状態を変えずfalse。次のthrowで位置を維持したままピンを立て直し、速度・角速度・今回の記録を消す。停止は全ボディのsleepで判定する。終了通知の一度だけの採点は後続appの責務。
+
+### テストリスト
+
+- [x] 変更前GUI featureあり142件成功。リモートとの差分なし。
+- [x] 照準候補と物理対象を区別し、初速・向き・1tickの移動を確認する。
+- [x] 無効な投擲と計算中の再投擲で状態を変えない。
+- [x] 衝突の強弱、高速投擲、連鎖衝突、ミス、Id保持と重複しない転倒結果を確認する。
+- [x] 停止・再投擲・位置の維持・前回記録の消去を確認する。
+- [x] coreの採点・勝者・次手番のデフォルト実装がGUIから利用できる。
+- [x] Red/Green、featureあり/なしの全テスト・build・fmt・Clippy・差分を確認する。
+- [x] servicesの段階だけをcommit・通常pushして停止する。
+
+### 実行・レビュー結果
+
+- Red：servicesのテストを先に登録し、cargo test --features gui_2d --test gui_2dで未実装servicesによるE0432を確認した（/tmp/gui-services-red.log）。依存追加でlock更新後は--lockedを使用した。
+- Green：サービス8件が成功。初期の弱速テストは減衰後の最大移動距離より遠くにピンを置いていたため、実際に接触する配置へ修正した。連鎖テストは直接狙う候補が1本で、候補外の2本目が衝突経由で倒れる配置へ修正して確認した。転倒閾値をテストへ合わせる変更は行っていない。
+- 結果：GUI featureありの全150件（81+49+20）、なしの134件が成功、失敗・無視0件。featureあり/なしのcargo build --locked、cargo fmt --check、git diff --checkも成功した。
+- Clippy：cargo clippy --locked --all-targets --features gui_2d -- -D warningsが成功。API変更で触れたcore/services/molkky.rsの既存needless_returnも末尾式へ置き換えて解消し、lintの除外は使用していない。
+- API移行：Molkky::throwは&mut selfとThrowOutputへ変更した。既存のdyn指定とCUIのthrowテストだけを移行し、CUIの確率やcoreの採点・勝敗・手番の期待値は維持した。外部実装も関連型指定と可変レシーバーへの移行が必要。READMEへ説明した。
+- レビュー：PhysicsWorldへ任せて独自パイプライン・イベントハンドラー・同期プリミティブは作らない。stepは接触力積の統計を保存し、hitが閾値とcoreのStand/Fallを使って転倒結果を構成する。constructorでId重複・非有限配置が物理エンジンへ入るのを防ぎ、throwは無効な入力を変更前に拒否する。未知のIdのposeはNone。別の棒のhitでは結果を返さない。
+- 制約：物理の設定は近似用の値であり、実際の高さ方向の転倒や実機の挙動を保証するものではない。初期配置・入力・描画ループ・投擲終了後の一度だけの採点・GUI起動はまだ実装していない。既存models/viewは変更せず、servicesの段階で停止する。
+
+
 ## gui_2dのviewを実装（今回の一段階）
 
 - 対象はview/{field,skittle,stick,speedometer,score,result}.rsのみ。app/controller/GuiMolkky、Rapier、GUI起動、入力イベントは実装せず、この段階で停止する。coreと既存modelsは変更しない。

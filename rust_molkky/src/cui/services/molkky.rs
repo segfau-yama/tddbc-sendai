@@ -14,6 +14,7 @@ impl CuiMolkky {
 
 impl Molkky for CuiMolkky {
     type Stick = CuiStick;
+    type ThrowOutput = f64;
 
     fn aim(&self, _stick: &CuiStick, skittles: &[Skittle]) -> Vec<Skittle> {
         self.numbers
@@ -23,12 +24,12 @@ impl Molkky for CuiMolkky {
             .collect()
     }
 
-    fn throw(&self, stick: &CuiStick) -> f64 {
+    fn throw(&mut self, stick: &CuiStick) -> f64 {
         stick.probability()
     }
 
     fn hit(&self, stick: &CuiStick, skittles: &[Skittle]) -> Vec<Skittle> {
-        let probability = self.throw(stick);
+        let probability = stick.probability();
         skittles
             .iter()
             .filter(|_| rand::random_bool(probability))

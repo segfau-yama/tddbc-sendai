@@ -3,10 +3,12 @@ use itertools::Itertools;
 
 pub trait Molkky {
     type Stick;
+    /// 投擲方式ごとの結果。確率や初速などを同じ数値型に固定しない。
+    type ThrowOutput;
 
     fn aim(&self, stick: &Self::Stick, skittles: &[Skittle]) -> Vec<Skittle>;
 
-    fn throw(&self, stick: &Self::Stick) -> f64;
+    fn throw(&mut self, stick: &Self::Stick) -> Self::ThrowOutput;
 
     fn hit(&self, stick: &Self::Stick, skittles: &[Skittle]) -> Vec<Skittle>;
 
@@ -34,7 +36,7 @@ pub trait Molkky {
         {
             return Some(survived_team);
         };
-        return None;
+        None
     }
 
     fn next_team<'teams>(&self, teams: &'teams [Team]) -> Option<&'teams Team> {

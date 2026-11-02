@@ -100,7 +100,7 @@ mod hit {
             let stick = CuiStick::new(Stick::new(), 1.0);
             let skittles = [Skittle::new(5), Skittle::new(8)];
             let rules = CuiMolkky::new(vec![5]);
-            let rules: &dyn Molkky<Stick = CuiStick> = &rules;
+            let rules: &dyn Molkky<Stick = CuiStick, ThrowOutput = f64> = &rules;
             let targets = rules.aim(&stick, &skittles);
             let fallen = rules.hit(&stick, &targets);
             assert_eq!(fallen, [skittles[0].with_state(SkittleState::Fall)]);

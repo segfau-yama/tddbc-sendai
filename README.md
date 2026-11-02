@@ -62,7 +62,7 @@ assert_eq!(field.skittles.len(), 12);
 
 `CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、throwはCuiStickの確率（f64、0〜1）を返します。hitはその確率で各個体を判定し、倒れた本だけをFall状態で返します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
 
-`Molkky`を実装する型は関連型Stickとaim・throw・hitを定義します。CuiMolkkyのStickはCuiStickです。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
+`Molkky`を実装する型は関連型Stick・ThrowOutputとaim・throw・hitを定義します。throwは可変参照を受け取り、実装ごとの結果を返します。CuiMolkkyのStickはCuiStick、ThrowOutputはf64の確率です。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
 
 ### テストと残課題
 
@@ -71,13 +71,13 @@ assert_eq!(field.skittles.len(), 12);
 ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
 不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
 
-既定のテスト134件、gui_2d featureありでは142件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+既定のテスト134件、gui_2d featureありでは150件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
 
 ### GUI 2Dの描画部品
 
 `src/gui_2d/view/`にDioxusのElementを返す関数を実装しています。`gui_2d` featureを有効にすると、`gui_2d::view`から`field`、`skittle`、`stick`、`speedometer`、`scores`、`result`を利用できます。
 
-フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。棒・スキットルの位置や寸法は呼び出し側が渡します。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。入力・物理計算・GUIの起動処理は後続段階です。
+フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。棒・スキットルの位置や寸法は呼び出し側が渡します。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。入力・appへの接続・GUIの起動処理は後続段階です。
 
 ```sh
 cd rust_molkky
@@ -86,6 +86,25 @@ cargo build --locked --features gui_2d
 ```
 
 描画はdioxus-ssrによるHTML/SVG出力で検証します。ブラウザーやデスクトップでの実画面操作はまだ確認していません。既存CUIの起動方法は変わりません。
+
+### GUI 2Dの投擲サービス
+
+`gui_2d::services::GuiMolkky`にRapier2Dを統合しています。physics.rsやエンジン用の独自traitは作りません。newにGuiStick、投擲位置、`(Id, [x, y])`の配置一覧を渡します。座標・寸法はm、速度はm/s、角度はラジアンです。標準配置の生成は呼び出し側で行います。
+
+| API | 動作 |
+| --- | --- |
+| aim | 投擲方向上の候補を返す。候補外も物理ワールドには残す |
+| throw | 方向・初速を設定してtrueを返す。計算中や無効な入力では変更せずfalseを返す |
+| step | 1/60秒だけ物理更新し、各個体の最大接触力積を記録する |
+| hit | 今回の力積が閾値以上の個体をFallとして返す。同じ個体を結果に重複させない |
+| is_settled | 物理計算中かを確認する。初期状態と全ボディのsleep後はtrue |
+| pose | Idに対応する描画用の位置と回転を返す |
+
+GUIのthrowのThrowOutputは開始の成否を示すboolです。CUIの確率f64と同じ単位には扱いません。既存APIの利用側はthrowの可変参照と関連型ThrowOutputの指定へ移行してください。
+
+呼び出し側は固定時間ごとにstepし、途中のposeを描画できます。hitの結果はその投擲中の蓄積結果です。停止後に一度だけcalc_scoreへ渡し、得点表を更新して勝者・次手番を判定する進行処理は後続appで実装します。次のthrowでピンの位置を保持して立て直し、速度・角速度・前回の衝突記録を消します。
+
+転倒は高さ方向の横倒しを接触力積で近似します。寸法・質量・減衰・転倒閾値はGuiMolkkyの関連定数へまとめたシミュレーション用の設定値です。物理テストでは高速衝突、弱い衝突、連鎖衝突、停止・再投擲を確認しています。
 
 ## Java演習環境
 
