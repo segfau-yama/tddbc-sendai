@@ -1,5 +1,32 @@
 # 開発支援方針の記録
 
+## GUIの初期配置とゲーム進行を担当箇所へ集約（2026-11-03）
+
+- 対象：直前のレビューで承認された責務整理。標準配置はGuiField、入力から状態更新までの窓口は既存Controller、Dioxusとの接続と描画はappへ置く。core・CUI・物理方式・得点ルール・固定範囲と反射は変更しない。
+- 設計：GuiFieldは既存個体のIDに対応する初期配置を生成し、現在位置はGuiMolkkyの物理ワールドだけに保持する。ControllerはGame・GuiMolkky・蓄力・時計を所有し、handle・取消・フレーム進行・投擲完了の記録を担当する。advance_turnは勝敗と次手番の反映であることが分かるupdate_game_stateへ改名する。appのAppStateを削除し、Controllerの状態を描画する。
+- API・不変条件：Controller::newで試合を準備し、DOMイベントはController::handleへ渡す。照準解除はController内部の入力終了処理へ集約し、aimは候補の問い合わせ、throwは発射開始、hitは転倒結果の取得を維持する。取消で別pointerや投擲中の状態を壊さず、停止後の採点は一度だけ行い、勝利の反映で投擲履歴を追加しない。
+- テスト方針：動作を変えないリファクタリングとして、既存テストを変更前後で確認する。配置生成の新しい呼び出し口はテストを先に書く。進行テストをtests/gui_2d/controller.rsへ移し、appのテストは描画・接続対象に絞る。検証内容を削らず、登録用ファイルにテスト本体を置かない。
+- [x] 変更前のGUIを含むRust全体を確認する。
+- [x] GuiFieldの初期配置APIをテストし、標準配置の生成を移す。
+- [x] Controllerへ入力・取消・進行・結果反映を集約し、AppStateを削除する。
+- [x] 対応する場所へテストを移し、既存の期待値を保って成功させる。
+- [x] Rust全体・feature分離・fmt・Clippy・Webビルドとブラウザー操作を確認する。
+- [x] READMEと記録を更新し、差分を確認する。
+
+### 実行・レビュー結果
+
+- 変更前：`cd rust_molkky && cargo test --locked --features gui_2d --quiet`が173件成功。ログは`/tmp/molkky-responsibility-before.log`。
+- Red：GuiField::initial_positionsとTHROW_POSITIONを使うテストを先に追加し、未実装APIによるE0599を確認した。実行時の振る舞いの失敗とは区別する。ログは`/tmp/molkky-responsibility-red.log`。
+- Green：標準の四列・各座標・投擲位置から1mの距離・個体IDの保持・再生成時の同一結果を確認した。モデルからservicesへ依存せず、初期配置はControllerが渡す半径を使って計算する。現在位置の保存先は物理ワールドだけを維持した。ログは`/tmp/molkky-responsibility-field.log`。
+- Refactor：AppStateを削除し、app.rsは296行から113行になった。ControllerがGame・GuiMolkky・蓄力と時計を所有し、handle・update・finish_throw・update_game_stateを担当する。reset_inputで蓄力・照準・速度を解除し、取消の際のReadyへの遷移もController内へ集約した。Gameはgame()で読み取り専用に参照する。物理・coreのルール・CUI・依存関係は変更していない。
+- API整理：Controller::default()と公開されていた入力補助メソッドを、Controller::new(teams)と内部のイベント処理へ整理した。pressは自身のGamePhaseを参照し、preview・releaseも自身のGuiStickを使うため、所有する状態を引数で渡し直す必要がなくなった。配置移動中の借用エラーもこの整理で解消したが、Red確認としては数えない。
+- テストの移動：入力・取消・時刻・物理停止後の一度だけの採点・交代・終了はtests/gui_2d/controller.rsの18件へまとめ、controller.rsのcfg(test)から登録する。appの4件は初期描画・照準と速度・勝利/勝者なしの表示・固定viewBoxを扱う。旧appの配置確認はFieldの座標テストへ、勝利や照準の表示確認はappの描画テストへ移し、検証対象と期待値を維持した。登録用のtests/gui_2d.rsから重複するController登録を外した。
+- 取消の追加確認：所有pointerの取消後に、照準なし・速度0・入力所有なし・Readyとなり、棒のIDを保ち、続く解放で投擲を記録しないことを確認した。このテストは追加時点で成功しており、Red確認済みとは扱わない。
+- Rust：`cargo test --locked --features gui_2d --quiet`が177件（Controller18＋app4＋application81＋core_models49＋gui_2d25）、既定の`cargo test --locked --quiet`が135件、`cargo test --locked --no-default-features --features gui_2d --quiet`が96件成功。失敗・無視0件。ログは`/tmp/molkky-responsibility-{green,default,gui-only}.log`。
+- 整形・Lint・ビルド：`cargo fmt --check`、`cargo clippy --locked --all-targets --features gui_2d -- -D warnings`、`cargo build --locked --no-default-features --features gui_2d_web --bin gui_2d --target wasm32-unknown-unknown`が成功。ログは`/tmp/molkky-responsibility-clippy.log`と`/tmp/molkky-responsibility-web-build.log`。
+- Web：ユーザーが起動した既存の8080番サーバーを使い、`NODE_PATH=/tmp/molkky-browser-tools/node_modules CHROMIUM_PATH=/usr/bin/chromium node tests/gui_2d/controller.js`が成功。capture・取消・リサイズ・領域外解放・採点・交代・失格・勝利表示・終了後入力無効化・固定範囲・壁での反射を確認した。pageerrorとalertは0件。サーバーの追加起動・停止は行っていない。ログは`/tmp/molkky-responsibility-browser.log`。
+- 最終確認：READMEの責務・API・テスト実行先と件数を更新し、git diff --check成功。デスクトップ版の実操作は今回は未確認。関連する差分をConventional Commitで記録し、通常pushする。
+
 ## app.rsの責務配置を再レビュー（2026-11-03）
 
 - 対象・入力：ユーザー指定のAppStateのnew・handle・cancel_charge・reset_aim・update・finish_throw・advance_turn。app.rs、controller.rs、models/{field,game,stick}.rs、GuiMolkky、coreのMolkky、CUIのrunと対応するテストを読む。1人がブラウザーで操作する既存GUIを前提とし、今回は説明とレビュー記録のみでコードを変更しない。
@@ -30,6 +57,7 @@
 
 - 判断：上記は保守性・責務配置の指摘であり、現状の通常操作で動作不良が再現したという判定ではない。優先するのは1・2。単に全処理をaim・throwへ押し込むと、候補の問い合わせと入力状態の変更、物理の発射と試合全体の進行が混在する。新しい抽象層・trait・管理オブジェクトは提案せず、既存Field・Controller・GuiMolkkyの担当を揃える。
 - 検証：対応テストから取消・投擲停止後の一度だけの採点・交代・終了の期待値を確認した。コード変更なしの静的レビューのため、Rustテスト・ブラウザー操作・Red/Green/Refactorは今回実行していない。文書のみgit diff --checkで確認する。配置案の実装・行数削減量は未検証。
+- 対応状況：このレビューで提案した配置の整理は、直上の「GUIの初期配置とゲーム進行を担当箇所へ集約」で実装・検証した。
 
 ## gui_2dの表示範囲を固定し外周で反射させる（2026-11-03）
 

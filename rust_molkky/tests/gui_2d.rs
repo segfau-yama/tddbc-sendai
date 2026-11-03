@@ -6,10 +6,6 @@ mod game;
 mod stick;
 
 #[cfg(feature = "gui_2d")]
-#[path = "gui_2d/controller.rs"]
-mod controller;
-
-#[cfg(feature = "gui_2d")]
 #[path = "gui_2d/view/field.rs"]
 mod field_view;
 #[cfg(feature = "gui_2d")]

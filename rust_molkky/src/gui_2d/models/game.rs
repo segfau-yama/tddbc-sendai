@@ -9,7 +9,7 @@ pub enum GamePhase {
     Finished,
 }
 
-/// appが更新するGUIの状態。ルールと状態遷移の処理は持たない。
+/// Controllerが更新するGUIの状態。ルールと状態遷移の処理は持たない。
 #[derive(Clone)]
 pub struct Game {
     pub teams: Vec<Team>,

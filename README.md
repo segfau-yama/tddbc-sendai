@@ -29,8 +29,10 @@ cargo test --locked --test application
 | src/cui/io/input.rs | Input：入力元の保持、読み取り・変換・検証・再入力 |
 | src/cui/io/output.rs | Output：出力先の保持、プロンプト・得点表・結果の表示 |
 | src/cui/run.rs | チーム設定、投てき・採点・交代・終了のゲームループ |
-| src/gui_2d/app.rs | GUIの進行・標準配置とcontroller/view/servicesの合成 |
-| src/gui_2d/controller.rs / controller.js | 入力の解釈・座標変換とDOMのcapture・時刻通知 |
+| src/gui_2d/app.rs | Dioxusの起動・DOMとの接続・Controllerの状態の描画 |
+| src/gui_2d/models/field.rs | 個体集合・固定範囲と外周の壁・標準の初期配置の生成 |
+| src/gui_2d/controller.rs | 入力の解釈・取消・フレーム進行・採点の記録と勝敗・次手番の反映 |
+| src/gui_2d/controller.js | DOMのpointer capture・イベントと時刻の通知 |
 | src/gui_2d/services/molkky.rs | Rapierによる投擲・物理更新・転倒判定、coreルールの利用 |
 | src/gui_2d/view/ | SVG、速度メーター、得点表、結果表示 |
 | src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
@@ -76,7 +78,7 @@ assert_eq!(field.skittles.len(), 12);
 ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
 不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
 
-既定のテスト134件、gui_2d featureありでは173件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+既定のテスト135件、gui_2d featureありでは177件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
 
 ### GUI 2Dの起動
 
@@ -110,7 +112,7 @@ cargo run --locked --no-default-features --features gui_2d_desktop --bin gui_2d
 
 CUIは既定のcui feature、GUIはgui_2d_webまたはgui_2d_desktopを選択します。Webの起動スクリプトはCUI依存を除外し、UUIDのjs機能を有効にします。単なるgui_2d featureはヘッドレスのテスト・ライブラリ利用向けで、起動時はレンダラーを選択してください。
 
-`app.rs`が標準配置、controller/view/servicesの合成、固定刻みの更新、停止後の一度だけの採点・交代・終了を扱います。全チームで同じフィールドと棒を共有し、移動後の位置とIdを保ちます。操作用の初期投擲距離は1mです。高さ方向の転倒は物理サービスの力積による近似です。
+`GuiField::initial_positions`が既存個体のIDに対応する標準配置を生成します。`Controller`はGameとGuiMolkkyを持ち、入力・固定刻みの更新・停止後の一度だけの採点・交代・終了を扱います。`app.rs`はControllerをDioxusのSignalに保持し、DOMとの接続と描画を担当します。全チームで同じフィールドと棒を共有し、現在位置はGuiMolkkyの物理ワールドに保持します。操作用の初期投擲距離は1mです。高さ方向の転倒は物理サービスの力積による近似です。
 
 表示範囲はx=-0.3〜0.3m、y=-0.15〜1.35mで固定し、物体の移動による拡大縮小は行いません。`GuiField::BOUNDS`と`WALL_THICKNESS`を描画と物理で共用し、外周の厚さ2cmの壁で棒・スキットルが反射します。反発係数は0.5で、既存の減衰と合わせて停止します。壁と反射はこのGUIの取り決めです。
 
@@ -121,6 +123,8 @@ cd rust_molkky
 cargo test --locked --features gui_2d
 cargo test --locked --no-default-features --features gui_2d
 cargo clippy --locked --all-targets --features gui_2d -- -D warnings
+# Controllerの入力・進行を絞って確認する場合
+cargo test --locked --features gui_2d --lib gui_2d::controller
 ```
 
 Webを起動した状態で、実DOMの入力確認も実行できます。次はLinux用の例です。Playwrightは検証時だけ使用し、ゲームの実行依存には含めません。
@@ -150,7 +154,7 @@ cargo build --locked --features gui_2d
 
 ### GUI 2Dの投擲サービス
 
-`gui_2d::services::GuiMolkky`にRapier2Dを統合しています。physics.rsやエンジン用の独自traitは作りません。newにGuiStick、投擲位置、`(Id, [x, y])`の配置一覧を渡します。座標・寸法はm、速度はm/s、角度はラジアンです。標準配置の生成は呼び出し側で行います。
+`gui_2d::services::GuiMolkky`にRapier2Dを統合しています。physics.rsやエンジン用の独自traitは作りません。newにGuiStick、投擲位置、`(Id, [x, y])`の配置一覧を渡します。座標・寸法はm、速度はm/s、角度はラジアンです。ControllerはGuiFieldが生成した初期配置を渡します。
 
 | API | 動作 |
 | --- | --- |
@@ -163,17 +167,17 @@ cargo build --locked --features gui_2d
 
 GUIのthrowのThrowOutputは開始の成否を示すboolです。CUIの確率f64と同じ単位には扱いません。既存APIの利用側はthrowの可変参照と関連型ThrowOutputの指定へ移行してください。
 
-呼び出し側は固定時間ごとにstepし、途中のposeを描画できます。hitの結果はその投擲中の蓄積結果です。停止後に一度だけcalc_scoreへ渡し、得点表を更新して勝者・次手番を判定する進行処理をappで実装しています。次のthrowでピンの位置を保持して立て直し、速度・角速度・前回の衝突記録を消します。
+Controllerが固定時間ごとにstepし、appが途中のposeを描画します。hitの結果はその投擲中の蓄積結果です。停止後に一度だけcalc_scoreへ渡し、得点表を更新して勝者・次手番を反映する進行処理もControllerが担当します。次のthrowでスキットルの位置を保持して立て直し、速度・角速度・前回の衝突記録を消します。
 
 転倒は高さ方向の横倒しを接触力積で近似します。寸法・質量・減衰・転倒閾値はGuiMolkkyの関連定数へまとめたシミュレーション用の設定値です。物理テストでは高速衝突、弱い衝突、連鎖衝突、停止・再投擲を確認しています。
 
-### GUI 2Dの入力解釈
+### GUI 2Dの入力と進行
 
 `gui_2d::controller`に、`screen_to_world`と`Controller`を実装しています。座標変換はSVGの中央寄せ・アスペクト比維持・Y上向きに合わせ、余白や領域外を拒否します。入力の矩形はborderを除いたSVG描画領域のCSSピクセル値です。
 
-ControllerはReady時の左ボタン押下を受け付け、同じpointerの移動と解放を処理します。previewは経過時間による速度（0〜10m/s、往復2秒）と目標を持つGuiStickを返し、releaseは同じ計算で一度だけ入力を確定します。領域外の移動では最後の有効な照準を保持します。cancel_pointerは該当pointerの取消、cancelはfocus喪失などでの全入力破棄に使います。
+Controller::new(teams)はGameとGuiMolkkyを準備し、最初の手番を設定します。Gameはgame()から読み取り専用で参照できます。Ready時の左ボタン押下を受け付け、同じpointerの移動と解放を処理します。経過時間による速度（0〜10m/s、往復2秒）を表示し、解放時に同じ計算で投擲を開始します。領域外の移動では最後の有効な照準を保持します。取消はポインター所有・照準・速度・GamePhaseを一緒に更新し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。
 
-controller.jsがDOMのpointer captureを設定・解除し、イベントとperformance.nowの時刻をRustへ渡します。appがControllerで入力を解釈してGamePhaseを更新し、GuiMolkky::throwの成否で投擲開始を判定します。Webとdesktopで同じdocument::evalの接続を使います。
+controller.jsがDOMのpointer captureを設定・解除し、イベントとperformance.nowの時刻をRustへ渡します。appは受信したイベントをController::handleへ通知します。ControllerがGuiMolkky::throwで開始し、フレーム更新で停止を検出して一度だけ記録します。update_game_stateが既存のjudge_game・next_teamの判定を反映します。press・preview・releaseなどの入力補助処理はController内部に置き、対応テストもcontroller.rsの単体テストとして登録しています。Webとdesktopで同じdocument::evalの接続を使います。
 
 ## Java演習環境
 
