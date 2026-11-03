@@ -1,6 +1,6 @@
 use super::{
     controller::{Controller, DomEvent, timestamp},
-    models::{Game, GamePhase, GuiStick},
+    models::{Game, GamePhase, GuiField, GuiStick},
     services::GuiMolkky,
     view,
 };
@@ -36,11 +36,17 @@ impl AppState {
             .iter()
             .enumerate()
             .flat_map(|(row, numbers)| {
-                let pins = game.field.skittles();
+                let skittles = game.field.skittles();
                 numbers.iter().enumerate().map(move |(column, number)| {
-                    let pin = pins.iter().find(|pin| pin.number() == *number).unwrap();
+                    let skittle = skittles
+                        .iter()
+                        .find(|skittle| skittle.number() == *number)
+                        .unwrap();
                     let x = (2.0 * column as f32 - (numbers.len() - 1) as f32) * radius;
-                    (pin.id(), [x, 1.0 + row as f32 * 3.0_f32.sqrt() * radius])
+                    (
+                        skittle.id(),
+                        [x, 1.0 + row as f32 * 3.0_f32.sqrt() * radius],
+                    )
                 })
             })
             .collect();
@@ -209,51 +215,31 @@ impl AppState {
         } else {
             (Self::ORIGIN, 0.0)
         };
-        let mut bounds = [-0.3_f32, -0.15_f32, 0.3_f32, 1.35_f32];
-        for pos in self
-            .game
-            .field
-            .skittles()
-            .iter()
-            .map(|pin| self.rules.pose(pin.id()).unwrap().0)
-            .chain([position])
-        {
-            bounds[0] = bounds[0].min(pos[0] - 0.15);
-            bounds[1] = bounds[1].min(pos[1] - 0.15);
-            bounds[2] = bounds[2].max(pos[0] + 0.15);
-            bounds[3] = bounds[3].max(pos[1] + 0.15);
-        }
-        let bounds = [
-            bounds[0],
-            bounds[1],
-            bounds[2] - bounds[0],
-            bounds[3] - bounds[1],
-        ];
         let fallen = self.rules.hit(&self.game.stick, self.game.field.skittles());
         let targets = if self.game.phase == GamePhase::Charging {
             self.rules.aim(&self.game.stick, self.game.field.skittles())
         } else {
             Vec::new()
         };
-        let pins = self.game.field.skittles().iter().map(|pin| {
-            let pos = self.rules.pose(pin.id()).unwrap().0;
-            let pin = if matches!(self.game.phase, GamePhase::Simulating | GamePhase::Finished)
-                && fallen.iter().any(|p| p.id() == pin.id())
+        let skittles = self.game.field.skittles().iter().map(|skittle| {
+            let pos = self.rules.pose(skittle.id()).unwrap().0;
+            let skittle = if matches!(self.game.phase, GamePhase::Simulating | GamePhase::Finished)
+                && fallen.iter().any(|fallen_skittle| fallen_skittle.id() == skittle.id())
             {
-                pin.with_state(SkittleState::Fall)
+                skittle.with_state(SkittleState::Fall)
             } else {
-                *pin
+                *skittle
             };
-            let id = pin.id();
-            let class = if targets.iter().any(|p| p.id() == id) {
+            let id = skittle.id();
+            let class = if targets.iter().any(|target| target.id() == id) {
                 "aimed"
             } else {
                 ""
             };
-            rsx! { g { key: "{id}", class, {view::skittle(&pin, pos, GuiMolkky::SKITTLE_RADIUS)} } }
+            rsx! { g { key: "{id}", class, {view::skittle(&skittle, pos, GuiMolkky::SKITTLE_RADIUS)} } }
         });
         let scene = rsx! {
-            {pins}
+            {skittles}
             {view::aim(Self::ORIGIN, self.game.stick.target())}
             {view::stick(self.game.stick.stick().id(), position, angle, GuiMolkky::STICK_LENGTH, 2.0 * GuiMolkky::STICK_RADIUS)}
         };
@@ -263,7 +249,7 @@ impl AppState {
             p { role: "status", "{status}" }
             div { class: "game-layout",
                 div { id: "molkky-input", "data-phase": phase,
-                    {view::field(bounds, scene)}
+                    {view::field(GuiField::BOUNDS, scene)}
                     {view::speedometer(self.game.stick.speed(), Controller::MAX_SPEED)}
                 }
                 div { class: "scores",

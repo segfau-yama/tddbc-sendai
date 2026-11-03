@@ -131,7 +131,8 @@ mod input {
         let field_id = state.game.field.field().id();
         let stick_id = state.game.stick.stick().id();
         state.handle(DomEvent::Press(pointer([0.2, 0.2], 0.0)));
-        state.handle(DomEvent::Release(pointer([0.2, 0.2], 500.0)));
+        // 壁で反射してもスキットルへ届かない強さでミスを作る。
+        state.handle(DomEvent::Release(pointer([0.2, 0.2], 100.0)));
         assert_eq!(state.game.phase, GamePhase::Simulating);
         state.handle(DomEvent::Blur);
         assert_eq!(state.game.phase, GamePhase::Simulating);
@@ -155,6 +156,42 @@ mod input {
         assert_eq!(state.game.teams[0].score_board().history().len(), 1);
         assert_eq!(state.game.field.field().id(), field_id);
         assert_eq!(state.game.stick.stick().id(), stick_id);
+    }
+}
+
+mod fixed_field {
+    use super::*;
+
+    #[test]
+    fn 高速で投げても投擲中と停止後の表示範囲は変わらない() {
+        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let initial = dioxus_ssr::render_element(state.render());
+        let bounds = initial
+            .split("viewBox=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        assert_eq!(bounds, "-0.3 -1.35 0.6 1.5");
+        state.handle(DomEvent::Press(pointer([0.2, 0.2], 0.0)));
+        state.handle(DomEvent::Release(pointer([0.2, 0.2], 1000.0)));
+        for tick in 1..1200 {
+            state.handle(DomEvent::Frame {
+                time: 1000.0 + f64::from(tick) * 20.0,
+            });
+            let html = dioxus_ssr::render_element(state.render());
+            assert!(
+                html.contains(&format!("viewBox=\"{bounds}\"")),
+                "表示範囲が変わりました"
+            );
+            if state.game.phase != GamePhase::Simulating {
+                break;
+            }
+        }
+        assert_eq!(state.game.phase, GamePhase::Ready);
+        assert_eq!(state.game.teams[0].score_board().history().len(), 1);
+        assert!(state.game.teams[1].turn());
     }
 }
 

@@ -19,7 +19,7 @@ fn shot(stick: &GuiStick, target: [f32; 2], speed: f32) -> GuiStick {
 }
 
 fn settle(rules: &mut GuiMolkky) {
-    for _ in 0..1200 {
+    for _ in 0..(20.0 / GuiMolkky::TIME_STEP) as usize {
         if rules.is_settled() {
             return;
         }
@@ -33,7 +33,7 @@ mod launching {
 
     #[test]
     fn 狙う候補を選び速度を与えて一刻みだけ移動する() {
-        let (mut rules, stick, pins) = scene(&[[0.0, 1.0], [1.0, 1.0], [0.0, -1.0]]);
+        let (mut rules, stick, pins) = scene(&[[0.0, 1.0], [0.2, 1.0], [-0.1, -0.1]]);
         let aimed = shot(&stick, [0.0, 1.0], 6.0);
         assert_eq!(rules.aim(&aimed, &pins), [pins[0]]);
         assert!(rules.throw(&aimed));
@@ -95,15 +95,22 @@ mod collisions {
 
     #[test]
     fn 高速投擲でもすり抜けず同番号の個体を区別して倒す() {
-        let (mut rules, stick, pins) = scene(&[[0.0, 1.0], [3.0, 1.0]]);
+        let (mut rules, stick, pins) = scene(&[[0.0, 1.0], [0.2, 1.0]]);
         let aimed = shot(&stick, [0.0, 1.0], 120.0);
         assert!(rules.throw(&aimed));
-        settle(&mut rules);
+        // 反射後に別の個体へ当たる場合と区別し、最初の衝突を確認する。
+        for _ in 0..(20.0 / GuiMolkky::TIME_STEP) as usize {
+            rules.step();
+            if !rules.hit(&aimed, &pins).is_empty() {
+                break;
+            }
+        }
         let fallen = rules.hit(&aimed, &pins);
         assert_eq!(fallen, [pins[0].with_state(SkittleState::Fall)]);
         assert_eq!(rules.hit(&aimed, &pins), fallen);
         assert!(rules.hit(&GuiStick::default(), &pins).is_empty());
         assert!(pins.iter().all(|p| p.state() == SkittleState::Stand));
+        settle(&mut rules);
     }
 
     #[test]
@@ -142,7 +149,8 @@ mod collisions {
         settle(&mut rules);
         assert!(!rules.hit(&aimed, &pins).is_empty());
         let positions: Vec<_> = pins.iter().map(|p| rules.pose(p.id()).unwrap().0).collect();
-        assert!(rules.throw(&shot(&stick, [0.0, -1.0], 6.0)));
+        // 後ろの壁で反射して当たる投擲ではなく、届かない弱い投擲でミスにする。
+        assert!(rules.throw(&shot(&stick, [1.0, 0.0], 0.1)));
         assert!(rules.hit(&aimed, &pins).is_empty());
         assert_eq!(
             pins.iter()
@@ -154,6 +162,92 @@ mod collisions {
         assert!(rules.hit(&aimed, &pins).is_empty());
         rules.step();
         assert!(rules.is_settled());
+    }
+}
+
+mod field_boundaries {
+    use super::*;
+
+    fn assert_bounces(target: [f32; 2], speed: f32) {
+        let (mut rules, stick, _) = scene(&[]);
+        assert!(rules.throw(&shot(&stick, target, speed)));
+        let mut previous = [0.0, 0.0];
+        let mut reflected = [false; 2];
+        for _ in 0..(20.0 / GuiMolkky::TIME_STEP) as usize {
+            rules.step();
+            let (position, angle) = rules.pose(stick.stick().id()).unwrap();
+            let half_segment = GuiMolkky::STICK_LENGTH / 2.0 - GuiMolkky::STICK_RADIUS;
+            let extents = [angle.sin().abs(), angle.cos().abs()]
+                .map(|component| GuiMolkky::STICK_RADIUS + half_segment * component);
+            for (axis, min, max) in [(0, -0.3, 0.3), (1, -0.15, 1.35)] {
+                assert!(
+                    position[axis] - extents[axis] >= min - 0.005
+                        && position[axis] + extents[axis] <= max + 0.005,
+                    "棒がフィールドから出ました: {position:?}, {angle}"
+                );
+                if (position[axis] - previous[axis]) * target[axis] < -0.00001 {
+                    reflected[axis] = true;
+                }
+            }
+            previous = position;
+            if rules.is_settled() {
+                break;
+            }
+        }
+        for axis in 0..2 {
+            if target[axis] != 0.0 {
+                assert!(reflected[axis], "壁で反射しませんでした: {target:?}");
+            }
+        }
+        assert!(rules.is_settled(), "反射後に停止しませんでした");
+    }
+
+    #[test]
+    fn 四辺で棒が反射し範囲内で停止する() {
+        for target in [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]] {
+            assert_bounces(target, 10.0);
+        }
+    }
+
+    #[test]
+    fn 高速投擲でも外周の壁をすり抜けない() {
+        for target in [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]] {
+            assert_bounces(target, 120.0);
+        }
+    }
+
+    #[test]
+    fn 角へ斜めに投げても両方の方向へ反射して停止する() {
+        for target in [[0.3, 1.35], [-0.3, 1.35], [0.3, -0.15], [-0.3, -0.15]] {
+            assert_bounces(target, 10.0);
+        }
+    }
+
+    #[test]
+    fn 強く打たれたスキットルも外周の内側に残る() {
+        let (mut rules, stick, skittles) = scene(&[[0.0, 0.7]]);
+        let aimed = shot(&stick, [0.0, 1.0], 120.0);
+        assert!(rules.throw(&aimed));
+        for _ in 0..(20.0 / GuiMolkky::TIME_STEP) as usize {
+            rules.step();
+            let [x, y] = rules.pose(skittles[0].id()).unwrap().0;
+            let radius = GuiMolkky::SKITTLE_RADIUS;
+            assert!(
+                x - radius >= -0.305
+                    && x + radius <= 0.305
+                    && y - radius >= -0.155
+                    && y + radius <= 1.355,
+                "スキットルがフィールドから出ました: {x}, {y}"
+            );
+            if rules.is_settled() {
+                break;
+            }
+        }
+        assert!(rules.is_settled());
+        assert_eq!(
+            rules.hit(&aimed, &skittles),
+            [skittles[0].with_state(SkittleState::Fall)]
+        );
     }
 }
 

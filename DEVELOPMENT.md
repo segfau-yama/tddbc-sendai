@@ -1,5 +1,29 @@
 # 開発支援方針の記録
 
+## gui_2dの表示範囲を固定し外周で反射させる（2026-11-03）
+
+- 対象：GUIのフィールド範囲、GuiMolkkyの物理ワールド、appの描画、対応するRust・DOMテストとREADME。coreのルール・CUI・traitのAPIは変更しない。
+- 仕様・判断：現在の初期範囲を固定する（x=-0.3〜0.3m、y=-0.15〜1.35m）。GuiFieldに範囲と外周の壁の厚さ2cmを定義し、表示と物理境界で共用する。四辺にRapierの静的な壁を置き、棒とスキットルを反射させる。反発係数は0.5とし、既存の減衰と停止・採点・交代を維持する。壁・厚さ・反発係数はこのGUIの取り決めである。
+- レビュー・優先度高：appのrenderは毎フレーム全物体の座標でviewBoxを拡張しており、物体が飛び出すたび画面が縮小する。動的な範囲計算を削除する。
+- 責務のレビュー：throwには立て直し・投擲方向と初速の設定、aimには照準候補の選択、hitには蓄積した力積による転倒結果の取得が既にまとまっている。stepはフレームごとの物理更新と接触履歴の保存、is_settledは採点時機の確認、poseは描画用の座標取得に必要。throwで停止まで計算すると途中の動きを描画できず、hitに更新を移すと描画からの問い合わせで物理状態が変わる。directionはaim・throwの共通処理なので、複製せず維持する。
+- [x] 変更前のGUIを含む全Rustテストを確認する。
+- [x] 投擲中・停止後もviewBoxが変わらないテストのRedを確認する。
+- [x] 四辺・角・高速投擲で反射して範囲内に残り、最終的に停止するテストのRedを確認する。
+- [x] 表示と物理で同じ固定範囲を使い、既存の採点・再投擲・個体IDを維持する。
+- [x] 全Rustテスト・整形・Clippyとブラウザー操作を確認し、結果を記録する。
+
+### 実行・レビュー結果
+
+- 変更前：`cd rust_molkky && cargo test --locked --features gui_2d --quiet`が168件成功。ログは`/tmp/molkky-fixed-field-before.log`。
+- Red：appの固定範囲テストは「表示範囲が変わりました」で失敗。物理側の4件は棒またはスキットルが外へ出るため失敗した。ログは`/tmp/molkky-fixed-field-red.log`と`/tmp/molkky-wall-red.log`。同じ境界を描画と衝突で共有する変更なので、表示1件と物理4件を一組の退行テストとして先に追加した。
+- Green：動的なviewBox計算を削除し、外周を描画して同じ内側の面に静的コライダーを置いた。棒・スキットルのCCDを有効にし、四辺・角・120m/sの投擲、強く打たれたスキットルの保持と停止を確認した。棒の回転を含む全体形状を各更新で調べ、描画範囲からのはみ出しは物理計算の誤差5mm以内で検証した。独自の反射式、接触精度の追加設定、更新周期の変更は加えていない。
+- 既存テストの前提変更：反射があると、後方へ強く投げても戻って当たる。ミスの検証は届かない弱い投擲へ変更し、0点・一度だけの採点・交代・履歴維持の期待値は保った。初期配置のfixtureは固定範囲内へ移し、高速衝突での個体識別は最初の衝突時に確認する。後続の反射で別個体に当たることを誤って失敗としない。
+- レビュー・優先度中：静的な壁のコライダーには親RigidBodyがない。stepの停止中接触の判定でparentをunwrapせず、壁は動かないものとして扱う。壁を停止判定の対象ボディへ追加せず、投擲が終わらなくなる問題も避けた。
+- Refactor：触れたapp・GuiMolkky内のpinという変数名をskittleへ統一した。throw・aim・hitは既存の責務を維持し、step・is_settled・pose・共有するdirectionを無理に統合していない。新しいtrait・依存関係・物理の抽象層は追加していない。
+- Rust：`cargo test --locked --features gui_2d --quiet`が173件（app11＋application81＋core_models49＋gui_2d32）成功、失敗・無視0件。`cargo fmt --check`、`cargo clippy --locked --all-targets --features gui_2d -- -D warnings`も成功。ログは`/tmp/molkky-fixed-field-green.log`と`/tmp/molkky-fixed-field-clippy.log`。
+- Web：起動済みdxがWeb版を再ビルドした。`NODE_PATH=/tmp/molkky-browser-tools/node_modules CHROMIUM_PATH=/usr/bin/chromium node tests/gui_2d/controller.js`が成功。従来のcapture・取消・採点・失格・勝利に加えて、各状態でのviewBox固定と、横向き投擲中の座標をフレームごとに採取して反射・範囲内への保持・停止後の交代を確認した。pageerrorとalertは0件。ログは`/tmp/molkky-fixed-field-browser.log`。
+- 検証範囲：JSの構文確認と`git diff --check`成功。デスクトップ版の実操作は今回再確認していない。ローカルWebサーバーは`http://127.0.0.1:8080`で継続して起動している。
+
 ## ローカル環境でgui_2dを起動（2026-11-03）
 
 - 対象：既存のGUI起動手順とローカルの実行環境。ゲームの仕様・ドメインAPIの変更は予定しない。

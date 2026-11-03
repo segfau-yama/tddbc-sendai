@@ -14,6 +14,9 @@ impl Default for GuiField {
 }
 
 impl GuiField {
+    pub const BOUNDS: [f32; 4] = [-0.3, -0.15, 0.6, 1.5];
+    pub const WALL_THICKNESS: f32 = 0.02;
+
     pub fn new(field: Field, skittles: Vec<Skittle>) -> Self {
         Self { field, skittles }
     }

@@ -18,10 +18,13 @@ const { chromium } = require("playwright");
         await page.waitForTimeout(250);
         assert.equal(await page.locator("g[data-state]").count(), 12);
         assert.equal(await page.locator("[role=alert]").count(), 0);
+        const viewBox = await host.locator("svg").getAttribute("viewBox");
+        assert.equal(viewBox, "-0.3 -1.35 0.6 1.5");
 
         async function phase(value) {
             await page.waitForFunction(value => document.querySelector("#molkky-input")?.dataset.phase === value,
                 value, { timeout: 20000 });
+            assert.equal(await host.locator("svg").getAttribute("viewBox"), viewBox);
         }
         async function point(x, y) {
             return page.locator("#molkky-input svg").evaluate((svg, [x, y]) => {
@@ -90,9 +93,41 @@ const { chromium } = require("playwright");
         await page.mouse.click(...target);
         await page.waitForTimeout(100);
         assert.equal(await host.getAttribute("data-phase"), "finished");
+        // 新しい試合で横向きに投げ、描画中の反射と固定範囲も確認する。
+        await page.reload();
+        await host.waitFor();
+        await page.waitForTimeout(250);
+        target = await point(0.25, 0);
+        await page.mouse.move(...target);
+        await page.mouse.down();
+        await phase("charging");
+        await page.waitForTimeout(500);
+        await page.mouse.up();
+        await phase("simulating");
+        const frames = await host.locator("svg").evaluate(svg => new Promise((resolve, reject) => {
+            const frames = [];
+            const timeout = setTimeout(() => reject(new Error("投擲が停止しませんでした")), 20000);
+            function sample() {
+                if (svg.parentElement.dataset.phase !== "simulating") {
+                    clearTimeout(timeout);
+                    resolve(frames);
+                    return;
+                }
+                const matrix = svg.querySelector('g[id^="stick-"]').transform.baseVal.consolidate().matrix;
+                frames.push({ x: matrix.e, y: matrix.f, bounds: svg.getAttribute("viewBox") });
+                requestAnimationFrame(sample);
+            }
+            sample();
+        }));
+        assert.ok(frames.some(frame => frame.x > 0.1));
+        assert.ok(frames.some((frame, index) => index > 0 && frame.x < frames[index - 1].x - 0.001));
+        assert.ok(frames.every(frame => frame.x >= -0.3 && frame.x <= 0.3
+            && frame.y >= -0.15 && frame.y <= 1.35 && frame.bounds === viewBox));
+        await phase("ready");
+        assert.equal((await page.locator("tbody tr").nth(0).locator("td").nth(1).innerText()).trim(), "0");
         assert.deepEqual(errors, []);
         assert.equal(await page.locator("[role=alert]").count(), 0);
-        console.log("DOM入力・capture・採点・失格・結果表示の確認成功");
+        console.log("DOM入力・capture・採点・失格・結果表示・固定フィールド・反射の確認成功");
     } finally {
         await browser.close();
     }

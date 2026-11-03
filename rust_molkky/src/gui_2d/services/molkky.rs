@@ -1,5 +1,5 @@
 use crate::core::{Id, Molkky, Skittle, SkittleState};
-use crate::gui_2d::models::GuiStick;
+use crate::gui_2d::models::{GuiField, GuiStick};
 use rapier2d::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -7,7 +7,7 @@ pub struct GuiMolkky {
     world: PhysicsWorld,
     stick_id: Id,
     stick_body: RigidBodyHandle,
-    pin_ids: HashMap<ColliderHandle, Id>,
+    skittle_ids: HashMap<ColliderHandle, Id>,
     peak_impulses: HashMap<Id, f32>,
     origin: [f32; 2],
     active: bool,
@@ -30,6 +30,41 @@ impl GuiMolkky {
         let mut world = PhysicsWorld::new();
         world.gravity = Vector::ZERO;
         world.integration_parameters.dt = Self::TIME_STEP;
+        let [mut x, mut y, mut width, mut height] = GuiField::BOUNDS;
+        x += GuiField::WALL_THICKNESS;
+        y += GuiField::WALL_THICKNESS;
+        width -= 2.0 * GuiField::WALL_THICKNESS;
+        height -= 2.0 * GuiField::WALL_THICKNESS;
+        let thickness = 0.1;
+        // 描画する外周の壁に内側を合わせ、反射はRapierへ任せる。
+        for (center, half_size) in [
+            (
+                [x - thickness, y + height / 2.0],
+                [thickness, height / 2.0 + thickness],
+            ),
+            (
+                [x + width + thickness, y + height / 2.0],
+                [thickness, height / 2.0 + thickness],
+            ),
+            (
+                [x + width / 2.0, y - thickness],
+                [width / 2.0 + thickness, thickness],
+            ),
+            (
+                [x + width / 2.0, y + height + thickness],
+                [width / 2.0 + thickness, thickness],
+            ),
+        ] {
+            world.insert_collider(
+                ColliderBuilder::cuboid(half_size[0], half_size[1])
+                    .translation(Vector::from_array(center))
+                    .restitution(0.5)
+                    .restitution_combine_rule(CoefficientCombineRule::Max)
+                    .friction(0.0)
+                    .friction_combine_rule(CoefficientCombineRule::Min),
+                None,
+            );
+        }
         let (stick_body, _) = world.insert(
             RigidBodyBuilder::dynamic()
                 .translation(Vector::from_array(origin))
@@ -44,7 +79,7 @@ impl GuiMolkky {
             .mass(Self::STICK_MASS),
         );
         let mut ids = HashSet::from([stick.stick().id()]);
-        let mut pin_ids = HashMap::new();
+        let mut skittle_ids = HashMap::new();
         for &(id, position) in placements {
             assert!(ids.insert(id), "個体Idは一意です");
             assert!(position.iter().all(|v| v.is_finite()), "配置は有限値です");
@@ -53,16 +88,17 @@ impl GuiMolkky {
                     .translation(Vector::from_array(position))
                     .linear_damping(Self::DAMPING)
                     .angular_damping(Self::DAMPING)
+                    .ccd_enabled(true)
                     .sleeping(true),
                 ColliderBuilder::ball(Self::SKITTLE_RADIUS).mass(Self::SKITTLE_MASS),
             );
-            pin_ids.insert(collider, id);
+            skittle_ids.insert(collider, id);
         }
         Self {
             world,
             stick_id: stick.stick().id(),
             stick_body,
-            pin_ids,
+            skittle_ids,
             peak_impulses: HashMap::new(),
             origin,
             active: false,
@@ -79,14 +115,16 @@ impl GuiMolkky {
             // 立て直したsleep中のピン同士の古い接触記録は使わない。
             let handles = [pair.collider1, pair.collider2];
             let sleeping = handles.iter().all(|h| {
-                self.world.bodies[self.world.colliders[*h].parent().unwrap()].is_sleeping()
+                self.world.colliders[*h]
+                    .parent()
+                    .is_none_or(|body| self.world.bodies[body].is_sleeping())
             });
             if sleeping {
                 continue;
             }
             let impulse = pair.total_impulse_magnitude();
             for handle in handles {
-                if let Some(&id) = self.pin_ids.get(&handle) {
+                if let Some(&id) = self.skittle_ids.get(&handle) {
                     let peak = self.peak_impulses.entry(id).or_default();
                     *peak = peak.max(impulse);
                 }
@@ -109,7 +147,10 @@ impl GuiMolkky {
         let handle = if id == self.stick_id {
             self.stick_body
         } else {
-            let (&collider, _) = self.pin_ids.iter().find(|(_, pin_id)| **pin_id == id)?;
+            let (&collider, _) = self
+                .skittle_ids
+                .iter()
+                .find(|(_, skittle_id)| **skittle_id == id)?;
             self.world.colliders[collider].parent()?
         };
         let body = &self.world.bodies[handle];
@@ -135,14 +176,14 @@ impl Molkky for GuiMolkky {
         };
         skittles
             .iter()
-            .filter(|pin| {
-                let Some((pos, _)) = self.pose(pin.id()) else {
+            .filter(|skittle| {
+                let Some((pos, _)) = self.pose(skittle.id()) else {
                     return false;
                 };
                 let relative = Vector::from_array(pos) - Vector::from_array(self.origin);
                 let along = relative.dot(direction);
                 let across = (relative - direction * along).length();
-                pin.state() == SkittleState::Stand
+                skittle.state() == SkittleState::Stand
                     && along >= 0.0
                     && across <= Self::SKITTLE_RADIUS + Self::STICK_RADIUS
             })
@@ -157,7 +198,7 @@ impl Molkky for GuiMolkky {
         if self.active || !stick.speed().is_finite() || stick.speed() <= 0.0 {
             return false;
         }
-        for &collider in self.pin_ids.keys() {
+        for &collider in self.skittle_ids.keys() {
             let body = &mut self.world.bodies[self.world.colliders[collider].parent().unwrap()];
             body.set_rotation(Rotation::IDENTITY, false);
             body.set_linvel(Vector::ZERO, false);
@@ -183,14 +224,14 @@ impl Molkky for GuiMolkky {
         }
         skittles
             .iter()
-            .filter(|pin| {
-                pin.state() == SkittleState::Stand
+            .filter(|skittle| {
+                skittle.state() == SkittleState::Stand
                     && self
                         .peak_impulses
-                        .get(&pin.id())
+                        .get(&skittle.id())
                         .is_some_and(|&peak| peak >= Self::FALL_IMPULSE)
             })
-            .map(|pin| pin.with_state(SkittleState::Fall))
+            .map(|skittle| skittle.with_state(SkittleState::Fall))
             .collect()
     }
 }
