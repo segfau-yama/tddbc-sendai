@@ -1,5 +1,26 @@
 # 開発支援方針の記録
 
+## ローカル環境でgui_2dを起動（2026-11-03）
+
+- 対象：既存のGUI起動手順とローカルの実行環境。ゲームの仕様・ドメインAPIの変更は予定しない。
+- 期待する結果：GUIを起動し、描画と投擲・採点・交代を確認して、再起動コマンドを残す。
+- 環境：Dioxus CLI 0.7.9とChromiumは導入済み。デスクトップ用のlibxdo等が未導入のため、Web版を使う。必要なwasm32ターゲットを追加する。
+- [x] README・Cargo feature・GUIの入口・実行環境を確認する。
+- [x] Web版をビルドしてローカルサーバーを起動する。
+- [x] DOMテストのSVG選択をゲーム領域内に限定し、dxの開発用表示があっても実行できるようにする。
+- [x] 実際のブラウザーで描画と操作を確認する。
+- [x] 起動手順と検証結果を記録し、差分を確認する。
+
+### 実行・レビュー結果
+
+- 起動：`rustup target add wasm32-unknown-unknown`の後、`cd rust_molkky && dx serve --web --bin gui_2d --no-default-features --features gui_2d_web --locked --addr 127.0.0.1 --port 8080 --open false --interactive false`でビルド成功。dxがwasm-bindgen-cli 0.2.129とesbuildを準備した。`http://127.0.0.1:8080`で配信し、`xdg-open`で通常のブラウザーも開いた。サーバーは起動したままにする。
+- レビュー・優先度中：既存DOMテストはページ全体からSVGを選ぶため、dxの開発用表示にあるSVGとゲームのSVGが一致し、strict mode violationで停止した。`tests/gui_2d/controller.js`の選択範囲を既存のゲーム領域`#molkky-input`内に限定した。検証内容や期待値は変更していない。
+- Red：変更前の`NODE_PATH=/tmp/molkky-browser-tools/node_modules CHROMIUM_PATH=/usr/bin/chromium node tests/gui_2d/controller.js`が、上記のSVG複数一致で失敗した。環境準備の不足や中断したdesktopビルドはRedに数えない。
+- Green：同じコマンドが成功。12個体の描画、capture・取消・リサイズ・メーター・領域外解放、採点・交代、連続ミスでの失格、最後の生存者の勝利、終了後の入力無効化を確認した。pageerrorとアプリのalertは0件。
+- 描画：別のChromiumページで初期状態がready、スキットル12本、pageerrorなしを確認。`/tmp/molkky-gui-running.png`でフィールド・棒・得点表を目視確認した。
+- Refactor：追加なし。READMEにdxによる起動手順を追記し、既存のPython起動スクリプトとの使い分けを明記した。Rustソース・Cargo設定・lockは変更していない。
+- 検証：DOMテスト、`node --check rust_molkky/tests/gui_2d/controller.js`、`git diff --check`を実行。Rustソースの変更がないためcargo testは今回再実行していない。デスクトップ版の起動は未確認。
+
 ## gui_2dのapp・DOM接続・起動を実装（今回の一段階）
 
 - 今回は明示指定されたapp・DOMイベント接続・GUI起動を一つの接続段階として実装する。coreの採点・勝敗・手番と既存controller/view/GuiMolkkyを使い、追加のルールや物理方式は作らない。

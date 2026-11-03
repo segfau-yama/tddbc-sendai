@@ -42,18 +42,18 @@ const { chromium } = require("playwright");
         await page.mouse.move(...target);
         await page.mouse.down();
         await phase("charging");
-        assert.equal(await page.locator("svg").evaluate(svg => svg.hasPointerCapture(1)), true);
+        assert.equal(await host.locator("svg").evaluate(svg => svg.hasPointerCapture(1)), true);
         await page.evaluate(() => window.dispatchEvent(new Event("blur")));
         await phase("ready");
         await page.mouse.up();
-        assert.equal(await page.locator("svg").evaluate(svg => svg.hasPointerCapture(1)), false);
+        assert.equal(await host.locator("svg").evaluate(svg => svg.hasPointerCapture(1)), false);
 
         await page.mouse.move(...target);
         await page.mouse.down();
         await phase("charging");
         // pointerdown中のcapture指定を、次のイベントで実際のcaptureにする。
         await page.mouse.move(target[0] + 1, target[1]);
-        await page.locator("svg").evaluate(svg => svg.releasePointerCapture(1));
+        await host.locator("svg").evaluate(svg => svg.releasePointerCapture(1));
         // capture変更は次のpointerイベントで処理される。
         await page.mouse.move(target[0] + 2, target[1]);
         await phase("ready");
@@ -66,7 +66,7 @@ const { chromium } = require("playwright");
         await phase("charging");
         await page.waitForTimeout(100);
         assert.ok(Number(await page.locator("meter").getAttribute("value")) > 0);
-        assert.ok(Math.abs(Number(await page.locator("svg line").getAttribute("x2")) - 0.2) < 0.0001);
+        assert.ok(Math.abs(Number(await host.locator("svg line").getAttribute("x2")) - 0.2) < 0.0001);
         await page.mouse.move(630, 790);
         await page.mouse.up();
         await phase("simulating");

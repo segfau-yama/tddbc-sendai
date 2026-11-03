@@ -82,7 +82,16 @@ ScoreBoardは投てき履歴を保持して順に再計算します。50点を�
 
 赤チーム・青チームで開始します。フィールド内で左ボタンを押し、マウスで照準を合わせて離すと投擲します。領域外での解放も処理し、focus喪失時は蓄力を取り消します。停止後に採点・交代し、勝者が決まると結果を表示します。
 
-Web版にはPython 3と、Cargo.lockに対応するwasm-bindgen-cli 0.2.129を使います。
+Dioxus CLI（`dx`）が導入済みなら、次のコマンドでWeb版を起動できます。`dx`が対応するwasm-bindgenなどのビルドツールを用意します。
+
+```sh
+cd rust_molkky
+rustup target add wasm32-unknown-unknown
+dx serve --web --bin gui_2d --no-default-features --features gui_2d_web --locked --addr 127.0.0.1 --port 8080
+# http://127.0.0.1:8080 を開く。Ctrl+Cで終了。
+```
+
+`dx`を使わず既存の起動スクリプトを使う場合は、Python 3と、Cargo.lockに対応するwasm-bindgen-cli 0.2.129を用意します。
 
 ```sh
 cd rust_molkky
