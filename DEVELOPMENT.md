@@ -1,5 +1,36 @@
 # 開発支援方針の記録
 
+## app.rsの責務配置を再レビュー（2026-11-03）
+
+- 対象・入力：ユーザー指定のAppStateのnew・handle・cancel_charge・reset_aim・update・finish_throw・advance_turn。app.rs、controller.rs、models/{field,game,stick}.rs、GuiMolkky、coreのMolkky、CUIのrunと対応するテストを読む。1人がブラウザーで操作する既存GUIを前提とし、今回は説明とレビュー記録のみでコードを変更しない。
+- [x] 各メソッドの呼び出し元と、参照・更新する状態を確認する。
+- [x] appへ配置した当時の理由と、現在の責務として適切かを区別する。
+- [x] aim・throwへ統合した場合のAPIと動作への影響を確認する。
+- [x] 優先度・根拠・配置案・未確認事項を記録し、文書差分を確認する。
+
+### 配置した理由と判断
+
+- 当時の実装ではControllerを入力の所有・蓄力の解釈、Gameを状態保持に限定し、AppStateが両者とGuiMolkkyを調整する役割を持った。そのため、入力結果の反映、物理の進行、採点・交代がappへ集まった。この分担は一つの設計判断であり、Dioxusやアニメーションがapp.rsへの配置を必須にするものではない。前回の説明は、処理を分ける必要性をapp.rsへ置く理由として扱っており、配置の検討が不足していた。
+
+| メソッド・根拠 | appへ置いた理由 | レビュー結果・配置案 |
+| --- | --- | --- |
+| new：app.rs:27、field.rs:10 | Game・GuiMolkky・Controllerを組み立てる時に、物理ワールドへ渡す個体IDと初期座標も生成した | 依存オブジェクトの組み立てと標準配置の生成が混在している。番号配列・間隔・初期座標の生成はGuiFieldへ集約する。new全体をFieldへ移すとチーム・入力・時計の生成までFieldの責務になるため、生成する対象を分ける。現在位置は既存の物理ワールドが保持し、重複して保存しない |
+| handle：app.rs:65、controller.rs:70 | 入力解釈はController、Gameと物理状態への適用はAppStateという分担にした | イベントの振り分け・入力変換と、それに伴うゲーム操作はControllerへまとめるのが自然。Dioxusのonmounted・JSとの接続・Signalへの通知はappに残す |
+| cancel_charge：app.rs:129、controller.rs:146 | Controllerのchargeを消した後、別の所有者であるAppStateがGuiStickの照準・速度とGamePhaseを戻す必要があった | 取消の操作が二か所に分かれている。Controllerの取消操作で、ポインター所有・照準・速度・Charging→Readyを一緒に扱う。投擲中のBlurと別pointerの取消でゲームを戻さない既存の条件は保つ |
+| reset_aim：app.rs:136、services/molkky.rs:173 | 取消・無効な投擲・投擲完了から、同じGuiStickのIDを保って照準と速度を消す処理を共有した | 入力状態の解除である。Controllerの入力終了処理へまとめるか、GuiStickの値を初期状態へ戻す操作として呼ぶ。現在のaimは&selfで候補を取得する問い合わせで、renderからも呼ぶ。照準を消す処理をこのaimへ混ぜると問い合わせと状態変更の意味が衝突する |
+| update：app.rs:140 | Frame通知を受けて、蓄力の表示値と経過時間を反映し、固定刻みでstepして停止後に採点を依頼するため | ゲームのフレーム進行を担当するControllerへ置ける。Rapierの1tickはGuiMolkkyのstepが担当する。アニメーションのため開始と継続更新は分ける必要があるが、継続更新をapp.rsへ置く必然性はない |
+| finish_throw：app.rs:163、services/molkky.rs:194 | throwは発射開始の成否boolを返すため、後のフレームで停止したときだけ採点・記録・照準解除・交代を行う処理を別にした | 1投の結果をGameへ適用する進行処理なのでControllerへまとめられる。現在のthrowはstickだけを受け、teamsや得点表を扱わない。throwを1投の開始から完了まで扱うAPIへ再設計するなら統合は可能だが、同期的に停止まで計算すると途中描画が止まる。既存APIのままなら開始と完了処理を分ける |
+| advance_turn：app.rs:180、core/services/molkky.rs:25 | 初期化時と投擲完了時に、判定結果をチーム・手番・GamePhaseへ反映するため | judge_gameで勝者を確認し、勝者がいなければnext_teamで次手番を選ぶ。全チームのturnを更新し、勝者へwith_winで50点を反映し、次手番があればReady、なければFinishedにする。単なる手番送りより広い責務であり、「勝敗・次手番を反映する」ことが分かる名前とControllerへの配置が適切。勝敗ルールそのものは既存coreサービスへ委譲し続ける |
+
+### 指摘と最小の整理方針
+
+1. 優先度中・標準配置の生成が画面組み立てへ混在：番号配列や配置間隔を変える際にapp.rsの三角格子計算まで編集する必要がある（app.rs:32）。GuiFieldに個体集合があるため、初期配置の生成をそこへ集約し、appのnewは生成結果をGuiMolkkyへ渡す処理にする。
+2. 優先度中・入力処理と状態遷移の所有が分かれている：Controller::cancelは入力のchargeだけを消し、対応する照準・速度・GamePhaseの更新にはAppState::cancel_chargeも必要になる（controller.rs:146、app.rs:113）。既存Controllerをゲーム操作の窓口として揃え、handle・取消・フレーム進行・完了結果の適用をそこへまとめる。appの責務はDioxusとの接続と描画にする。
+3. 優先度中・advance_turnの名称から終了処理が読めない：相手の3回目のミスで、同じメソッドが勝者の50点化とFinishedへの遷移まで行う（app.rs:180、tests/gui_2d/app.rsのscoring）。上記の配置整理と合わせて、勝敗と次手番を反映する処理として名前を付ける。
+
+- 判断：上記は保守性・責務配置の指摘であり、現状の通常操作で動作不良が再現したという判定ではない。優先するのは1・2。単に全処理をaim・throwへ押し込むと、候補の問い合わせと入力状態の変更、物理の発射と試合全体の進行が混在する。新しい抽象層・trait・管理オブジェクトは提案せず、既存Field・Controller・GuiMolkkyの担当を揃える。
+- 検証：対応テストから取消・投擲停止後の一度だけの採点・交代・終了の期待値を確認した。コード変更なしの静的レビューのため、Rustテスト・ブラウザー操作・Red/Green/Refactorは今回実行していない。文書のみgit diff --checkで確認する。配置案の実装・行数削減量は未検証。
+
 ## gui_2dの表示範囲を固定し外周で反射させる（2026-11-03）
 
 - 対象：GUIのフィールド範囲、GuiMolkkyの物理ワールド、appの描画、対応するRust・DOMテストとREADME。coreのルール・CUI・traitのAPIは変更しない。
