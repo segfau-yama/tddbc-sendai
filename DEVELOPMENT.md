@@ -1,5 +1,49 @@
 # 開発支援方針の記録
 
+## GuiSkittle追加と空のGuiFieldを前提にした設計レビュー（2026-11-04）
+
+- 対象：126d12f時点のgui_2d/models、services/molkky.rs、app.rs、controller.rs、view。今回は設計案だけを整理し、ソースや既存APIを変更しない。レビュー記録はAGENTS.mdに従い保存する。
+- 現在の複雑さはGuiSkittleという型の欠落そのものより、GuiFieldのcore::Skittle一覧、GuiMolkkyのcollider→Id表・力積表、Rapierの位置、描画で作る一時的なFall状態を毎回結合する構造にある。GuiSkittleはこの個体単位の対応と状態をまとめる目的で追加する。
+
+### 推奨する所有とモデル
+
+- ControllerはGameとGuiMolkkyを一つずつ所有する。Gameはteams/field/stick/skittles/phaseを持ち、Vec<GuiSkittle>の唯一の所有元とする。GuiFieldからskittlesを外し、フィールド境界・壁・投擲位置等の場の情報を扱う。空のフィールドを生成でき、全チームが同じ場と個体集合を共有する。
+- GuiSkittleはcore::SkittleとRigidBodyHandleを合成する。Id・番号・Stand/Fallの正本は内側のcore::Skittle、位置・回転・速度・衝突形状の正本はRapierのWorld。GuiSkittleへ位置・角度の永続コピーや重複したis_fallenを追加しない。GuiStickもcore::Stick、対応ボディのハンドル、照準・初速を持つ形へ揃える。
+- GuiMolkkyはWorldと投擲位置等の物理実行コンテキストを所有し、GameのGuiSkittle/GuiStickを借用して扱う。core::Skittleを別の一覧にも保存しない。coreモデルへRapierの型を入れない。
+- ハンドルは作成元Worldに結び付く。Controllerの初期化でWorld・ボディ・GUIモデルを一緒に準備し、別Worldへのハンドル使い回しや、Game/GuiSkittleを独立にCloneして状態管理する形は避ける。未登録ハンドルのOption状態は先に設けない。
+
+### 配置・描画・投擲の責務
+
+| 対象 | 役割 |
+| --- | --- |
+| GuiField | スキットルを含まない場。境界、壁、投擲位置を定義する。 |
+| 初期配置関数 | GuiFieldと個体集合を受け取り配置を計算する。標準配置をFieldの所有メソッドから切り出し、物理ボディ生成と混ぜない。変則配置は別の関数または配置データで選ぶ。 |
+| GuiSkittle | coreの個体と物理ボディの対応、実際のStand/Fallを保持する。衝突の閾値や採点規則は持たない。 |
+| GuiMolkky::aim | GuiStickとGuiSkittle一覧を読み取り、物理位置から候補のIdを返す。候補は描画用の一時結果とする。 |
+| GuiMolkky::throw | 棒のボディへ方向・初速を設定して投擲を開始する。点数や手番は変更しない。 |
+| GuiMolkky::step/hit | stepがWorldを1tick進め、必ずhitを呼んでそのtickの衝突を各GuiSkittleへ反映する。hitは閾値以上なら内側のSkittleをwith_state(Fall)で置き換える。Fallはその投擲中維持する。 |
+| GuiMolkky::pose | ボディハンドルから直接位置・回転を読む。Idからcolliderを走査する結合処理をなくす。viewには座標など描画に必要な値を渡す。 |
+| view::skittle | Skittleの番号・状態と渡された位置・寸法を描画する。hitを呼んだり、転倒一覧から表示用の状態を再構築したりしない。 |
+| Controller | 停止後にFallのcore::Skittleだけを取り出してcoreへ採点を依頼し、ScoreBoardと手番・勝敗を更新する。継続時には立て直しを依頼してReadyへ進める。 |
+
+- 転倒をGuiSkittleのcore状態へ各tickで反映するため、peak_impulsesの別表を削除できる。contactは停止前に消えることがあるのでhitを停止時だけ呼ぶ設計にはしない。collider→Idの別表も、各GuiSkittleのbodyに付いたcolliderから接触を調べる形へ置き換える。通常12本のため、必要になる前に逆引きインデックスを再導入しない。
+- 立て直しは採点後・次の照準開始前に行う。GuiMolkkyのstand_up相当の操作で位置/Idを保ち、速度・回転をリセットし、core状態をStandへ戻す。これによりReady時の見た目だけStandにする処理を不要にする。終了時は最終状態を保持できる。これは実際の状態遷移が必要になる操作であり、任意の抽象インターフェースを追加する案ではない。
+- coreとの境界：現在のMolkky::aim/hitは&[Skittle]を受け取るので、この案へ署名をそのまま流用しない。推奨はaim/throw/hitを具象GuiMolkkyのメソッドへ置き、既存Molkkyトレイトを採点・勝敗・次手番の共通ルールへ絞る案。Stick/ThrowOutputの関連型も必要性を見直す。CUIは具象側へ物理操作を移す移行が必要になるが、coreのデータ型と採点規則は維持する。関連型や新しいtraitを追加して旧署名を延命する方針にはしない。
+- 代替案：GuiSkittleを位置・状態を含む一時的な描画スナップショットに限定すれば、現在のAPIをほぼ維持して描画の組み立てだけを整理できる。ただし物理処理の対応表・力積表は残る。描画と内部処理の両方を簡潔にする今回の目的には、ボディハンドルを持つ実行時モデルを推奨する。
+- 移行範囲は区別する。Fieldから個体一覧をGameへ移すことや、描画データの組み立てを整理すること自体は、core APIを変更せず進められる。物理メソッドの再配置と対応表の撤去はその先の設計案であり、GuiSkittle追加の必須条件にはしない。今回のレビューをcore全体の変更許可として扱わない。
+
+### レビュー指摘・確認計画
+
+- 中・app.rs:L34,L41: shrink: 描画のたびにhit・Id照合・Fallの一時コピーを作る処理を、GuiSkittleの状態とボディ位置の読み取りへ置き換える。
+- 中・models/field.rs:L7,L33: shrink: Fieldの個体一覧所有と配置生成を分け、GameのVec<GuiSkittle>と配置関数へ移す。
+- 中・services/molkky.rs:L10,L11: shrink: 個体の対応表と転倒判定用の別表を、GuiSkittleのbody/core状態へまとめる。物理ワールド自体の構築・更新・衝突判定は引き続き必要であり、型追加だけで全処理が不要になるわけではない。
+- [x] 現行の所有・描画時の結合・core APIへの影響を静的に確認する。
+- [x] 推奨案と描画スナップショット案を比較し、文書だけの差分を確認する。
+- [ ] 実装する場合：coreのId/番号とWorldの対応が保たれ、描画が状態を変更せず、各tickの転倒が停止後も残ることを確認する。
+- [ ] 実装する場合：立て直しで位置を変えず、次の照準までにStandへ戻り、採点は一度だけ行われることを確認する。
+- [ ] 実装する場合：空Field、標準/別配置、CUI移行、GUI描画・物理・coreルールの回帰を確認する。
+- 実装・動作テストは未実行。差分はgit diff --checkのみ確認する。型とAPIの再配置を含む設計案なので、削減行数は未算定。評価対象は所有の一意性、状態の正本、再結合処理の削減とする。
+
 ## gui_2d/services/molkky.rsの責務を説明・レビュー（2026-11-04）
 
 - 対象は1d30c0bのgui_2d/services/molkky.rs。core/CUIの同名ファイル、gui_2d/controller.rs・app.rs、対応テストを参照し、GUIの投擲シミュレーションとcoreモデルの橋渡しという意図を説明する。ソース修正は行わない。
