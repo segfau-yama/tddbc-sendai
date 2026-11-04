@@ -1,5 +1,24 @@
 # 開発支援方針の記録
 
+## Stick入出力に限定した操作とモデル・サービスの利用状況（2026-11-04）
+
+- 対象：f989960時点のcore、CUI/GUIのmodels/services、CUIのrun、GUIのcontrollers。最新の依頼に従い、実装より先に利用できていない箇所を洗い出す。flyは削除対象、throwとmoveはどちらもStick→Stickとし、数値や汎用Inputを追加引数にしない。前節のMove<Input>案はこの制約で見直す。Rustのmoveという名称を維持する場合はr#moveを使う。
+
+| 優先度 | 場所 | 現状の問題 | 見直す責務 |
+| --- | --- | --- | --- |
+| P1 | core/models/stick.rs:L4 | StickがIdしか持たず、保持・移動・停止を表せない。GUIのPhaseとサービスのflyingが棒の状態の代役になっている。 | core::StickがHeld/Move/Stopを保持する。操作はIdを保つ更新済みStickを返し、GUI独自の同等状態を増やさない。 |
+| P1 | core/models/stick.rs:L25、cui/models/stick.rs:L35、gui_2d/models/stick.rs:L50 | Throw<Input>は確率/速度の差し替えであり、Stickを投げた状態へ遷移させない。最新のStick→Stick契約とも合わない。 | 確率・目標・初速の準備は具象Stickの構築/入力変換で済ませる。throwは準備済みStickだけを受け取り、投擲後のStickを返す。moveもStickだけを受け取り、更新後のStickを返す。 |
+| P1 | gui_2d/services/molkky.rs:L26 | flyが棒の配置・初速、ワールド全体の更新、全接触の蓄積、一投の完了をまとめて扱い、更新したStickは返さない。 | flyを削除し、棒自身の操作と、共有フィールド内の衝突・連鎖というサービスの相互作用を分ける。処理全体をmoveへ名前だけ変えて移さない。Stickにワールド全体を所有させない。 |
+| P1 | gui_2d/controllers/app.rs:L182、controllers/stick.rs:L14、controllers/field.rs:L11、models/skittle.rs:L3 | 入力取消がStick再構築を兼ね、表示はPhase/flyingから棒の状態を推測する。GuiSkittleは定数参照のみで、controllerがワールド・BodyHandleを直接読んで位置を補っている。 | 保持・移動・停止はcoreの状態更新へ、GUIの位置・運動結果はcoreを合成した具象モデルへ反映し、controllerはモデルをviewへ渡す。物理エンジンの更新・結果の解釈はサービスに置く。座標はcoreへ追加しない。 |
+| P2 | cui/run.rs:L32 | 実際の投擲はaim→hitで進み、Throwを呼ばない。APIとテストに操作を用意しても、実行経路では利用されていない。 | CUIも準備済みStickをthrowへ渡し、返されたStickで命中判定・同期的な移動完了を進める。GUIだけに状態遷移を実装しない。 |
+| P2 | gui_2d/services/molkky.rs:L118 | chain_hitは転倒元のIdや接触相手を使わず、Fallであることと対象の最大力積だけを見る。hitも同じ全接触記録を参照し、直接命中と連鎖という引数の意味が具象に反映されていない。 | 共有物理処理の接触結果をIdで個体へ対応させ、hit/chain_hitが引数で指定された相互作用を反映するよう契約と利用経路を揃える。新たな汎用Strategyや連鎖探索機構を前提にしない。 |
+| P2 | core/services/molkky.rs:L51 | next_teamはjudge_gameを呼びながら、生存者数1による終了を重複判定する。 | 勝者の判定はjudge_gameを再利用し、next_teamは継続可能な場合の手番選択に集中する。 |
+
+- 採点・失格・勝利・手番の規則は既にcoreのcalc_score/judge_game/next_teamとScoreBoard.add/Team.with_score_boardで利用されている。呼び出し側がこれらを順に接続して結果を反映することはアプリケーションの役割であり、それ自体を責務違反とはしない。GuiTeam/GuiScoreBoardを経由せずcore型を使うことも、それだけでモデル未活用とは判定しない。
+- 棒のStopは棒単体の停止であり、スキットルの連鎖を含む一投の完了とは分ける。照準・蓄力はGUI入力の状態としてHeldと共存する。coreにDioxus、Rapier、座標を追加せず、既存のMolkkyの命中・連鎖・立て直し・採点・勝敗・手番の契約を利用する。
+- [x] 定義だけでなく、GUIのRelease/FrameとCUIの実行ループを追跡した。
+- [x] 根拠となる行・利用経路・優先度・移動先の責務を整理した。今回はソースとテストを変更せず、設計記録のみ更新する。動作テストは再実行せず、git diff --checkで文書を検証する。
+
 ## StickのMove抽象と共通状態の設計レビュー（2026-11-04）
 
 - 対象：273382aのcore/models/stick.rs、core/services/molkky.rs、CUI/GUIのStickとMolkky、GUIのstick/app controller。ユーザー案はflyをStick側の抽象へ移し、Held/Move/Stopをcoreで共有するもの。今回は設計レビューのみで、Rust/JS・テストは変更しない。
