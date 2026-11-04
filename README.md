@@ -59,28 +59,33 @@ InputとOutputはプレゼンテーション層の入出力処理なので、ド
 ### aimからhitへ渡す
 
 ```rust
-use rust_molkky::{Molkky, Stick};
+use rust_molkky::{Molkky, SkittleState, Stick};
 use rust_molkky::cui::{models::{CuiField, CuiStick}, services::CuiMolkky};
 
 let field = CuiField::default();
 let stick = CuiStick::new(Stick::new(), 0.5);
 let rules = CuiMolkky::new(vec![5, 8]);
 let targets = rules.aim(&stick, &field.skittles);
-let fallen: Vec<_> = targets.iter().filter_map(|skittle| {
-    let (updated, fell) = rules.hit(&stick, skittle);
-    fell.then_some(updated)
-}).collect();
+let fallen: Vec<_> = targets.iter()
+    .map(|skittle| rules.hit(&stick, skittle))
+    .filter(|skittle| skittle.as_ref().state() == SkittleState::Fall)
+    .map(|skittle| *skittle.as_ref())
+    .collect();
 println!("{}点", rules.calc_score(&fallen).value());
 assert_eq!(field.skittles.len(), 12);
 ```
 
-`CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、throwはCuiStickの確率（f64、0〜1）を返します。hitは1本ずつ確率判定し、更新後のSkittleと新規転倒boolを返します。boolは入力のStandが出力のFallへ変わった場合だけtrueです。既にFallの個体は状態を保ってfalseを返します。呼び出し側が今回倒れた個体をまとめて採点します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
+`CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、throwはCuiStickの確率（f64、0〜1）を返します。hitは1本ずつ確率判定し、更新後のCuiSkittleだけを返します。転倒時には投げたStickの命中確率を連鎖用に保持します。結果は内側のSkittleStateで判定し、既にFallの個体は状態と確率を保ちます。呼び出し側が今回倒れた個体をまとめて採点します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
 
-`Molkky`を実装する型は関連型Stick・Skittle・ThrowOutputとaim・throw・hitを定義します。throwは可変参照を受け取り、実装ごとの結果を返します。CuiMolkkyのStickはCuiStick、ThrowOutputはf64の確率です。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
+`Molkky`を実装する型は関連型Stick・Skittle・ThrowOutputとaim・throw・hitを定義します。throwは可変参照を受け取り、実装ごとの結果を返します。CuiMolkkyのStickはCuiStick、SkittleはCuiSkittle、ThrowOutputはf64の確率です。aim・hit・chain_hitは関連型の個体を返し、CUI固有の確率を保持します。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
+
+chain_hit(fallen_skittle, chained_skittle)は、呼び出し側が指定した対象へ連鎖を判定します。初回転倒が80%なら次は60%、さらに次は40%と20パーセントポイントずつ下げ、成功した対象へ減衰後の確率を引き継ぎます。0%より下には下げません。連鎖元がStand、対象が既にFall、判定失敗の場合は対象をそのまま返します。現在のCUI入力ループは指定番号への直接hitを行い、隣接探索や連鎖対象の自動選択は追加していません。
+
+stand_upはcoreの共通メソッドで、Id・番号を保ってStandへ戻した個体を返します。CuiSkittleでは連鎖確率も初期値の0へ戻します。元の個体は変更しません。
 
 ### テストと残課題
 
-テスト本体は対象ファイルに合わせて`tests/core/models/`、`tests/core/services/`、`tests/cui/models/`、`tests/cui/services/`、`tests/cui/io/`、`tests/cui/run.rs`へ配置します。`tests/core_models.rs`と`tests/application.rs`がモジュールを登録します。
+テスト本体は対象ファイルに合わせて`tests/core/models/`、`tests/core/services/`、`tests/cui/models/`、`tests/cui/services/`、`tests/cui/io/`、`tests/cui/run.rs`へ配置します。`tests/core_models.rs`と`tests/application.rs`がモジュールを登録します。CUIのMolkky具象テストはソースのcfg(test)から同名のテストファイルを登録し、非公開の乱数源を固定して連鎖を検証します。
 
 ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
 不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
@@ -168,14 +173,16 @@ cargo build --locked --features gui_2d
 | aim | 投擲方向上の候補を返す。候補外も物理ワールドには残す |
 | throw | 方向・初速を設定してtrueを返す。計算中や無効な入力では変更せずfalseを返す |
 | step | 1/60秒だけ物理更新し、各個体の最大接触力積を記録する |
-| hit | Stickと1本のSkittleを受け、更新後の個体と新規転倒boolを返す。物理時間は進めない |
-| stand_up | 個体の位置・Idを保ち、速度・回転・今回の接触記録を消す。棒を投擲位置へ戻す |
+| hit | Stickと1本のSkittleを受け、更新後の個体だけを返す。物理時間は進めない |
+| chain_hit | 転倒元と対象を受け、Rapierが蓄積した対象の転倒状態を返す。CUIの確率は使わない |
+| stand_up | coreの共通処理で1本の状態をStandへ戻す。物理ワールドは更新しない |
+| reset_throw | 個体の位置・Idを保ち、速度・回転・今回の接触記録を消す。棒を投擲位置へ戻す |
 | is_settled | 物理計算中かを確認する。初期状態と全ボディのsleep後はtrue |
 | pose | Idに対応する描画用の位置と回転を返す |
 
 GUIのthrowのThrowOutputは開始の成否を示すboolです。CUIの確率f64と同じ単位には扱いません。既存APIの利用側はthrowの可変参照と関連型ThrowOutputの指定へ移行してください。
 
-appが固定時間ごとにstepし、そのフレームの物理更新後に各Skittleへhitの返却値を反映します。接触力積はstepが蓄積し、Fallに変わった個体はその投擲中ずっとFallを保ちます。描画はモデルの状態とposeを読むだけで、hitを呼びません。停止後に今回のFall一覧を一度だけcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を反映します。継続する場合はstand_upとモデルのStand復帰を行い、移動後の位置とIdを保って次の照準を開始できます。throwも単独で利用できるよう開始時に物理状態を初期化します。
+appが固定時間ごとにstepし、そのフレームの物理更新後に各Skittleへhitの返却値を反映します。接触力積はstepが蓄積し、Fallに変わった個体はその投擲中ずっとFallを保ちます。描画はモデルの状態とposeを読むだけで、hitを呼びません。停止後に今回のFall一覧を一度だけcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を反映します。継続する場合はreset_throwで物理状態を準備し、各個体をcoreのstand_upでStandへ戻して、移動後の位置とIdを保って次の照準を開始できます。throwも単独で利用できるよう開始時に物理状態を初期化します。
 
 転倒は高さ方向の横倒しを接触力積で近似します。寸法・質量・減衰・転倒閾値はGuiMolkkyの関連定数へまとめたシミュレーション用の設定値です。物理テストでは高速衝突、弱い衝突、連鎖衝突、停止・再投擲を確認しています。
 

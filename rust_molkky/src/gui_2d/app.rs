@@ -155,7 +155,7 @@ impl AppState {
                             .field
                             .skittles()
                             .iter()
-                            .map(|skittle| self.rules.hit(&self.stick, skittle).0)
+                            .map(|skittle| self.rules.hit(&self.stick, skittle))
                             .collect();
                         self.field = GuiField::new(*self.field.as_ref(), updated);
                         if self.rules.is_settled() {
@@ -194,12 +194,12 @@ impl AppState {
         self.reset_input();
         self.update_game_state();
         if !self.is_finished() {
-            self.rules.stand_up();
+            self.rules.reset_throw();
             let standing = self
                 .field
                 .skittles()
                 .iter()
-                .map(|skittle| skittle.with_state(SkittleState::Stand))
+                .map(|skittle| self.rules.stand_up(skittle))
                 .collect();
             self.field = GuiField::new(*self.field.as_ref(), standing);
         }

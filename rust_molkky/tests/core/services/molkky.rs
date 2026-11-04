@@ -1,4 +1,4 @@
-use rust_molkky::cui::models::CuiStick;
+use rust_molkky::cui::models::{CuiSkittle, CuiStick};
 use rust_molkky::cui::services::CuiMolkky;
 use rust_molkky::{Molkky, Name, ScoreBoard, ScoreState, Skittle, SkittleState, Stick, Team};
 
@@ -26,10 +26,14 @@ mod model_delegation {
     fn 関連型越しに元の棒と個体の識別子を参照できる() {
         let original = Stick::new();
         let stick = CuiStick::new(original, 1.0);
-        let skittles = [Skittle::new(5), Skittle::new(5)];
+        let skittles = [Skittle::new(5), Skittle::new(5)].map(CuiSkittle::from);
         assert_eq!(
             model_ids::<CuiMolkky>(&stick, &skittles),
-            [original.id(), skittles[0].id(), skittles[1].id()]
+            [
+                original.id(),
+                skittles[0].as_ref().id(),
+                skittles[1].as_ref().id()
+            ]
         );
     }
 }
@@ -117,23 +121,39 @@ mod hit {
         use super::*;
 
         #[test]
-        fn 一本の状態を返し元を変えず新規転倒だけを通知する() {
+        fn 共通の立て直しは番号と識別子を保って立位を返す() {
             let rules = CuiMolkky::default();
-            let stick = CuiStick::new(Stick::new(), 1.0);
-            let original = Skittle::new(5);
-            let (updated, fell) = rules.hit(&stick, &original);
-            assert!(fell);
-            assert_eq!(updated, original.with_state(SkittleState::Fall));
-            assert_eq!(original.state(), SkittleState::Stand);
-            assert_eq!(rules.hit(&stick, &updated), (updated, false));
+            let original = CuiSkittle::new(Skittle::new(5).with_state(SkittleState::Fall), 0.8);
+            let standing = rules.stand_up(&original);
+            assert_eq!(
+                *standing.as_ref(),
+                original.as_ref().with_state(SkittleState::Stand)
+            );
+            assert_eq!(standing.probability(), 0.0);
+            assert_eq!(original.as_ref().state(), SkittleState::Fall);
+            assert_eq!(original.probability(), 0.8);
         }
 
         #[test]
-        fn 倒れない場合は同じ個体の状態とfalseを返す() {
+        fn 一本の状態を返し元を変えず転倒状態を保持する() {
+            let rules = CuiMolkky::default();
+            let stick = CuiStick::new(Stick::new(), 1.0);
+            let original = CuiSkittle::from(Skittle::new(5));
+            let updated = rules.hit(&stick, &original);
+            assert_eq!(
+                *updated.as_ref(),
+                original.as_ref().with_state(SkittleState::Fall)
+            );
+            assert_eq!(original.as_ref().state(), SkittleState::Stand);
+            assert_eq!(rules.hit(&stick, &updated), updated);
+        }
+
+        #[test]
+        fn 倒れない場合は同じ個体の状態を返す() {
             let rules = CuiMolkky::default();
             let stick = CuiStick::new(Stick::new(), 0.0);
-            let original = Skittle::new(8);
-            assert_eq!(rules.hit(&stick, &original), (original, false));
+            let original = CuiSkittle::from(Skittle::new(8));
+            assert_eq!(rules.hit(&stick, &original), original);
         }
     }
 
@@ -143,16 +163,20 @@ mod hit {
         #[test]
         fn trait越しに狙った個体だけを転倒結果として返す() {
             let stick = CuiStick::new(Stick::new(), 1.0);
-            let skittles = [Skittle::new(5), Skittle::new(8)];
+            let skittles = [Skittle::new(5), Skittle::new(8)].map(CuiSkittle::from);
             let rules = CuiMolkky::new(vec![5]);
-            let rules: &dyn Molkky<Stick = CuiStick, Skittle = Skittle, ThrowOutput = f64> = &rules;
+            let rules: &dyn Molkky<Stick = CuiStick, Skittle = CuiSkittle, ThrowOutput = f64> =
+                &rules;
             let targets = rules.aim(&stick, &skittles);
             let fallen = fallen_skittles(rules, &stick, &targets);
-            assert_eq!(fallen, [skittles[0].with_state(SkittleState::Fall)]);
+            assert_eq!(
+                fallen,
+                [skittles[0].as_ref().with_state(SkittleState::Fall)]
+            );
             assert!(
                 skittles
                     .iter()
-                    .all(|skittle| skittle.state() == SkittleState::Stand)
+                    .all(|skittle| skittle.as_ref().state() == SkittleState::Stand)
             );
         }
 
@@ -168,13 +192,13 @@ mod hit {
         fn 狙った個体の並び順を転倒結果でも保つ() {
             let rules = CuiMolkky::new(vec![8, 5]);
             let stick = CuiStick::new(Stick::new(), 1.0);
-            let skittles = [Skittle::new(5), Skittle::new(8)];
+            let skittles = [Skittle::new(5), Skittle::new(8)].map(CuiSkittle::from);
             let fallen = fallen_skittles(&rules, &stick, &rules.aim(&stick, &skittles));
             assert_eq!(
                 fallen,
                 [
-                    skittles[1].with_state(SkittleState::Fall),
-                    skittles[0].with_state(SkittleState::Fall)
+                    skittles[1].as_ref().with_state(SkittleState::Fall),
+                    skittles[0].as_ref().with_state(SkittleState::Fall)
                 ]
             );
         }
@@ -188,10 +212,10 @@ mod hit {
             let (fallen, id) = {
                 let rules = CuiMolkky::new(vec![12]);
                 let stick = CuiStick::new(Stick::new(), 1.0);
-                let skittles = [Skittle::new(12)];
+                let skittles = [Skittle::new(12)].map(CuiSkittle::from);
                 (
                     fallen_skittles(&rules, &stick, &rules.aim(&stick, &skittles)),
-                    skittles[0].id(),
+                    skittles[0].as_ref().id(),
                 )
             };
             assert_eq!(fallen.len(), 1);
@@ -396,7 +420,7 @@ mod integration_contract {
     fn 実装で狙った個体を倒し使用側で採点と得点表の更新を行える() {
         let rules = CuiMolkky::new(vec![5]);
         let original = team("赤", &[]).with_turn(true);
-        let skittles = [Skittle::new(5), Skittle::new(8)];
+        let skittles = [Skittle::new(5), Skittle::new(8)].map(CuiSkittle::from);
         let stick = CuiStick::new(Stick::new(), 1.0);
         let targets = rules.aim(&stick, &skittles);
         let fallen = fallen_skittles(&rules, &stick, &targets);
@@ -409,16 +433,15 @@ mod integration_contract {
     }
 }
 
-fn fallen_skittles<M: Molkky<Skittle = Skittle> + ?Sized>(
+fn fallen_skittles<M: Molkky + ?Sized>(
     rules: &M,
     stick: &M::Stick,
-    skittles: &[Skittle],
+    skittles: &[M::Skittle],
 ) -> Vec<Skittle> {
     skittles
         .iter()
-        .filter_map(|skittle| {
-            let (updated, fell) = rules.hit(stick, skittle);
-            fell.then_some(updated)
-        })
+        .map(|skittle| rules.hit(stick, skittle))
+        .filter(|skittle| skittle.as_ref().state() == SkittleState::Fall)
+        .map(|skittle| *skittle.as_ref())
         .collect()
 }

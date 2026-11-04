@@ -1,18 +1,27 @@
-use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
+use crate::core::models::{Point, ScoreState, Skittle, SkittleState, Stick, Team};
 use itertools::Itertools;
 
 pub trait Molkky {
     type Stick: AsRef<Stick>;
-    type Skittle: AsRef<Skittle>;
+    type Skittle: AsRef<Skittle> + From<Skittle>;
     /// 投擲方式ごとの結果。確率や初速などを同じ数値型に固定しない。
     type ThrowOutput;
 
-    fn aim(&self, stick: &Self::Stick, skittles: &[Self::Skittle]) -> Vec<Skittle>;
+    fn aim(&self, stick: &Self::Stick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle>;
 
     fn throw(&mut self, stick: &Self::Stick) -> Self::ThrowOutput;
 
-    /// 更新後の個体と、今回StandからFallへ変わったかを返す。
-    fn hit(&self, stick: &Self::Stick, skittle: &Self::Skittle) -> (Skittle, bool);
+    fn hit(&self, stick: &Self::Stick, skittle: &Self::Skittle) -> Self::Skittle;
+
+    fn chain_hit(
+        &self,
+        fallen_skittle: &Self::Skittle,
+        chained_skittle: &Self::Skittle,
+    ) -> Self::Skittle;
+
+    fn stand_up(&self, skittle: &Self::Skittle) -> Self::Skittle {
+        skittle.as_ref().with_state(SkittleState::Stand).into()
+    }
 
     fn calc_score(&self, fallen_skittles: &[Skittle]) -> Point {
         Point::new(match fallen_skittles {

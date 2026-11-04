@@ -94,20 +94,19 @@ mod collisions {
     use super::*;
 
     #[test]
-    fn 単体hitは物理を進めず転倒状態と新規転倒を返す() {
+    fn 単体hitは物理を進めず更新した転倒状態を返す() {
         let (mut rules, stick, pins) = scene(&[[0.0, 0.7]]);
         let aimed = shot(&stick, [0.0, 1.0], 6.0);
         assert!(rules.throw(&aimed));
         let pose = rules.pose(pins[0].id());
-        assert_eq!(rules.hit(&aimed, &pins[0]), (pins[0], false));
+        assert_eq!(rules.hit(&aimed, &pins[0]), pins[0]);
         assert_eq!(rules.pose(pins[0].id()), pose);
         settle(&mut rules);
         let pose = rules.pose(pins[0].id());
-        let (updated, fell) = rules.hit(&aimed, &pins[0]);
-        assert!(fell);
+        let updated = rules.hit(&aimed, &pins[0]);
         assert_eq!(updated, pins[0].with_state(SkittleState::Fall));
-        assert_eq!(rules.hit(&aimed, &updated), (updated, false));
-        assert_eq!(rules.hit(&GuiStick::default(), &pins[0]), (pins[0], false));
+        assert_eq!(rules.hit(&aimed, &updated), updated);
+        assert_eq!(rules.hit(&GuiStick::default(), &pins[0]), pins[0]);
         assert_eq!(rules.pose(pins[0].id()), pose);
     }
 
@@ -117,12 +116,12 @@ mod collisions {
         let aimed = shot(&stick, [0.0, 1.0], 6.0);
         assert!(rules.throw(&aimed));
         settle(&mut rules);
-        assert!(rules.hit(&aimed, &pins[0]).1);
+        assert_eq!(rules.hit(&aimed, &pins[0]).state(), SkittleState::Fall);
         let position = rules.pose(pins[0].id()).unwrap().0;
-        rules.stand_up();
+        rules.reset_throw();
         assert_eq!(rules.pose(pins[0].id()), Some((position, 0.0)));
         assert_eq!(rules.pose(stick.stick().id()), Some(([0.0, 0.0], 0.0)));
-        assert_eq!(rules.hit(&aimed, &pins[0]), (pins[0], false));
+        assert_eq!(rules.hit(&aimed, &pins[0]), pins[0]);
         rules.step();
         assert!(rules.is_settled());
         assert_eq!(rules.pose(pins[0].id()), Some((position, 0.0)));
@@ -174,6 +173,26 @@ mod collisions {
             pins.iter().map(|p| rules.pose(p.id())).collect::<Vec<_>>()
         );
         assert_ne!(fallen[0].id(), fallen[1].id());
+    }
+
+    #[test]
+    fn chain_hitは確率を使わず物理の連鎖結果を反映しstand_upは個体だけを立てる() {
+        let (mut rules, stick, pins) = scene(&[[0.02, 0.7], [0.06, 0.85]]);
+        let aimed = shot(&stick, [0.0, 1.0], 6.0);
+        assert_eq!(
+            rules.chain_hit(&pins[0].with_state(SkittleState::Fall), &pins[1]),
+            pins[1]
+        );
+        assert!(rules.throw(&aimed));
+        settle(&mut rules);
+        let fallen = rules.hit(&aimed, &pins[0]);
+        let chained = rules.chain_hit(&fallen, &pins[1]);
+        assert_eq!(chained, pins[1].with_state(SkittleState::Fall));
+        assert_eq!(rules.chain_hit(&pins[0], &pins[1]), pins[1]);
+        let pose = rules.pose(chained.id());
+        assert_eq!(rules.stand_up(&chained), pins[1]);
+        assert_eq!(rules.pose(chained.id()), pose);
+        assert_eq!(chained.state(), SkittleState::Fall);
     }
 
     #[test]
@@ -312,16 +331,15 @@ mod core_rules {
     }
 }
 
-fn fallen_skittles<M: Molkky<Skittle = Skittle> + ?Sized>(
+fn fallen_skittles<M: Molkky + ?Sized>(
     rules: &M,
     stick: &M::Stick,
-    skittles: &[Skittle],
+    skittles: &[M::Skittle],
 ) -> Vec<Skittle> {
     skittles
         .iter()
-        .filter_map(|skittle| {
-            let (updated, fell) = rules.hit(stick, skittle);
-            fell.then_some(updated)
-        })
+        .map(|skittle| rules.hit(stick, skittle))
+        .filter(|skittle| skittle.as_ref().state() == SkittleState::Fall)
+        .map(|skittle| *skittle.as_ref())
         .collect()
 }

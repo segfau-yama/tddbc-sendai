@@ -1,5 +1,22 @@
 # 開発支援方針の記録
 
+## hitのbool撤去・chain_hit・stand_upを実装（2026-11-04）
+
+- hitのboolを削除し、状態を含む個体を返す。CuiSkittleが連鎖確率を保持できるよう、aim/hit/chain_hit/stand_upの戻り値を関連型Self::Skittleへ揃える。coreの値を復元するstand_upのデフォルト実装にFrom<core::Skittle>を使う。
+- CuiSkittleはcore::Skittleと連鎖用確率を合成する。ユーザー回答に従い、初回転倒時は投げたStickの命中確率を保持する。chain_hitは転倒元の確率から0.2を引いて0で止め、成功した連鎖先へその減衰後の確率を引き継ぐ。隣接探索は追加せず、呼び出し側が連鎖対象を指定する。
+- 立て直しはcoreの共通メソッドでFall→Standへ戻す。CUIのFromで確率も初期値へ戻す。GUIの物理リセットはreset_throwへ改名して役割と名前を分け、物理の連鎖はRapierの接触結果に従う。採点規則は変更しない。
+- [x] 既存テストを確認する（187件成功）。
+- [x] 共通stand_upの契約テストを先に追加しRedを確認する（メソッド未実装によるコンパイル失敗）。hit/aimの戻り値を関連型へ移行し、確率を保持するCuiSkittleへ統合した。
+- [x] core/CUI/GUIと呼び出し側を移行し、状態・Id・採点の既存検証を維持する。
+- [x] 連鎖成功/失敗/0%/既転倒/確率減衰と立て直しを決定的な乱数で確認する。
+- [x] 全テスト・fmt/Clippy・feature分離・Web・差分を確認しcommit/pushする。
+- Green：cargo test --features gui_2dは195件成功。hitは個体のみを返し、共通stand_upはId/番号を保ってStandへ戻す。CUIは連鎖確率も0へ戻り、元の個体は変更しない。GUIはreset_throwで物理状態を準備した後、共通stand_upで個体状態を戻す。
+- CUIの連鎖テストでは固定の乱数源を使い、Stickの80%を初回転倒へ保持、次は60%・40%と減衰、失敗時の状態保持、0%で停止、既転倒の再判定防止、同番号の別Idとまとめて採点する契約を確認した。CuiMolkkyの乱数源は非公開の関数ポインターで、公開のStrategyやテスト専用setterは設けていない。決定的なテストのためCUIサービスのテスト登録をソースのcfg(test)へ移し、テスト本体は同じtests/cui/services/molkky.rsに維持した。
+- 追加のRed→Green：0.8から0.2を繰り返し引く実装は、最後に5.55e-17が残って固定乱数0で余分な個体を倒すことをテストで確認した。パーセント単位へ変換して20ポイントを引く計算へ変更し、80→60→40→20→0で停止することを確認した。CHAIN_DECAY_PERCENTはimpl内の定数とした。
+- GUIのchain_hitは確率を持ち込まず、転倒元がFallの場合にワールドが蓄積した対象の転倒状態を読む。hitと共通の判定部分を複数箇所から使い、stepは呼ばない。stand_upでモデルだけを立てても物理位置が変わらないことも確認した。連鎖対象の自動探索・CUI入力ループへの自動連鎖は今回の範囲外であり、APIの引数で指定する。
+- 検証：cargo test、cargo test --features gui_2d、cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、cargo check --no-default-features、cargo check --no-default-features --features gui_2d、Web向けbuild/checkとJS構文確認、git diff --checkが成功。途中のClippyのテスト名警告は日本語の命名を修正し解消した。
+- Web：検証用8081番で起動し、Chromiumのtests/gui_2d/app.jsが成功（capture・取消・領域外解放・採点・失格・結果・固定範囲・反射）。ログは/tmp/molkky-chain-browser.log。検証サーバーは終了した。デスクトップ実機は今回は未確認。READMEのAPI例・確率の意味・stand_upとreset_throwの責務を更新した。
+
 ## 単体hitとGUIの個体状態反映を実装（2026-11-04）
 
 - 前回の機能表を実装する。hitはStickと1本のSkittleから更新後のSkittleとStand→Fallの新規転倒boolを返す。coreはイミュータブルなモデルと採点・勝敗・次手番の既存ルールを維持する。

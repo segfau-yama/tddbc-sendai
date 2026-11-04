@@ -5,7 +5,7 @@ use super::{
     models::{CuiField, CuiStick},
     services::CuiMolkky,
 };
-use crate::{Molkky, Team};
+use crate::{Molkky, SkittleState, Team};
 
 pub fn run(
     reader: &mut impl BufRead,
@@ -33,10 +33,9 @@ pub fn run(
         let targets = rules.aim(stick, &field.skittles);
         let fallen: Vec<_> = targets
             .iter()
-            .filter_map(|skittle| {
-                let (updated, fell) = rules.hit(stick, skittle);
-                fell.then_some(updated)
-            })
+            .map(|skittle| rules.hit(stick, skittle))
+            .filter(|skittle| skittle.as_ref().state() == SkittleState::Fall)
+            .map(|skittle| *skittle.as_ref())
             .collect();
         let point = rules.calc_score(&fallen);
         let board = teams[current].score_board().add(point);

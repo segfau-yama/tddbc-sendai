@@ -158,7 +158,7 @@ impl GuiMolkky {
     }
 
     /// 位置とIdを保って立て直す。core個体のStandへの反映は呼び出し側で行う。
-    pub fn stand_up(&mut self) {
+    pub fn reset_throw(&mut self) {
         for &collider in self.skittle_ids.keys() {
             let body = &mut self.world.bodies[self.world.colliders[collider].parent().unwrap()];
             body.set_rotation(Rotation::IDENTITY, false);
@@ -176,6 +176,19 @@ impl GuiMolkky {
         self.active = false;
     }
 
+    fn resolve_hit(&self, skittle: &Skittle) -> Skittle {
+        if skittle.state() == SkittleState::Stand
+            && self
+                .peak_impulses
+                .get(&skittle.id())
+                .is_some_and(|&peak| peak >= Self::FALL_IMPULSE)
+        {
+            skittle.with_state(SkittleState::Fall)
+        } else {
+            *skittle
+        }
+    }
+
     fn direction(&self, stick: &GuiStick) -> Option<Vector> {
         if stick.stick().id() != self.stick_id {
             return None;
@@ -190,7 +203,7 @@ impl Molkky for GuiMolkky {
     type Skittle = Skittle;
     type ThrowOutput = bool;
 
-    fn aim(&self, stick: &GuiStick, skittles: &[Self::Skittle]) -> Vec<Skittle> {
+    fn aim(&self, stick: &GuiStick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle> {
         let Some(direction) = self.direction(stick) else {
             return Vec::new();
         };
@@ -218,7 +231,7 @@ impl Molkky for GuiMolkky {
         if self.active || !stick.speed().is_finite() || stick.speed() <= 0.0 {
             return false;
         }
-        self.stand_up();
+        self.reset_throw();
         let body = &mut self.world.bodies[self.stick_body];
         body.set_rotation(
             Rotation::from_angle(direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2),
@@ -229,17 +242,23 @@ impl Molkky for GuiMolkky {
         true
     }
 
-    fn hit(&self, stick: &GuiStick, skittle: &Self::Skittle) -> (Skittle, bool) {
-        let fell = stick.stick().id() == self.stick_id
-            && skittle.state() == SkittleState::Stand
-            && self
-                .peak_impulses
-                .get(&skittle.id())
-                .is_some_and(|&peak| peak >= Self::FALL_IMPULSE);
-        if fell {
-            (skittle.with_state(SkittleState::Fall), true)
+    fn hit(&self, stick: &GuiStick, skittle: &Self::Skittle) -> Self::Skittle {
+        if stick.stick().id() == self.stick_id {
+            self.resolve_hit(skittle)
         } else {
-            (*skittle, false)
+            *skittle
+        }
+    }
+
+    fn chain_hit(
+        &self,
+        fallen_skittle: &Self::Skittle,
+        chained_skittle: &Self::Skittle,
+    ) -> Self::Skittle {
+        if fallen_skittle.state() == SkittleState::Fall {
+            self.resolve_hit(chained_skittle)
+        } else {
+            *chained_skittle
         }
     }
 }
