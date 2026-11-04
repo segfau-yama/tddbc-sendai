@@ -14,3 +14,9 @@ impl Stick {
         self.id
     }
 }
+
+impl AsRef<Stick> for Stick {
+    fn as_ref(&self) -> &Stick {
+        self
+    }
+}

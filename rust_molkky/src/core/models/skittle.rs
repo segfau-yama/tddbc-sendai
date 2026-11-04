@@ -42,3 +42,9 @@ impl Skittle {
         self.number
     }
 }
+
+impl AsRef<Skittle> for Skittle {
+    fn as_ref(&self) -> &Skittle {
+        self
+    }
+}

@@ -13,6 +13,27 @@ fn team(name: &str, points: &[i32]) -> Team {
     Team::new(Name::new(name)).with_score_board(ScoreBoard::new(history))
 }
 
+mod model_delegation {
+    use super::*;
+
+    fn model_ids<M: Molkky>(stick: &M::Stick, skittles: &[M::Skittle]) -> Vec<rust_molkky::Id> {
+        std::iter::once(stick.as_ref().id())
+            .chain(skittles.iter().map(|skittle| skittle.as_ref().id()))
+            .collect()
+    }
+
+    #[test]
+    fn 関連型越しに元の棒と個体の識別子を参照できる() {
+        let original = Stick::new();
+        let stick = CuiStick::new(original, 1.0);
+        let skittles = [Skittle::new(5), Skittle::new(5)];
+        assert_eq!(
+            model_ids::<CuiMolkky>(&stick, &skittles),
+            [original.id(), skittles[0].id(), skittles[1].id()]
+        );
+    }
+}
+
 mod scoring {
     use super::*;
 
@@ -100,7 +121,7 @@ mod hit {
             let stick = CuiStick::new(Stick::new(), 1.0);
             let skittles = [Skittle::new(5), Skittle::new(8)];
             let rules = CuiMolkky::new(vec![5]);
-            let rules: &dyn Molkky<Stick = CuiStick, ThrowOutput = f64> = &rules;
+            let rules: &dyn Molkky<Stick = CuiStick, Skittle = Skittle, ThrowOutput = f64> = &rules;
             let targets = rules.aim(&stick, &skittles);
             let fallen = rules.hit(&stick, &targets);
             assert_eq!(fallen, [skittles[0].with_state(SkittleState::Fall)]);

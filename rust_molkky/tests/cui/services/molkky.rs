@@ -1,6 +1,6 @@
 use rust_molkky::cui::models::CuiStick;
 use rust_molkky::{
-    Molkky, SkittleState, Stick,
+    Molkky, Skittle, SkittleState, Stick,
     cui::{models::Field, services::CuiMolkky},
 };
 
@@ -11,7 +11,7 @@ mod aiming {
     fn 指定番号の既存個体を入力順に選んで返す() {
         let field = Field::default();
         let rules = CuiMolkky::new(vec![12, 5]);
-        let rules: &dyn Molkky<Stick = CuiStick, ThrowOutput = f64> = &rules;
+        let rules: &dyn Molkky<Stick = CuiStick, Skittle = Skittle, ThrowOutput = f64> = &rules;
         assert_eq!(
             rules.aim(&CuiStick::new(Stick::new(), 1.0), &field.skittles),
             [field.skittles[11], field.skittles[4]]

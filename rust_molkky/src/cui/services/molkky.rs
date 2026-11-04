@@ -14,9 +14,10 @@ impl CuiMolkky {
 
 impl Molkky for CuiMolkky {
     type Stick = CuiStick;
+    type Skittle = Skittle;
     type ThrowOutput = f64;
 
-    fn aim(&self, _stick: &CuiStick, skittles: &[Skittle]) -> Vec<Skittle> {
+    fn aim(&self, _stick: &CuiStick, skittles: &[Self::Skittle]) -> Vec<Skittle> {
         self.numbers
             .iter()
             .filter_map(|number| skittles.iter().find(|skittle| skittle.number() == *number))
@@ -28,7 +29,7 @@ impl Molkky for CuiMolkky {
         stick.probability()
     }
 
-    fn hit(&self, stick: &CuiStick, skittles: &[Skittle]) -> Vec<Skittle> {
+    fn hit(&self, stick: &CuiStick, skittles: &[Self::Skittle]) -> Vec<Skittle> {
         let probability = stick.probability();
         skittles
             .iter()

@@ -168,9 +168,10 @@ impl GuiMolkky {
 
 impl Molkky for GuiMolkky {
     type Stick = GuiStick;
+    type Skittle = Skittle;
     type ThrowOutput = bool;
 
-    fn aim(&self, stick: &GuiStick, skittles: &[Skittle]) -> Vec<Skittle> {
+    fn aim(&self, stick: &GuiStick, skittles: &[Self::Skittle]) -> Vec<Skittle> {
         let Some(direction) = self.direction(stick) else {
             return Vec::new();
         };
@@ -218,7 +219,7 @@ impl Molkky for GuiMolkky {
         true
     }
 
-    fn hit(&self, stick: &GuiStick, skittles: &[Skittle]) -> Vec<Skittle> {
+    fn hit(&self, stick: &GuiStick, skittles: &[Self::Skittle]) -> Vec<Skittle> {
         if stick.stick().id() != self.stick_id {
             return Vec::new();
         }

@@ -1,5 +1,17 @@
 # 開発支援方針の記録
 
+## MolkkyのAsRef制約を実装（2026-11-04）
+
+- 範囲：Stick/Skittleの関連型へAsRef制約を追加し、CUI/GUIの既存型で実装する。GuiSkittleの新設やField・物理処理の再構成は別段階とする。
+- 契約：aim/hitは関連型のスキットル一覧を受け取り、coreのSkittle一覧を返す。採点・勝敗・手番と物理挙動は変更しない。AsMut/Derefや新しいtraitは追加しない。
+- [x] 変更前の既存テストを確認する（cargo test --features gui_2d成功）。
+- [x] 関連型経由で内側のモデルを参照するテストを追加し、Redを確認する（Skittle関連型未定義とStickのAsRef制約不足によるコンパイル失敗）。
+- [x] 制約とAsRef実装を追加し、Greenを確認する。GUI/CUIとも現段階の関連型Skittleはcore::Skittleを指定し、core自身のAsRefも明示実装した。
+- [x] GUI/CUIの回帰、feature分離、fmt、Clippy、差分を確認する。
+- 結果：cargo test --features gui_2dの178件成功。cargo check --no-default-featuresと同--features gui_2d、cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warningsが成功。dyn Molkkyを使う既存テストは新しい関連型指定へ更新した。
+- 実装中にテスト側のSkittle import不足を修正した。このコンパイル失敗は仕様のRedとは区別する。デスクトップ実機・ブラウザーの操作テストは未実施（入力・描画処理は変更していない）。
+- Web：cargo check --no-default-features --features gui_2d_web --target wasm32-unknown-unknown成功。
+
 ## Molkkyの関連型をcoreモデルへ委譲できる型に制限する設計（2026-11-04）
 
 - 対象：core/services/molkky.rsとGUIモデル。設計相談のみで、ソースは変更しない。Ponytailの方針に従い、新しい独自traitより標準のAsRefを優先する。

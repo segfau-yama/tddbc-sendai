@@ -35,3 +35,9 @@ impl GuiStick {
         self.speed
     }
 }
+
+impl AsRef<Stick> for GuiStick {
+    fn as_ref(&self) -> &Stick {
+        &self.stick
+    }
+}

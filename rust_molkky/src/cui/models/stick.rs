@@ -25,3 +25,9 @@ impl Default for CuiStick {
         Self::new(Stick::new(), 0.5)
     }
 }
+
+impl AsRef<Stick> for CuiStick {
+    fn as_ref(&self) -> &Stick {
+        &self.stick
+    }
+}

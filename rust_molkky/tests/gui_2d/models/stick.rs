@@ -12,6 +12,7 @@ mod aiming {
         let core_stick: Stick = *initial.stick();
         let aimed = GuiStick::new(core_stick, Some([1.5, 3.0]), 6.0);
         assert_eq!(aimed.stick().id(), initial.stick().id());
+        assert_eq!(aimed.as_ref(), &core_stick);
         assert_eq!(aimed.target(), Some([1.5, 3.0]));
         assert_eq!(aimed.speed(), 6.0);
         assert_eq!(initial.target(), None);
