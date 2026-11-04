@@ -1,6 +1,6 @@
 use super::{
     controller::{Controller, PointerSample, timestamp},
-    models::{GuiField, GuiStick},
+    models::{GuiField, GuiSkittle, GuiStick},
     services::{GuiMolkky, field::create_field, teams::from_names},
     view,
 };
@@ -252,12 +252,12 @@ fn render(state: &AppState) -> Element {
         } else {
             ""
         };
-        rsx! { g { key: "{id}", class, {view::skittle(skittle, pos, GuiMolkky::SKITTLE_RADIUS)} } }
+        rsx! { g { key: "{id}", class, {view::skittle(skittle, pos, GuiSkittle::RADIUS)} } }
     });
     let scene = rsx! {
         {skittles}
         {view::aim(GuiField::THROW_POSITION, stick.target())}
-        {view::stick(stick.stick().id(), position, angle, GuiMolkky::STICK_LENGTH, 2.0 * GuiMolkky::STICK_RADIUS)}
+        {view::stick(stick.stick().id(), position, angle, GuiStick::LENGTH, 2.0 * GuiStick::RADIUS)}
     };
     rsx! {
         style { {include_str!("view/style.css")} }

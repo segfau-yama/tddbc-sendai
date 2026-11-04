@@ -14,6 +14,11 @@ impl Default for GuiStick {
 }
 
 impl GuiStick {
+    // 寸法はm、質量はkg。
+    pub const RADIUS: f32 = 0.0275;
+    pub const LENGTH: f32 = 0.225;
+    pub const MASS: f32 = 0.25;
+
     /// targetはフィールド内のメートル座標、speedはm/s。入力検証はcontrollerで行う。
     pub fn new(stick: Stick, target: Option<[f32; 2]>, speed: f32) -> Self {
         Self {

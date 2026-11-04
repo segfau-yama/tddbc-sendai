@@ -1,7 +1,7 @@
 use super::GuiMolkky;
 use crate::{
     Field, Skittle,
-    gui_2d::models::{GuiField, GuiStick},
+    gui_2d::models::{GuiField, GuiSkittle, GuiStick},
 };
 
 /// 全チーム共通の標準配置、棒、対応する物理ワールドを組み立てる。
@@ -9,7 +9,7 @@ pub fn create_field() -> (GuiField, GuiStick, GuiMolkky) {
     let field = GuiField::new(Field::new(), (1..=12).map(Skittle::new).collect());
     let stick = GuiStick::default();
     let rows: &[&[i32]] = &[&[1, 2], &[3, 10, 4], &[5, 11, 12, 6], &[7, 9, 8]];
-    let radius = GuiMolkky::SKITTLE_RADIUS;
+    let radius = GuiSkittle::RADIUS;
     let placements: Vec<_> = rows
         .iter()
         .enumerate()

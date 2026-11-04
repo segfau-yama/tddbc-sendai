@@ -1,5 +1,15 @@
 # 開発支援方針の記録
 
+## GUI個体の定数を所有モデルへ移動（2026-11-04）
+
+- GuiMolkkyへまとめていた個体固有の定数を移す。半径と質量はGuiSkittle::RADIUS/MASS、棒の半径・長さ・質量はGuiStick::RADIUS/LENGTH/MASSとする。値と単位（m/kg）は変更しない。物理生成・配置・描画・テストは同じモデル定数を参照する。
+- 初期実装ではRapier初期化の近くへ定数を集めたが、利用場所と所有すべき責務を混同していた。個体の属性はモデル、ワールドの時間刻み/共通減衰と個体間の転倒閾値はGuiMolkkyへ配置する。
+- hitはStickとSkittle、chain_hitは2本のSkittleの相互作用なのでサービスへ保持する。throwはStickのみを引数とし、モデルへhitを移したりthrowへSkittleを追加したりしない。coreへGUIの寸法/質量は持ち込まない。
+- [x] 前段の195件のテスト成功を変更前の基準として確認した。
+- [x] 定数定義とすべての参照元・READMEを移行する。旧SKITTLE_*/STICK_*定義と参照はsrc/testsから撤去した。
+- [x] 既存テスト・fmt/Clippy・feature分離・Webコンパイル・差分を確認する。値の移動のみのため新規テストやRedは設けない。
+- 検証：cargo test --features gui_2dは195件成功。cargo clippy --all-targets --features gui_2d -- -D warnings、cargo fmt --check、cargo check --no-default-features、cargo check --no-default-features --features gui_2d_web --target wasm32-unknown-unknown、git diff --checkが成功した。質量・寸法の数値、衝突計算、hit/chain_hit/throwの署名・配置は変更していない。
+
 ## hitのbool撤去・chain_hit・stand_upを実装（2026-11-04）
 
 - hitのboolを削除し、状態を含む個体を返す。CuiSkittleが連鎖確率を保持できるよう、aim/hit/chain_hit/stand_upの戻り値を関連型Self::Skittleへ揃える。coreの値を復元するstand_upのデフォルト実装にFrom<core::Skittle>を使う。

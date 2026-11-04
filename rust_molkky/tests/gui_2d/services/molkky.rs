@@ -1,6 +1,9 @@
 use rust_molkky::{
     Id, Molkky, Name, Skittle, SkittleState, Team,
-    gui_2d::{models::GuiStick, services::GuiMolkky},
+    gui_2d::{
+        models::{GuiSkittle, GuiStick},
+        services::GuiMolkky,
+    },
 };
 
 fn scene(positions: &[[f32; 2]]) -> (GuiMolkky, GuiStick, Vec<Skittle>) {
@@ -230,9 +233,9 @@ mod field_boundaries {
         for _ in 0..(20.0 / GuiMolkky::TIME_STEP) as usize {
             rules.step();
             let (position, angle) = rules.pose(stick.stick().id()).unwrap();
-            let half_segment = GuiMolkky::STICK_LENGTH / 2.0 - GuiMolkky::STICK_RADIUS;
+            let half_segment = GuiStick::LENGTH / 2.0 - GuiStick::RADIUS;
             let extents = [angle.sin().abs(), angle.cos().abs()]
-                .map(|component| GuiMolkky::STICK_RADIUS + half_segment * component);
+                .map(|component| GuiStick::RADIUS + half_segment * component);
             for (axis, min, max) in [(0, -0.3, 0.3), (1, -0.15, 1.35)] {
                 assert!(
                     position[axis] - extents[axis] >= min - 0.005
@@ -285,7 +288,7 @@ mod field_boundaries {
         for _ in 0..(20.0 / GuiMolkky::TIME_STEP) as usize {
             rules.step();
             let [x, y] = rules.pose(skittles[0].id()).unwrap().0;
-            let radius = GuiMolkky::SKITTLE_RADIUS;
+            let radius = GuiSkittle::RADIUS;
             assert!(
                 x - radius >= -0.305
                     && x + radius <= 0.305

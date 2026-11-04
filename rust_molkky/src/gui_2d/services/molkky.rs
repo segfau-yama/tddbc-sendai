@@ -1,5 +1,5 @@
 use crate::core::{Id, Molkky, Skittle, SkittleState};
-use crate::gui_2d::models::{GuiField, GuiStick};
+use crate::gui_2d::models::{GuiField, GuiSkittle, GuiStick};
 use rapier2d::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -15,11 +15,6 @@ pub struct GuiMolkky {
 
 impl GuiMolkky {
     pub const TIME_STEP: f32 = 1.0 / 60.0;
-    pub const SKITTLE_RADIUS: f32 = 0.0275;
-    pub const STICK_RADIUS: f32 = 0.0275;
-    pub const STICK_LENGTH: f32 = 0.225;
-    pub const SKITTLE_MASS: f32 = 0.15;
-    pub const STICK_MASS: f32 = 0.25;
     pub const DAMPING: f32 = 2.0;
     /// N·s。高さ方向の転倒を近似するための調整値。
     pub const FALL_IMPULSE: f32 = 0.08;
@@ -72,11 +67,8 @@ impl GuiMolkky {
                 .angular_damping(Self::DAMPING)
                 .ccd_enabled(true)
                 .sleeping(true),
-            ColliderBuilder::capsule_y(
-                Self::STICK_LENGTH / 2.0 - Self::STICK_RADIUS,
-                Self::STICK_RADIUS,
-            )
-            .mass(Self::STICK_MASS),
+            ColliderBuilder::capsule_y(GuiStick::LENGTH / 2.0 - GuiStick::RADIUS, GuiStick::RADIUS)
+                .mass(GuiStick::MASS),
         );
         let mut ids = HashSet::from([stick.stick().id()]);
         let mut skittle_ids = HashMap::new();
@@ -90,7 +82,7 @@ impl GuiMolkky {
                     .angular_damping(Self::DAMPING)
                     .ccd_enabled(true)
                     .sleeping(true),
-                ColliderBuilder::ball(Self::SKITTLE_RADIUS).mass(Self::SKITTLE_MASS),
+                ColliderBuilder::ball(GuiSkittle::RADIUS).mass(GuiSkittle::MASS),
             );
             skittle_ids.insert(collider, id);
         }
@@ -218,7 +210,7 @@ impl Molkky for GuiMolkky {
                 let across = (relative - direction * along).length();
                 skittle.state() == SkittleState::Stand
                     && along >= 0.0
-                    && across <= Self::SKITTLE_RADIUS + Self::STICK_RADIUS
+                    && across <= GuiSkittle::RADIUS + GuiStick::RADIUS
             })
             .copied()
             .collect()
