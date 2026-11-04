@@ -1,5 +1,65 @@
 # 開発支援方針の記録
 
+## gui_2dの新しい設計指針との整合レビュー（2026-11-04）
+
+- 対象：作業ツリーの `rust_molkky/src/gui_2d` と対応テスト・呼び出し元。提示されたviews/controllers/models/servicesの責務と、修正済みmodelsを前提に確認する。
+- 完了条件：依存関係と実行経路を追い、指針との不一致を根拠・具体例・優先度付きで記録する。今回はレビューのみで、ソースとテストは変更しない。
+- 前提：1画面で1試合を動かす現在のGUIを対象とする。viewの条件分岐・座標変換など描画に必要な処理と、勝敗・採点・衝突などの判断を区別する。`views` は描画層の指定として読み、`view->view` の表記だけから改名先を断定しない。
+- [x] viewsとcontrollersの依存・描画処理を確認した。
+- [x] modelsを元にしたサービス構築とモデル間の相互作用を確認した。
+- [x] 修正済みmodelsと呼び出し元の整合をコンパイルと既存テストの内容で確認した。コンパイルは失敗しており、動作確認済みとは扱わない。
+- [x] 優先度・判断理由・最小の修正案と未確認事項を記録し、文書差分を確認した。
+
+### 指針ごとの判定
+
+| 層 | 判定 | 根拠 |
+| --- | --- | --- |
+| views（現行名はview/） | 概ね整合 | view/以下はモデルの状態・座標・速度・判定済み勝者をHTML/SVGへ変換する。採点・衝突・勝者選択は行っていない。ただし画面全体とフィールド内の描画がcontrollersに残る。 |
+| controllers | 部分的に整合 | Controllerのフィールドにviewはなく、MouseInputによる入力制御、サービス呼び出しとモデル更新の接続は役割に合う。一方、controllers/app.rsとfield.rs自身がElementを生成している。 |
+| modelsを元にした構築 | 移行未完了 | GuiFieldから個体一覧が外れ、GuiStick/GuiSkittleが非公開フィールドになったが、呼び出し元とテストは旧API・直接構築に依存したまま。 |
+| services | 一部不一致 | aim/hit/chain_hitは棒とスキットルの相互作用を扱っている。一方、チーム名からの生成、標準配置の用意、物理エンジンの構築も同じサービス群に混在する。 |
+
+### 指摘
+
+1. **P1：GuiMolkkyの実装を支える定義と更新処理が欠けている。**
+   - 対象：src/gui_2d/services/molkky.rs:L6、services/mod.rs:L4、services/field.rs:L1、controllers/app.rs:L91。
+   - 根拠：GuiMolkkyの構造体、TIME_STEP/DAMPING/FALL_IMPULSE、updateが削除されているが、Molkkyのimpl、公開use、ワールド構築、Press/Move/Frameからのupdate呼び出しは残る。現在のcargo checkは型と定数の未定義を報告する。
+   - 影響：GUIのライブラリ自体がコンパイルできず、描画や投擲を確認できない。
+   - 修正案：修正済みモデルを受け取る具象サービスの構築・更新経路と必要な定義を揃える。旧実装をそのまま戻すだけでは、次項のAPI不整合が残る。
+
+2. **P1：修正済みmodelsを利用するための保持先・更新経路が揃っていない。**
+   - 対象：models/field.rs:L6、controllers/app.rs:L37・L161・L210、controllers/field.rs:L10、services/field.rs:L27、services/molkky.rs:L49・L96・L141・L163。
+   - 根拠となる入力と結果：GuiField::newはFieldだけを受け、skittles()も持たない。利用側は2引数のnewとfield.skittles()を使い、Controllerにも独立したVec<GuiSkittle>がない。そのため一覧を取得して転倒確認・採点・立て直し・描画する経路が成立しない。cargo checkでE0061/E0599を確認した。
+   - 追加の静的指摘：GuiSkittleのフィールドはmodels/skittleモジュールだけが直接扱えるが、サービスは構造体リテラルでposition/angle/aimed/skittleを書き換えている。公開APIには角度・照準状態を保持した更新値を作る操作がなく、コンストラクタは角度0・aimed=falseにする。現在のコンパイラ診断は前項の未定義型で止まるため、この非公開フィールドの問題は静的な指摘として区別する。controllers/app.rsの既存テストにもGuiStickの直接構築が残る。
+   - 修正案：現在のGuiFieldの責務を前提に、個体一覧をControllerなどの試合を組み立てる側で保持し、同じ個体をサービスとviewへ渡す。モデルが非公開状態を保ったまま更新後の値を作れる最小APIを揃え、サービスとテストもそのAPIへ移行する。
+
+3. **P2：controllersが描画そのものを持っている。**
+   - 対象：controllers/app.rs:L227、controllers/field.rs:L8。
+   - 根拠：appのrenderはstyle・見出し・画面レイアウト・得点表・結果をrsx!で構築し、fieldのrenderはg要素・照準の線・棒を組み立てている。現在は得点表の配置や照準ハイライトを変えるだけでもcontrollersの編集が必要になる。
+   - 修正案：この2つの描画処理をviewへ移す。Controllerは進行とサービス呼び出しを担当し、モデル・進行状態・判定済み勝者をviewに渡す。移動先のviewがControllerやGuiMolkkyを参照して勝敗判定する形にはしない。既存のcontrollers/app.rs::compositionなどの描画テストも対応するviewのテストへ移す。
+   - 判断：「viewを持たない」はviewのインスタンスや描画実装を所有しないという意味で評価した。controllerからviewを呼んでモデルを渡す依存自体は、viewsを制御するという指針と整合する。
+
+4. **P2：servicesにモデルの初期化と物理ワールドの構築が混在している。**
+   - 対象：services/teams.rs:L3、services/field.rs:L10・L34。
+   - 根拠：from_namesはNameとTeamを生成するだけで、チーム間のルールを扱わない。create_fieldは固定の標準配置・棒・サービスをまとめて生成する。create_worldはモデルからRapierのボディ・壁・Id対応を作る構築処理であり、hitやchain_hitのような個体間の判断とは役割が異なる。たとえば初期配置だけを変える際にも、ドメインサービス群の編集になる。
+   - 修正案：標準モデルの用意は起動時の初期化へ寄せる。モデル一覧からのワールド生成はGuiMolkkyの構築へ寄せ、servicesの操作はモデル間の相互作用へ集中させる。汎用Factoryや新しいPhysics traitを追加する必要はない。Rapier専用処理を独立させる場合も、まず必要な構築処理の範囲だけにする。
+
+### 整合している処理と判断の境界
+
+- view/score.rsはtotal/state/historyを参照して文言へ変換するだけで、得点や失格を再計算しない。view/result.rsも判定済みのOption<&Team>を受け取る。色の選択、角度の度への変換、SVGのY反転、文字列化、表示・非表示の分岐は描画の責務として残せる。「ロジックを持たない」を計算・分岐が一切ないこととは解釈しない。
+- controllers/mouse.rsの座標・時刻変換、pointerの所有、蓄力・取消は入力制御に合う。これらをドメインサービスへ移す理由はない。
+- finish_throwとupdate_game_stateはcoreのcalc_score、ScoreBoard.add、judge_game、next_teamを呼び、結果をモデルに反映している。この接続順序はアプリケーションの進行であり、処理を丸ごとドメインサービスへ移す必要はない。勝敗のルール自体は引き続きcoreのjudge_gameが担当する。
+- GuiTeam/GuiScoreBoardは宣言・変換・再公開だけで、Controllerとviewはcore::Team/ScoreBoardを使っている。これは利用状況として記録する。coreのモデルもドメインモデルなので、Gui型を全箇所で使わないことだけを責務違反とはしない。GUI独自の意味がないラッパーを使うためだけの変換は増やさない。
+- `view->view` は同名の表記のため、ディレクトリの改名先はこの入力から確定できない。現在はview/、controller側はcontrollers/。今回、名称の変更は行っていない。
+
+### 検証と残作業
+
+- 実行：`cd rust_molkky && cargo check --locked --no-default-features --features gui_2d`。終了コード101、16件のコンパイルエラー・3件の警告。ログ：/tmp/molkky-design-guidelines-check.log。今回のレビューで見つけた既存作業ツリーの不整合であり、TDDのRed確認としては記録しない。
+- テストの静的確認：models/field.rs、services/field.rs・molkky.rs、controllers/app.rsの既存テストも旧GuiFieldのAPIを利用する。描画テストではモデルを元にした表示、得点表の状態参照、HTMLエスケープ、固定範囲などを確認している。
+- 未確認：コンパイル失敗のためRustテスト・Web/desktopの実行確認は行わない。レビューではソースとテストを修正していない。Red/Green/Refactorの実装工程も対象外。
+- 修正順：1・2の構築とモデル利用を揃え、3の描画移動と4の初期化整理を行う。最後に既存の入力・描画・採点・連鎖・壁・手番のテストで振る舞いを確認する。指摘の修正は今回未実装。削減行数は移動中心のため算定しない。
+- 文書確認：git diff --checkで余分な末尾空行を見つけて除去し、再確認で成功した。今回のレビュー記録だけをコミット対象にし、作業開始前からのソース変更と過去の開発記録の削除は作業ツリーに保つ。
+
 ## StickとHit状態を使う投擲モデルを実装（2026-11-04）
 
 - 最新の1〜7の指定を実装する。core::StickにHeld/Move/Stopを追加し、Throw/Moveは具象Stickを値で受け取り、新しい同型のStickを返す。汎用Inputとflyを削除する。GUIのthrowは準備済みの目標・強さから速度ベクトルを作る。CUIのthrowは確率を生成する具象として残すが、シミュレーションの実行ループでは呼ばず、従来の指定確率を使う。
