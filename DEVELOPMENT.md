@@ -1,5 +1,27 @@
 # 開発支援方針の記録
 
+## StickのMove抽象と共通状態の設計レビュー（2026-11-04）
+
+- 対象：273382aのcore/models/stick.rs、core/services/molkky.rs、CUI/GUIのStickとMolkky、GUIのstick/app controller。ユーザー案はflyをStick側の抽象へ移し、Held/Move/Stopをcoreで共有するもの。今回は設計レビューのみで、Rust/JS・テストは変更しない。
+- P1 / shrink：gui_2d/services/molkky.rs:L26のflyは棒の初期化に加えてPhysicsWorld::step、全接触の記録、全ボディの停止確認を持つ。これをそのままStickへ移すと、Stickが他の個体・フィールド・投擲全体まで扱う。Stick側へ移すのは自分の運動結果と状態の更新に限定し、共有ワールドの更新はGUIの物理側に残す。Molkkyから個体操作としてのflyを外す方針は妥当。
+- P1 / shrink：gui_2d/services/molkky.rs:L18のflyingは棒単体の状態ではなく全ボディの動作を表す。StickState::Stopに同じ意味を持たせない。棒が停止してもスキットルの連鎖は継続でき、採点には今回の物理更新全体の完了が必要。各Stickのmoveを呼ぶたびワールドを進める構造や、新たな完了フラグの重複保存は避ける。
+- P2 / shrink：gui_2d/controllers/stick.rs:L14のsimulatingとrules.flyingによる棒の表示選択を、core::Stickが保持する状態の参照へ置き換える。Heldでは投擲位置、Move/Stopでは個体の位置を描く。GuiStickに同じ状態のenumやboolを再定義しない。Ready/Chargingという入力・進行状態はHeldと共存するので、GUIのPhaseすべてをStickStateで代用しない。
+- 提案：core/models/stick.rsにStickStateとMove<Input>を置く。core::StickはIdとstate、具象のCuiStick/GuiStickは既存のAsRefでそれを参照する。Throwと同様にMoveも更新後のSelfを返し、元の個体を変えない。Inputは当該個体の運動結果とし、Stickへワールド全体の所有を渡す契約にしない。具体的な運動入力の型は実装時に既存の物理APIに合わせて決め、今回新しいContext/Physics traitは設計しない。
+
+```rust
+pub enum StickState { Held, Move, Stop }
+
+pub trait Move<Input>: AsRef<Stick> + Sized {
+    fn r#move(&self, input: Input) -> Self;
+}
+```
+
+- moveはRustの予約語なので、メソッド名を維持する場合はr#moveを使う。状態遷移はHeld→投擲でMove→自身の停止でStop→回収でHeld。照準・蓄力中はHeldを保つ。CUIも同じ状態の意味を使い、動作を同期的に完了する。Stopからmoveを再び呼んだだけで次投を始めず、次の投擲を明示する。
+- coreは状態の意味と個体操作の契約、GUIはその契約の具象実装・座標/速度・共有物理ワールド・描画を担当する。hit/chain_hitは個体間の相互作用なので引き続きMolkkyに置く。棒のStopと投擲全体の完了の区別を保った上で、ワールドの進行を接続する具体的な配置は実装時に確認する。
+- [x] メソッドと実行経路、ワールドの所有と停止の判定対象を静的に確認した。
+- [x] 提案と現行の差分・責務・状態遷移・未実装部分を記録した。ソース未変更のため動作テストは再実行しない。
+- 削減行数は未算定。新しい状態とtraitの追加を含む案なので、確定していない行数削減を成果として見積もらない。
+
 ## 飛行と立て直しの抽象へ整理（2026-11-04）
 
 - coreのstepを必須メソッド`fly(&mut self, stick: &Self::Stick) -> bool`へ置き換える。1刻みの飛行を進め、連鎖を含めて動いている間true、完了/無効な入力はfalseを返す。is_settled/reset_throwは撤去し、GUIはflyの結果を受け取った後に最後のhitを反映して一度だけ採点する。CUIは飛行時間を持たずfalseを返す。
