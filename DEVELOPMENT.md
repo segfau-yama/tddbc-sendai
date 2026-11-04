@@ -1,5 +1,16 @@
 # 開発支援方針の記録
 
+## controller.jsを用意した理由とDioxusへの集約方針（2026-11-04）
+
+- 対象：gui_2d/controller.js、app.rs、controller.rsと採用中のDioxus 0.7.10の公式クレートソース（dioxus-htmlのpointer/generated/mounted、dioxus-webのpointer、dioxus-desktopのelement）。質問への説明のみで、ソースは変更しない。
+- 元の理由：Webとdesktop WebViewで同期的なpointer capture、SVGの実寸とborder計測、window blur/document visibilitychange、requestAnimationFrameの時刻通知と後始末を共通化するため、document::evalのDOMブリッジとして分離した。採点・勝敗・物理計算はJSに置いていない。
+- Dioxus標準のonpointerdown/onpointermove/onpointerup/onpointercancel/onlostpointercaptureとPointerDataの座標・button・pointer_idで通常の入力は扱える。JSでaddEventListenerを全て登録したことは、Dioxusがイベントを処理できないためではない。
+- 制約：0.7.10の共通MountedData/RenderedElementBackingにはsetPointerCapture/releasePointerCaptureの操作がなく、DOM寸法取得はget_client_rectとして提供される。Webならweb-sysからcapture APIをRustで呼べるが、同じ呼び出しをnative desktopへ流用できない。desktopの標準APIも内部ではJSを介しており、Rustで書けることとブラウザーAPIへの橋渡しが不要なことは区別する。領域外解放・取消・同期captureを維持して共通APIだけへ移せるとは未検証のまま断定しない。
+- 整理案：通常のイベントと入力可否の判断はDioxus/Rustへ寄せ、DOM固有の操作だけを最小限の補助へ絞る。フレーム更新の状態・寿命管理はRust側へ寄せられるが、use_future自体はタイマー/画面同期APIではなく、経過時間の供給手段はWeb/desktop双方で確認する。window/document全体のイベントも要素のonblurと同一視しない。
+- 優先度中：controller.js:L38のdata-phaseとownerによる入力可否判定はController側と重なる。Rustの進行状態を正本にして、DOMのcapture操作に必要な範囲へ縮小する案を優先する。JS全体を必須とする根拠はない一方、ファイルを削除しただけで既存の入力要件を維持できるとも扱わない。
+- [x] 現行処理・開発記録・採用バージョンのAPIを静的に確認し、理由と縮小可能な範囲を記録した。
+- [x] 文書だけの差分をgit diff --checkで確認した。動作テストと置き換えの試作は実行していない。
+
 ## GUIモデルをCUIと揃えGameの入れ物を撤去（2026-11-04）
 
 - 範囲：GuiField/GuiStick/GuiSkittle/GuiTeam/GuiScoreBoardをcoreへの委譲型としてmodelsへ配置する。値オブジェクト・状態enumのGUI用ラッパーは作らない。GuiFieldへAsRef<Field>を追加し、新規の単純な型はFrom/AsRefだけを持つ。物理エンジンやcore APIは変更しない。
