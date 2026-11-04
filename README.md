@@ -30,11 +30,13 @@ cargo test --locked --test application
 | src/cui/io/input.rs | Input：入力元の保持、読み取り・変換・検証・再入力 |
 | src/cui/io/output.rs | Output：出力先の保持、プロンプト・得点表・結果の表示 |
 | src/cui/run.rs | チーム設定、投てき・採点・交代・終了のゲームループ |
-| src/gui_2d/app.rs | Dioxusの起動・DOMとの接続・Controllerの状態の描画 |
+| src/gui_2d/app.rs | GUI状態・進行・Dioxus起動・DOM接続・描画の合成 |
 | src/gui_2d/models/ | GuiField・GuiStick・GuiSkittle・GuiTeam・GuiScoreBoardのcore委譲型 |
-| src/gui_2d/models/field.rs | 個体集合・固定範囲と外周の壁・標準の初期配置の生成 |
-| src/gui_2d/controller.rs | 入力の解釈・取消・フレーム進行・採点の記録と勝敗・次手番の反映 |
-| src/gui_2d/controller.js | DOMのpointer capture・イベントと時刻の通知 |
+| src/gui_2d/models/field.rs | 渡されたcore::Fieldと個体集合・固定範囲の保持 |
+| src/gui_2d/services/field.rs | 標準12本・配置・棒・物理ワールドの組み立て |
+| src/gui_2d/services/teams.rs | 名前からチームを生成 |
+| src/gui_2d/controller.rs | マウス入力の解釈・座標変換・蓄力・解放・取消 |
+| src/gui_2d/app.js | DOMのpointer capture・イベントと時刻の通知 |
 | src/gui_2d/services/molkky.rs | Rapierによる投擲・物理更新・転倒判定、coreルールの利用 |
 | src/gui_2d/view/ | SVG、速度メーター、得点表、結果表示 |
 | src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
@@ -114,7 +116,7 @@ cargo run --locked --no-default-features --features gui_2d_desktop --bin gui_2d
 
 CUIは既定のcui feature、GUIはgui_2d_webまたはgui_2d_desktopを選択します。Webの起動スクリプトはCUI依存を除外し、UUIDのjs機能を有効にします。単なるgui_2d featureはヘッドレスのテスト・ライブラリ利用向けで、起動時はレンダラーを選択してください。
 
-`GuiField::initial_positions`が既存個体のIDに対応する標準配置を生成します。`Controller`はチーム・共通フィールド・棒とGuiMolkkyを直接持ち、入力・固定刻みの更新・停止後の一度だけの採点・交代・終了を扱います。`app.rs`はControllerをDioxusのSignalに保持し、DOMとの接続と描画を担当します。全チームで同じフィールドと棒を共有し、現在位置はGuiMolkkyの物理ワールドに保持します。操作用の初期投擲距離は1mです。高さ方向の転倒は物理サービスの力積による近似です。
+`services::field::create_field`が標準12本・共通フィールド・棒とGuiMolkkyを組み立てます。`app.rs`のAppStateはそれらとチーム・Controllerを所有し、固定刻みの更新・停止後の一度だけの採点・交代・終了・DOM接続と描画の合成を担当します。Controllerはマウス入力だけを扱います。全チームで同じフィールドと棒を共有し、現在位置はGuiMolkkyの物理ワールドに保持します。操作用の初期投擲距離は1mです。高さ方向の転倒は物理サービスの力積による近似です。
 
 表示範囲はx=-0.3〜0.3m、y=-0.15〜1.35mで固定し、物体の移動による拡大縮小は行いません。`GuiField::BOUNDS`と`WALL_THICKNESS`を描画と物理で共用し、外周の厚さ2cmの壁で棒・スキットルが反射します。反発係数は0.5で、既存の減衰と合わせて停止します。壁と反射はこのGUIの取り決めです。
 
@@ -135,7 +137,7 @@ Webを起動した状態で、実DOMの入力確認も実行できます。次�
 cd rust_molkky
 npm install --prefix /tmp/molkky-browser-tools --no-save playwright
 /tmp/molkky-browser-tools/node_modules/.bin/playwright install chromium
-NODE_PATH=/tmp/molkky-browser-tools/node_modules node tests/gui_2d/controller.js
+NODE_PATH=/tmp/molkky-browser-tools/node_modules node tests/gui_2d/app.js
 ```
 
 既存Chromiumを使う場合はCHROMIUM_PATH、別の起動URLを使う場合はGUI_URLを指定します。Chromiumでcapture・取消・リサイズ・領域外解放・採点・失格・勝利・終了後の入力無効化を確認しました。Linuxデスクトップは仮想画面で起動・投擲・交代を確認済みです。Windows/macOSの実機確認は行っていません。
@@ -156,7 +158,7 @@ cargo build --locked --features gui_2d
 
 ### GUI 2Dの投擲サービス
 
-`gui_2d::services::GuiMolkky`にRapier2Dを統合しています。physics.rsやエンジン用の独自traitは作りません。newにGuiStick、投擲位置、`(Id, [x, y])`の配置一覧を渡します。座標・寸法はm、速度はm/s、角度はラジアンです。ControllerはGuiFieldが生成した初期配置を渡します。
+`gui_2d::services::GuiMolkky`にRapier2Dを統合しています。physics.rsやエンジン用の独自traitは作りません。newにGuiStick、投擲位置、`(Id, [x, y])`の配置一覧を渡します。座標・寸法はm、速度はm/s、角度はラジアンです。services::field::create_fieldが標準の個体と配置を生成して渡します。
 
 | API | 動作 |
 | --- | --- |
@@ -177,11 +179,11 @@ Controllerが固定時間ごとにstepし、appが途中のposeを描画しま�
 
 `gui_2d::controller`に、`screen_to_world`と`Controller`を実装しています。座標変換はSVGの中央寄せ・アスペクト比維持・Y上向きに合わせ、余白や領域外を拒否します。入力の矩形はborderを除いたSVG描画領域のCSSピクセル値です。
 
-Controller::new(teams)はチーム・共通フィールド・棒とGuiMolkkyを準備し、最初の手番を設定します。teams()/field()/stick()から読み取り専用で参照できます。modelsにはcoreに対応する委譲型だけを置き、Id・Name・Pointと状態enumはcoreの型を使います。Ready時の左ボタン押下を受け付け、同じpointerの移動と解放を処理します。経過時間による速度（0〜10m/s、往復2秒）を表示し、解放時に同じ計算で投擲を開始します。領域外の移動では最後の有効な照準を保持します。取消はポインター所有・照準・速度・InputPhaseを一緒に更新し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。
+Controller::default()はマウスの入力状態だけを用意します。press・move_to・preview・release・cancelで、左ボタンの所有・照準・時間ベースの速度（0〜10m/s、往復2秒）・解放・取消を扱います。previewとreleaseは目標座標と速度を返し、coreの棒・チーム・採点・物理ワールドには依存しません。領域外では最後の有効な照準を保持します。
 
-InputPhaseはReady・Charging・SimulatingのGUI操作段階だけを表します。Finishedや勝者のフラグは保存せず、is_finished()はScoreBoardの状態に基づくcoreのnext_teamの結果を参照します。勝者はjudge_gameで求め、最後の生存者、全失格、参加者なしも既存ルールに従います。
+services::teams::from_namesが初期チームを生成します。appのAppStateはservices::field::create_fieldの生成物を受け取り、最初の手番を設定します。進行状態のPhaseはappに置き、Ready・Charging・Simulatingを表します。Finishedや勝者のフラグは保存せず、is_finished()はcoreのnext_teamの結果を参照します。勝者はjudge_gameで求め、最後の生存者、全失格、参加者なしも既存ルールに従います。
 
-controller.jsがDOMのpointer captureを設定・解除し、イベントとperformance.nowの時刻をRustへ渡します。appは受信したイベントをController::handleへ通知します。ControllerがGuiMolkky::throwで開始し、フレーム更新で停止を検出して一度だけ記録します。update_game_stateが既存のjudge_game・next_teamの判定を反映します。press・preview・releaseなどの入力補助処理はController内部に置き、対応テストもcontroller.rsの単体テストとして登録しています。Webとdesktopで同じdocument::evalの接続を使います。
+app.jsはDOMのpointer captureと時刻通知を行う接続コードです。appが受信イベントを振り分け、マウス処理だけをControllerへ渡します。待機中・未終了の場合だけ押下を受け付け、解放時の目標・速度をGuiStickへ反映してGuiMolkky::throwを呼びます。Frameイベントでは固定刻みの物理更新と停止検出を行い、一度だけ採点します。update_game_stateは初期化と投擲完了時に既存のjudge_game・next_teamの判定を反映します。取消は入力状態と表示用の照準・速度を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Webとdesktopで同じdocument::evalの接続を使います。
 
 ## Java演習環境
 

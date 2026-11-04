@@ -25,3 +25,10 @@ mod speedometer_view;
 #[cfg(feature = "gui_2d")]
 #[path = "gui_2d/view/stick.rs"]
 mod stick_view;
+
+#[cfg(feature = "gui_2d")]
+#[path = "gui_2d/services/field.rs"]
+mod field_service;
+#[cfg(feature = "gui_2d")]
+#[path = "gui_2d/services/teams.rs"]
+mod teams_service;

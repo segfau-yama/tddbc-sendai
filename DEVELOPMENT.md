@@ -1,5 +1,23 @@
 # 開発支援方針の記録
 
+## GUIの入力・初期化・進行の責務を分離（2026-11-04）
+
+- 指示：Controllerはマウス入力だけを担当し、チーム生成とField/Skittle/Stickを使う初期化はservicesへ移す。一度だけ使う取次ヘルパーは撤去する。レビュー指定に加えて削除・変更が明示されているため、今回は修正まで実施する。
+- Controllerはpointer所有・座標変換・蓄力・解放・取消のみを扱い、Team/GuiMolkky/物理更新/採点/終了判定を持たない。appが入力可否を判断し、GUIの状態・時計とcore/物理への接続を所有する。
+- services/teams.rsは名前からTeamを生成する。services/field.rsは標準12本・配置・棒・物理ワールドを構築する。GuiFieldモデルは渡されたcore値を保持し、標準配置を自動生成しない。
+- 削除対象：Controllerの参照用getter、単独呼び出しのupdate/cancel_pointer、標準配置だけを転送するヘルパー。入力APIや描画・投擲完了など具体的な振る舞いの単位は、呼び出し数だけを増やすために分割しない。
+- [x] 変更前の全Rustテストを確認する（GUI featureあり179件成功）。
+- [x] チーム生成・フィールド構築のテストを先に用意しRedを確認する（services::field/teams未定義でコンパイル失敗）。
+- [x] 初期化をservicesへ、入力以外の進行をappへ移す。既存テストの検証を維持して移動する。
+- [x] 入力・取消・二重加点・勝敗・標準配置・CUI回帰、fmt/Clippy、feature分離/Webコンパイルと差分を確認する。
+- Green：cargo test --features gui_2dは181件成功。座標/蓄力/取消はcontroller、初期化/進行/採点/描画はapp、標準個体と物理配置はservices/fieldへテストを移した。名前からの別Id生成とapp側の入力拒否を明示するテストを追加した。入力結果はGuiStickではなく目標座標と速度になるため、棒のId保持はapp側の既存の取消・実投擲テストで確認する。
+- 移行中のテストのOptionと座標配列の型不一致を修正した。これを仕様のRedとは扱わない。標準配置は返却用配列の順序を検査する代わりに、元の個体Idに対応するRapier上の全12座標を同じ期待値で直接確認する。
+- レビュー：Controllerからドメイン・物理・進行状態の所有を撤去した。teams/field/stick/phase/rulesの取次getter、update、cancel_pointer、GuiFieldのfield getter/initial_positions/標準生成Defaultを削除した。servicesの生成関数は初期化そのものを担当するAPIとして残し、GUIで現在使う固定の名前をTeamへ変換する。coreの規則とGuiMolkkyの物理計算は変更していない。
+- 描画の組み立てと固定結果からの投擲完了はそれぞれ実際の処理とテスト境界を持つためapp側へ保持した。単独の呼び出し数を増やすための分割・新規のtrait/汎用基盤は追加していない。AppStateはapp内の進行コンテキストであり、新たなドメインモデルではない。
+- DOMのpointer/時刻通知はappの接続責務なので、controller.jsをapp.jsへ改名し、対応するDOMテストもtests/gui_2d/app.jsへ移した。JSの処理内容は変えていない。
+- 検証：cargo test、cargo test --features gui_2d、cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、cargo check --no-default-features、cargo check --no-default-features --features gui_2d、cargo check --no-default-features --features gui_2d_web --target wasm32-unknown-unknown、JS本体/テストのnode構文確認、git diff --checkが成功。
+- 未実施：ブラウザー/デスクトップ実操作。この時点では8080番にサーバーがなく、以前のPlaywright用パスにもモジュールがなかった。SSRの表示と実Rapierの停止・採点・入力拒否はRustテストで確認した。
+
 ## controller.jsを用意した理由とDioxusへの集約方針（2026-11-04）
 
 - 対象：gui_2d/controller.js、app.rs、controller.rsと採用中のDioxus 0.7.10の公式クレートソース（dioxus-htmlのpointer/generated/mounted、dioxus-webのpointer、dioxus-desktopのelement）。質問への説明のみで、ソースは変更しない。
