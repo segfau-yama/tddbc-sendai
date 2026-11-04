@@ -11,7 +11,8 @@ pub trait Molkky {
 
     fn throw(&mut self, stick: &Self::Stick) -> Self::ThrowOutput;
 
-    fn hit(&self, stick: &Self::Stick, skittles: &[Self::Skittle]) -> Vec<Skittle>;
+    /// 更新後の個体と、今回StandからFallへ変わったかを返す。
+    fn hit(&self, stick: &Self::Stick, skittle: &Self::Skittle) -> (Skittle, bool);
 
     fn calc_score(&self, fallen_skittles: &[Skittle]) -> Point {
         Point::new(match fallen_skittles {

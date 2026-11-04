@@ -1,5 +1,22 @@
 # 開発支援方針の記録
 
+## 単体hitとGUIの個体状態反映を実装（2026-11-04）
+
+- 前回の機能表を実装する。hitはStickと1本のSkittleから更新後のSkittleとStand→Fallの新規転倒boolを返す。coreはイミュータブルなモデルと採点・勝敗・次手番の既存ルールを維持する。
+- GUIのワールド・aim/throw/hit/step/停止/位置はGuiMolkkyに置く。appが各フレームの物理更新後に個体状態を反映し、描画はその状態を読む。停止時は1投のFall一覧を一度だけ採点する。継続時は位置・Idを維持して物理と個体の状態を次の照準までに立て直す。
+- CUIも新しいcore契約へ移行し、狙った各個体を一度ずつ判定して今回の転倒一覧をまとめて採点する。新しいStrategy/Physics trait、physics.rs、値オブジェクト用GUIモデルは作らない。
+- [x] 変更前の既存テストを確認する（GUI featureあり181件成功）。
+- [x] 単体の不転倒・転倒・再問い合わせの契約テストを追加してRedを確認する（旧APIのスライス引数とVec返却が新しい単体/タプルの期待と合わずコンパイル失敗）。
+- [x] core/CUI/GUIと呼び出し側・既存テストを移行してGreenを確認する。
+- [x] 描画中の再判定を撤去し、早期のFall保持・連鎖・複数本採点・二重加点防止・次投準備を確認する。
+- [x] fmt/Clippy・CUI/GUIテスト・feature分離・Webコンパイル・差分を確認しcommit/pushする。
+- Green：cargo test --features gui_2dは187件成功。既存の一覧単位の期待値はテスト側で単体hitを集約して維持し、単体契約そのものも直接検証した。GUIのhitが物理時間を進めないこと、既にFallなら新規転倒falseとなること、無関係のStickなら状態を変えないことを確認した。
+- appは固定刻みのstep後に全個体へhitの状態を反映し、早期のFallを保持する。停止時には新規転倒boolだけでなく今回の全Fall一覧を採点する。5番と8番の連鎖を2点・1投として記録し、次の手番へ進め、次の照準ではStandに戻る実エンジンの進行テストが成功した。表示はモデルを読み、hitや状態の再構成を行わない。
+- GuiMolkky::stand_upはId/個体位置を保ち速度・回転・接触記録を消し、棒を投擲位置へ戻す。appは継続時にこれを呼び、core個体もStandへ戻す。単独のGuiMolkky::throwも従来の次投契約を保つためstand_upを使い、開始側の重複した位置・角速度初期化は除いた。関連27件の物理/描画テストで整理後も成功を確認した。
+- coreのcalc_score/judge_game/next_teamとScoreBoardのルールは変更せず、GUIのwinnerによるnext判定の重複分岐だけを撤去した。Controllerとservicesの初期化責務は前回の分離を維持した。READMEの例とhitの新しい契約を更新した。
+- 検証：cargo test、cargo test --features gui_2d、cargo test --features gui_2d --test gui_2d、cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、cargo check --no-default-features、cargo check --no-default-features --features gui_2d、Webのbuild/check、JS構文確認、git diff --checkが成功。
+- Web実操作：一時ディレクトリ/tmp/molkky-browser-toolsへPlaywrightを用意し、既存の/usr/bin/chromiumでtests/gui_2d/app.jsが成功。capture・領域外解放・取消・採点・失格・終了表示・固定範囲・反射を確認した。リポジトリの依存関係は増やしていない。検証用Webサーバーは終了済み。ログは/tmp/molkky-single-hit-browser.log。デスクトップ実機は今回は未確認。
+
 ## GUI機能の責務分割と単体hitの設計レビュー（2026-11-04）
 
 - 対象：d0b82b8のcore/services/molkky.rs、core/models/score.rs・team.rs、GUIのapp/controller/services/models/viewと既存テスト。今回は設計レビューのみで、Rust/JSやトレイトの契約は変更しない。

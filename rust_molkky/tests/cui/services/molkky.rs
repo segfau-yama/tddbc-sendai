@@ -23,7 +23,7 @@ mod aiming {
         let rules = CuiMolkky::new(Vec::new());
         let stick = CuiStick::new(Stick::new(), 1.0);
         let targets = rules.aim(&stick, &CuiField::default().skittles);
-        let fallen = rules.hit(&stick, &targets);
+        let fallen = fallen_skittles(&rules, &stick, &targets);
         assert!(fallen.is_empty());
         assert_eq!(rules.calc_score(&fallen).value(), 0);
     }
@@ -39,7 +39,7 @@ mod throwing {
         let rules = CuiMolkky::new(vec![5]);
         let stick = CuiStick::new(Stick::new(), 1.0);
         let targets = rules.aim(&stick, &field.skittles);
-        let fallen = rules.hit(&stick, &targets);
+        let fallen = fallen_skittles(&rules, &stick, &targets);
         assert_eq!(fallen, [field.skittles[4].with_state(SkittleState::Fall)]);
         assert_eq!(rules.calc_score(&fallen).value(), 5);
         assert_eq!(field.skittles, original);
@@ -53,10 +53,10 @@ mod throwing {
         let first = CuiMolkky::new(vec![5]);
         let second = CuiMolkky::new(vec![8, 12]);
         let targets = first.aim(&stick, &field.skittles);
-        let fallen = first.hit(&stick, &targets);
+        let fallen = fallen_skittles(&first, &stick, &targets);
         assert_eq!(first.calc_score(&fallen).value(), 5);
         let targets = second.aim(&stick, &field.skittles);
-        let fallen = second.hit(&stick, &targets);
+        let fallen = fallen_skittles(&second, &stick, &targets);
         assert_eq!(
             fallen
                 .iter()
@@ -120,7 +120,21 @@ mod probability {
         let stick = CuiStick::new(Stick::new(), 0.0);
         let targets = rules.aim(&stick, &field.skittles);
         assert_eq!(targets.len(), 12);
-        assert!(rules.hit(&stick, &targets).is_empty());
+        assert!(fallen_skittles(&rules, &stick, &targets).is_empty());
         assert_eq!(field.skittles, original);
     }
+}
+
+fn fallen_skittles<M: Molkky<Skittle = Skittle> + ?Sized>(
+    rules: &M,
+    stick: &M::Stick,
+    skittles: &[Skittle],
+) -> Vec<Skittle> {
+    skittles
+        .iter()
+        .filter_map(|skittle| {
+            let (updated, fell) = rules.hit(stick, skittle);
+            fell.then_some(updated)
+        })
+        .collect()
 }

@@ -94,6 +94,41 @@ mod collisions {
     use super::*;
 
     #[test]
+    fn 単体hitは物理を進めず転倒状態と新規転倒を返す() {
+        let (mut rules, stick, pins) = scene(&[[0.0, 0.7]]);
+        let aimed = shot(&stick, [0.0, 1.0], 6.0);
+        assert!(rules.throw(&aimed));
+        let pose = rules.pose(pins[0].id());
+        assert_eq!(rules.hit(&aimed, &pins[0]), (pins[0], false));
+        assert_eq!(rules.pose(pins[0].id()), pose);
+        settle(&mut rules);
+        let pose = rules.pose(pins[0].id());
+        let (updated, fell) = rules.hit(&aimed, &pins[0]);
+        assert!(fell);
+        assert_eq!(updated, pins[0].with_state(SkittleState::Fall));
+        assert_eq!(rules.hit(&aimed, &updated), (updated, false));
+        assert_eq!(rules.hit(&GuiStick::default(), &pins[0]), (pins[0], false));
+        assert_eq!(rules.pose(pins[0].id()), pose);
+    }
+
+    #[test]
+    fn 立て直しは位置と個体を保ち今回の転倒と速度と回転をクリアする() {
+        let (mut rules, stick, pins) = scene(&[[0.0, 0.7]]);
+        let aimed = shot(&stick, [0.0, 1.0], 6.0);
+        assert!(rules.throw(&aimed));
+        settle(&mut rules);
+        assert!(rules.hit(&aimed, &pins[0]).1);
+        let position = rules.pose(pins[0].id()).unwrap().0;
+        rules.stand_up();
+        assert_eq!(rules.pose(pins[0].id()), Some((position, 0.0)));
+        assert_eq!(rules.pose(stick.stick().id()), Some(([0.0, 0.0], 0.0)));
+        assert_eq!(rules.hit(&aimed, &pins[0]), (pins[0], false));
+        rules.step();
+        assert!(rules.is_settled());
+        assert_eq!(rules.pose(pins[0].id()), Some((position, 0.0)));
+    }
+
+    #[test]
     fn 高速投擲でもすり抜けず同番号の個体を区別して倒す() {
         let (mut rules, stick, pins) = scene(&[[0.0, 1.0], [0.2, 1.0]]);
         let aimed = shot(&stick, [0.0, 1.0], 120.0);
@@ -101,14 +136,14 @@ mod collisions {
         // 反射後に別の個体へ当たる場合と区別し、最初の衝突を確認する。
         for _ in 0..(20.0 / GuiMolkky::TIME_STEP) as usize {
             rules.step();
-            if !rules.hit(&aimed, &pins).is_empty() {
+            if !fallen_skittles(&rules, &aimed, &pins).is_empty() {
                 break;
             }
         }
-        let fallen = rules.hit(&aimed, &pins);
+        let fallen = fallen_skittles(&rules, &aimed, &pins);
         assert_eq!(fallen, [pins[0].with_state(SkittleState::Fall)]);
-        assert_eq!(rules.hit(&aimed, &pins), fallen);
-        assert!(rules.hit(&GuiStick::default(), &pins).is_empty());
+        assert_eq!(fallen_skittles(&rules, &aimed, &pins), fallen);
+        assert!(fallen_skittles(&rules, &GuiStick::default(), &pins).is_empty());
         assert!(pins.iter().all(|p| p.state() == SkittleState::Stand));
         settle(&mut rules);
     }
@@ -120,7 +155,7 @@ mod collisions {
         let aimed = shot(&stick, [0.0, 1.0], 0.1);
         assert!(rules.throw(&aimed));
         settle(&mut rules);
-        assert!(rules.hit(&aimed, &pins).is_empty());
+        assert!(fallen_skittles(&rules, &aimed, &pins).is_empty());
         assert!(rules.pose(pins[0].id()).unwrap().0[1] > 0.16);
     }
 
@@ -131,7 +166,7 @@ mod collisions {
         assert_eq!(rules.aim(&aimed, &pins), [pins[0]]);
         assert!(rules.throw(&aimed));
         settle(&mut rules);
-        let fallen = rules.hit(&aimed, &pins);
+        let fallen = fallen_skittles(&rules, &aimed, &pins);
         assert_eq!(
             fallen.len(),
             2,
@@ -147,11 +182,11 @@ mod collisions {
         let aimed = shot(&stick, [0.0, 1.0], 6.0);
         assert!(rules.throw(&aimed));
         settle(&mut rules);
-        assert!(!rules.hit(&aimed, &pins).is_empty());
+        assert!(!fallen_skittles(&rules, &aimed, &pins).is_empty());
         let positions: Vec<_> = pins.iter().map(|p| rules.pose(p.id()).unwrap().0).collect();
         // 後ろの壁で反射して当たる投擲ではなく、届かない弱い投擲でミスにする。
         assert!(rules.throw(&shot(&stick, [1.0, 0.0], 0.1)));
-        assert!(rules.hit(&aimed, &pins).is_empty());
+        assert!(fallen_skittles(&rules, &aimed, &pins).is_empty());
         assert_eq!(
             pins.iter()
                 .map(|p| rules.pose(p.id()).unwrap().0)
@@ -159,7 +194,7 @@ mod collisions {
             positions
         );
         settle(&mut rules);
-        assert!(rules.hit(&aimed, &pins).is_empty());
+        assert!(fallen_skittles(&rules, &aimed, &pins).is_empty());
         rules.step();
         assert!(rules.is_settled());
     }
@@ -245,7 +280,7 @@ mod field_boundaries {
         }
         assert!(rules.is_settled());
         assert_eq!(
-            rules.hit(&aimed, &skittles),
+            fallen_skittles(&rules, &aimed, &skittles),
             [skittles[0].with_state(SkittleState::Fall)]
         );
     }
@@ -275,4 +310,18 @@ mod core_rules {
         assert_eq!(rules.judge_game(&teams).unwrap().id(), teams[1].id());
         assert!(rules.next_team(&teams).is_none());
     }
+}
+
+fn fallen_skittles<M: Molkky<Skittle = Skittle> + ?Sized>(
+    rules: &M,
+    stick: &M::Stick,
+    skittles: &[Skittle],
+) -> Vec<Skittle> {
+    skittles
+        .iter()
+        .filter_map(|skittle| {
+            let (updated, fell) = rules.hit(stick, skittle);
+            fell.then_some(updated)
+        })
+        .collect()
 }

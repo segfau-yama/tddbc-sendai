@@ -66,12 +66,15 @@ let field = CuiField::default();
 let stick = CuiStick::new(Stick::new(), 0.5);
 let rules = CuiMolkky::new(vec![5, 8]);
 let targets = rules.aim(&stick, &field.skittles);
-let fallen = rules.hit(&stick, &targets);
+let fallen: Vec<_> = targets.iter().filter_map(|skittle| {
+    let (updated, fell) = rules.hit(&stick, skittle);
+    fell.then_some(updated)
+}).collect();
 println!("{}点", rules.calc_score(&fallen).value());
 assert_eq!(field.skittles.len(), 12);
 ```
 
-`CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、throwはCuiStickの確率（f64、0〜1）を返します。hitはその確率で各個体を判定し、倒れた本だけをFall状態で返します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
+`CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、throwはCuiStickの確率（f64、0〜1）を返します。hitは1本ずつ確率判定し、更新後のSkittleと新規転倒boolを返します。boolは入力のStandが出力のFallへ変わった場合だけtrueです。既にFallの個体は状態を保ってfalseを返します。呼び出し側が今回倒れた個体をまとめて採点します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
 
 `Molkky`を実装する型は関連型Stick・Skittle・ThrowOutputとaim・throw・hitを定義します。throwは可変参照を受け取り、実装ごとの結果を返します。CuiMolkkyのStickはCuiStick、ThrowOutputはf64の確率です。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
 
@@ -82,7 +85,7 @@ assert_eq!(field.skittles.len(), 12);
 ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
 不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
 
-既定のテスト135件、gui_2d featureありでは177件が成功しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+GUIを含むテストでは、単体hitの状態保持・連鎖・一投単位の採点・次投準備まで確認しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
 
 ### GUI 2Dの起動
 
@@ -165,13 +168,14 @@ cargo build --locked --features gui_2d
 | aim | 投擲方向上の候補を返す。候補外も物理ワールドには残す |
 | throw | 方向・初速を設定してtrueを返す。計算中や無効な入力では変更せずfalseを返す |
 | step | 1/60秒だけ物理更新し、各個体の最大接触力積を記録する |
-| hit | 今回の力積が閾値以上の個体をFallとして返す。同じ個体を結果に重複させない |
+| hit | Stickと1本のSkittleを受け、更新後の個体と新規転倒boolを返す。物理時間は進めない |
+| stand_up | 個体の位置・Idを保ち、速度・回転・今回の接触記録を消す。棒を投擲位置へ戻す |
 | is_settled | 物理計算中かを確認する。初期状態と全ボディのsleep後はtrue |
 | pose | Idに対応する描画用の位置と回転を返す |
 
 GUIのthrowのThrowOutputは開始の成否を示すboolです。CUIの確率f64と同じ単位には扱いません。既存APIの利用側はthrowの可変参照と関連型ThrowOutputの指定へ移行してください。
 
-Controllerが固定時間ごとにstepし、appが途中のposeを描画します。hitの結果はその投擲中の蓄積結果です。停止後に一度だけcalc_scoreへ渡し、得点表を更新して勝者・次手番を反映する進行処理もControllerが担当します。次のthrowでスキットルの位置を保持して立て直し、速度・角速度・前回の衝突記録を消します。
+appが固定時間ごとにstepし、そのフレームの物理更新後に各Skittleへhitの返却値を反映します。接触力積はstepが蓄積し、Fallに変わった個体はその投擲中ずっとFallを保ちます。描画はモデルの状態とposeを読むだけで、hitを呼びません。停止後に今回のFall一覧を一度だけcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を反映します。継続する場合はstand_upとモデルのStand復帰を行い、移動後の位置とIdを保って次の照準を開始できます。throwも単独で利用できるよう開始時に物理状態を初期化します。
 
 転倒は高さ方向の横倒しを接触力積で近似します。寸法・質量・減衰・転倒閾値はGuiMolkkyの関連定数へまとめたシミュレーション用の設定値です。物理テストでは高速衝突、弱い衝突、連鎖衝突、停止・再投擲を確認しています。
 
@@ -183,7 +187,7 @@ Controller::default()はマウスの入力状態だけを用意します。press
 
 services::teams::from_namesが初期チームを生成します。appのAppStateはservices::field::create_fieldの生成物を受け取り、最初の手番を設定します。進行状態のPhaseはappに置き、Ready・Charging・Simulatingを表します。Finishedや勝者のフラグは保存せず、is_finished()はcoreのnext_teamの結果を参照します。勝者はjudge_gameで求め、最後の生存者、全失格、参加者なしも既存ルールに従います。
 
-app.jsはDOMのpointer captureと時刻通知を行う接続コードです。appが受信イベントを振り分け、マウス処理だけをControllerへ渡します。待機中・未終了の場合だけ押下を受け付け、解放時の目標・速度をGuiStickへ反映してGuiMolkky::throwを呼びます。Frameイベントでは固定刻みの物理更新と停止検出を行い、一度だけ採点します。update_game_stateは初期化と投擲完了時に既存のjudge_game・next_teamの判定を反映します。取消は入力状態と表示用の照準・速度を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Webとdesktopで同じdocument::evalの接続を使います。
+app.jsはDOMのpointer captureと時刻通知を行う接続コードです。appが受信イベントを振り分け、マウス処理だけをControllerへ渡します。待機中・未終了の場合だけ押下を受け付け、解放時の目標・速度をGuiStickへ反映してGuiMolkky::throwを呼びます。Frameイベントでは固定刻みの物理更新、1本ずつの状態反映、停止検出を行い、今回の全転倒個体を一度だけ採点します。update_game_stateは初期化と投擲完了時に既存のjudge_game・next_teamの判定を反映します。取消は入力状態と表示用の照準・速度を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Webとdesktopで同じdocument::evalの接続を使います。
 
 ## Java演習環境
 

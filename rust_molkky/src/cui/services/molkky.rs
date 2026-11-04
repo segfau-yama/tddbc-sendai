@@ -29,12 +29,12 @@ impl Molkky for CuiMolkky {
         stick.probability()
     }
 
-    fn hit(&self, stick: &CuiStick, skittles: &[Self::Skittle]) -> Vec<Skittle> {
-        let probability = stick.probability();
-        skittles
-            .iter()
-            .filter(|_| rand::random_bool(probability))
-            .map(|skittle| skittle.with_state(SkittleState::Fall))
-            .collect()
+    fn hit(&self, stick: &CuiStick, skittle: &Self::Skittle) -> (Skittle, bool) {
+        let fell = skittle.state() == SkittleState::Stand && rand::random_bool(stick.probability());
+        if fell {
+            (skittle.with_state(SkittleState::Fall), true)
+        } else {
+            (*skittle, false)
+        }
     }
 }

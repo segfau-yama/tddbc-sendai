@@ -31,7 +31,13 @@ pub fn run(
         };
         let rules = CuiMolkky::new(numbers);
         let targets = rules.aim(stick, &field.skittles);
-        let fallen = rules.hit(stick, &targets);
+        let fallen: Vec<_> = targets
+            .iter()
+            .filter_map(|skittle| {
+                let (updated, fell) = rules.hit(stick, skittle);
+                fell.then_some(updated)
+            })
+            .collect();
         let point = rules.calc_score(&fallen);
         let board = teams[current].score_board().add(point);
         teams[current] = teams[current].with_score_board(board);

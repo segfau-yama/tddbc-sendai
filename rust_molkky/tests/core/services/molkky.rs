@@ -113,6 +113,30 @@ mod scoring {
 mod hit {
     use super::*;
 
+    mod single_skittle {
+        use super::*;
+
+        #[test]
+        fn 一本の状態を返し元を変えず新規転倒だけを通知する() {
+            let rules = CuiMolkky::default();
+            let stick = CuiStick::new(Stick::new(), 1.0);
+            let original = Skittle::new(5);
+            let (updated, fell) = rules.hit(&stick, &original);
+            assert!(fell);
+            assert_eq!(updated, original.with_state(SkittleState::Fall));
+            assert_eq!(original.state(), SkittleState::Stand);
+            assert_eq!(rules.hit(&stick, &updated), (updated, false));
+        }
+
+        #[test]
+        fn 倒れない場合は同じ個体の状態とfalseを返す() {
+            let rules = CuiMolkky::default();
+            let stick = CuiStick::new(Stick::new(), 0.0);
+            let original = Skittle::new(8);
+            assert_eq!(rules.hit(&stick, &original), (original, false));
+        }
+    }
+
     mod implementation {
         use super::*;
 
@@ -123,7 +147,7 @@ mod hit {
             let rules = CuiMolkky::new(vec![5]);
             let rules: &dyn Molkky<Stick = CuiStick, Skittle = Skittle, ThrowOutput = f64> = &rules;
             let targets = rules.aim(&stick, &skittles);
-            let fallen = rules.hit(&stick, &targets);
+            let fallen = fallen_skittles(rules, &stick, &targets);
             assert_eq!(fallen, [skittles[0].with_state(SkittleState::Fall)]);
             assert!(
                 skittles
@@ -137,7 +161,7 @@ mod hit {
             let rules = CuiMolkky::default();
             let stick = CuiStick::new(Stick::new(), 1.0);
             let targets = rules.aim(&stick, &[]);
-            assert!(rules.hit(&stick, &targets).is_empty());
+            assert!(fallen_skittles(&rules, &stick, &targets).is_empty());
         }
 
         #[test]
@@ -145,7 +169,7 @@ mod hit {
             let rules = CuiMolkky::new(vec![8, 5]);
             let stick = CuiStick::new(Stick::new(), 1.0);
             let skittles = [Skittle::new(5), Skittle::new(8)];
-            let fallen = rules.hit(&stick, &rules.aim(&stick, &skittles));
+            let fallen = fallen_skittles(&rules, &stick, &rules.aim(&stick, &skittles));
             assert_eq!(
                 fallen,
                 [
@@ -166,7 +190,7 @@ mod hit {
                 let stick = CuiStick::new(Stick::new(), 1.0);
                 let skittles = [Skittle::new(12)];
                 (
-                    rules.hit(&stick, &rules.aim(&stick, &skittles)),
+                    fallen_skittles(&rules, &stick, &rules.aim(&stick, &skittles)),
                     skittles[0].id(),
                 )
             };
@@ -375,7 +399,7 @@ mod integration_contract {
         let skittles = [Skittle::new(5), Skittle::new(8)];
         let stick = CuiStick::new(Stick::new(), 1.0);
         let targets = rules.aim(&stick, &skittles);
-        let fallen = rules.hit(&stick, &targets);
+        let fallen = fallen_skittles(&rules, &stick, &targets);
         let scored =
             original.with_score_board(original.score_board().add(rules.calc_score(&fallen)));
         assert_eq!(original.score_board().total(), 0);
@@ -383,4 +407,18 @@ mod integration_contract {
         assert_eq!(scored.id(), original.id());
         assert!(scored.turn());
     }
+}
+
+fn fallen_skittles<M: Molkky<Skittle = Skittle> + ?Sized>(
+    rules: &M,
+    stick: &M::Stick,
+    skittles: &[Skittle],
+) -> Vec<Skittle> {
+    skittles
+        .iter()
+        .filter_map(|skittle| {
+            let (updated, fell) = rules.hit(stick, skittle);
+            fell.then_some(updated)
+        })
+        .collect()
 }

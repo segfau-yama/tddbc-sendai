@@ -150,8 +150,22 @@ impl AppState {
                             self.rules.step();
                             self.accumulator -= step;
                         }
+                        // 接触はstepが蓄積する。既にFallの個体も保持し、描画はこの状態だけを読む。
+                        let updated = self
+                            .field
+                            .skittles()
+                            .iter()
+                            .map(|skittle| self.rules.hit(&self.stick, skittle).0)
+                            .collect();
+                        self.field = GuiField::new(*self.field.as_ref(), updated);
                         if self.rules.is_settled() {
-                            let fallen = self.rules.hit(&self.stick, self.field.skittles());
+                            let fallen: Vec<_> = self
+                                .field
+                                .skittles()
+                                .iter()
+                                .filter(|skittle| skittle.state() == SkittleState::Fall)
+                                .copied()
+                                .collect();
                             self.finish_throw(&fallen);
                         }
                     }
@@ -179,15 +193,21 @@ impl AppState {
             team.with_score_board(team.score_board().add(self.rules.calc_score(fallen)));
         self.reset_input();
         self.update_game_state();
+        if !self.is_finished() {
+            self.rules.stand_up();
+            let standing = self
+                .field
+                .skittles()
+                .iter()
+                .map(|skittle| skittle.with_state(SkittleState::Stand))
+                .collect();
+            self.field = GuiField::new(*self.field.as_ref(), standing);
+        }
     }
 
     fn update_game_state(&mut self) {
         let winner = self.rules.judge_game(&self.teams).map(Team::id);
-        let next = if winner.is_some() {
-            None
-        } else {
-            self.rules.next_team(&self.teams).map(Team::id)
-        };
+        let next = self.rules.next_team(&self.teams).map(Team::id);
         for team in &mut self.teams {
             *team = team.with_turn(next == Some(team.id()));
             if winner == Some(team.id()) {
@@ -219,7 +239,6 @@ fn render(state: &AppState) -> Element {
     } else {
         (GuiField::THROW_POSITION, 0.0)
     };
-    let fallen = rules.hit(stick, field.skittles());
     let targets = if input_phase == Phase::Charging {
         rules.aim(stick, field.skittles())
     } else {
@@ -227,22 +246,13 @@ fn render(state: &AppState) -> Element {
     };
     let skittles = field.skittles().iter().map(|skittle| {
         let pos = rules.pose(skittle.id()).unwrap().0;
-        let skittle = if (input_phase == Phase::Simulating || finished)
-            && fallen
-                .iter()
-                .any(|fallen_skittle| fallen_skittle.id() == skittle.id())
-        {
-            skittle.with_state(SkittleState::Fall)
-        } else {
-            *skittle
-        };
         let id = skittle.id();
         let class = if targets.iter().any(|target| target.id() == id) {
             "aimed"
         } else {
             ""
         };
-        rsx! { g { key: "{id}", class, {view::skittle(&skittle, pos, GuiMolkky::SKITTLE_RADIUS)} } }
+        rsx! { g { key: "{id}", class, {view::skittle(skittle, pos, GuiMolkky::SKITTLE_RADIUS)} } }
     });
     let scene = rsx! {
         {skittles}

@@ -157,6 +157,25 @@ impl GuiMolkky {
         Some((body.translation().to_array(), body.rotation().angle()))
     }
 
+    /// 位置とIdを保って立て直す。core個体のStandへの反映は呼び出し側で行う。
+    pub fn stand_up(&mut self) {
+        for &collider in self.skittle_ids.keys() {
+            let body = &mut self.world.bodies[self.world.colliders[collider].parent().unwrap()];
+            body.set_rotation(Rotation::IDENTITY, false);
+            body.set_linvel(Vector::ZERO, false);
+            body.set_angvel(0.0, false);
+            body.sleep();
+        }
+        self.peak_impulses.clear();
+        let body = &mut self.world.bodies[self.stick_body];
+        body.set_translation(Vector::from_array(self.origin), false);
+        body.set_rotation(Rotation::IDENTITY, false);
+        body.set_linvel(Vector::ZERO, false);
+        body.set_angvel(0.0, false);
+        body.sleep();
+        self.active = false;
+    }
+
     fn direction(&self, stick: &GuiStick) -> Option<Vector> {
         if stick.stick().id() != self.stick_id {
             return None;
@@ -199,40 +218,28 @@ impl Molkky for GuiMolkky {
         if self.active || !stick.speed().is_finite() || stick.speed() <= 0.0 {
             return false;
         }
-        for &collider in self.skittle_ids.keys() {
-            let body = &mut self.world.bodies[self.world.colliders[collider].parent().unwrap()];
-            body.set_rotation(Rotation::IDENTITY, false);
-            body.set_linvel(Vector::ZERO, false);
-            body.set_angvel(0.0, false);
-            body.sleep();
-        }
-        self.peak_impulses.clear();
+        self.stand_up();
         let body = &mut self.world.bodies[self.stick_body];
-        body.set_translation(Vector::from_array(self.origin), true);
         body.set_rotation(
             Rotation::from_angle(direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2),
             true,
         );
-        body.set_angvel(0.0, true);
         body.set_linvel(direction * stick.speed(), true);
         self.active = true;
         true
     }
 
-    fn hit(&self, stick: &GuiStick, skittles: &[Self::Skittle]) -> Vec<Skittle> {
-        if stick.stick().id() != self.stick_id {
-            return Vec::new();
+    fn hit(&self, stick: &GuiStick, skittle: &Self::Skittle) -> (Skittle, bool) {
+        let fell = stick.stick().id() == self.stick_id
+            && skittle.state() == SkittleState::Stand
+            && self
+                .peak_impulses
+                .get(&skittle.id())
+                .is_some_and(|&peak| peak >= Self::FALL_IMPULSE);
+        if fell {
+            (skittle.with_state(SkittleState::Fall), true)
+        } else {
+            (*skittle, false)
         }
-        skittles
-            .iter()
-            .filter(|skittle| {
-                skittle.state() == SkittleState::Stand
-                    && self
-                        .peak_impulses
-                        .get(&skittle.id())
-                        .is_some_and(|&peak| peak >= Self::FALL_IMPULSE)
-            })
-            .map(|skittle| skittle.with_state(SkittleState::Fall))
-            .collect()
     }
 }

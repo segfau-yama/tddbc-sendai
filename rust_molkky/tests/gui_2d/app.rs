@@ -64,6 +64,17 @@ mod composition {
     use super::*;
 
     #[test]
+    fn 描画は物理のhitを呼ばずモデルに反映された転倒状態を使う() {
+        let mut state = AppState::new(vec![team("赤", &[])]);
+        let mut pins = state.field.skittles().to_vec();
+        pins[0] = pins[0].with_state(SkittleState::Fall);
+        state.field = GuiField::new(*state.field.as_ref(), pins);
+        let html = dioxus_ssr::render_element(render(&state));
+        assert_eq!(html.matches("data-state=\"fall\"").count(), 1);
+        assert_eq!(html, dioxus_ssr::render_element(render(&state)));
+    }
+
+    #[test]
     fn 最初の手番と十二本と得点表を描画する() {
         let state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
         assert!(state.teams[0].turn());
@@ -171,6 +182,88 @@ mod initialization {
 
 mod input {
     use super::*;
+
+    #[test]
+    fn 早期転倒を保持して連鎖した二本を一投で採点し次の照準前に立て直す() {
+        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let field_id = state.field.as_ref().id();
+        let pins = vec![Skittle::new(5), Skittle::new(8)];
+        let ids: Vec<_> = pins.iter().map(Skittle::id).collect();
+        state.rules = GuiMolkky::new(
+            &state.stick,
+            GuiField::THROW_POSITION,
+            &[(ids[0], [0.02, 0.7]), (ids[1], [0.06, 0.85])],
+        );
+        state.field = GuiField::new(*state.field.as_ref(), pins);
+        state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
+        state.handle(DomEvent::Release(pointer([0.0, 1.0], 600.0)));
+        let mut fallen_ids = std::collections::HashSet::new();
+        for tick in 1..1200 {
+            state.handle(DomEvent::Frame {
+                time: 600.0 + f64::from(tick) * 20.0,
+            });
+            if state.phase != Phase::Simulating {
+                break;
+            }
+            for pin in state.field.skittles() {
+                if fallen_ids.contains(&pin.id()) {
+                    assert_eq!(pin.state(), SkittleState::Fall);
+                }
+                if pin.state() == SkittleState::Fall {
+                    fallen_ids.insert(pin.id());
+                }
+            }
+        }
+        assert_eq!(fallen_ids.len(), 2);
+        assert_eq!(state.phase, Phase::Ready);
+        assert_eq!(
+            state.teams[0]
+                .score_board()
+                .history()
+                .iter()
+                .map(|p| p.value())
+                .collect::<Vec<_>>(),
+            [2]
+        );
+        assert!(state.teams[1].turn());
+        assert_eq!(state.field.as_ref().id(), field_id);
+        assert_eq!(
+            state
+                .field
+                .skittles()
+                .iter()
+                .map(Skittle::id)
+                .collect::<Vec<_>>(),
+            ids
+        );
+        assert!(
+            state
+                .field
+                .skittles()
+                .iter()
+                .all(|p| p.state() == SkittleState::Stand)
+        );
+        let positions: Vec<_> = ids
+            .iter()
+            .map(|&id| state.rules.pose(id).unwrap())
+            .collect();
+        state.handle(DomEvent::Frame { time: 50000.0 });
+        assert_eq!(state.teams[0].score_board().history().len(), 1);
+        assert_eq!(
+            ids.iter()
+                .map(|&id| state.rules.pose(id).unwrap())
+                .collect::<Vec<_>>(),
+            positions
+        );
+        let aimed = GuiStick::new(*state.stick.as_ref(), Some(positions[0].0), 6.0);
+        assert!(
+            state
+                .rules
+                .aim(&aimed, state.field.skittles())
+                .iter()
+                .any(|p| p.id() == ids[0])
+        );
+    }
 
     #[test]
     fn 所有pointerの取消で照準と速度と入力状態を一緒に解除する() {
