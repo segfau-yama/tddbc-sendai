@@ -1,22 +1,12 @@
-use crate::core::models::{Point, ScoreState, Skittle, SkittleState, Stick, Team};
+use crate::core::models::{Point, ScoreState, Skittle, Stick, Team};
 use itertools::Itertools;
 
 pub trait Molkky {
     type Stick: AsRef<Stick>;
-    type Skittle: AsRef<Skittle> + From<Skittle>;
+    type Skittle: AsRef<Skittle>;
 
-    /// 1刻み進める。投擲条件が無効ならfalse。即時判定では更新不要。
-    fn step(&mut self, _stick: &Self::Stick) -> bool {
-        true
-    }
-
-    /// 即時判定は待機不要。物理計算を使う実装は停止を確認する。
-    fn is_settled(&self) -> bool {
-        true
-    }
-
-    /// 次投へ備える。即時判定は投擲中の状態を持たない。
-    fn reset_throw(&mut self) {}
+    /// 一投の飛行を更新し、連鎖も含め動いている間trueを返す。
+    fn fly(&mut self, stick: &Self::Stick) -> bool;
 
     fn aim(&self, stick: &Self::Stick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle>;
 
@@ -28,9 +18,8 @@ pub trait Molkky {
         chained_skittle: &Self::Skittle,
     ) -> Self::Skittle;
 
-    fn stand_up(&self, skittle: &Self::Skittle) -> Self::Skittle {
-        skittle.as_ref().with_state(SkittleState::Stand).into()
-    }
+    /// 個体を立て直す。位置・回転などの復元方法は具象実装が決める。
+    fn stand_up(&mut self, skittle: &Self::Skittle) -> Self::Skittle;
 
     fn calc_score(&self, fallen_skittles: &[Skittle]) -> Point {
         Point::new(match fallen_skittles {

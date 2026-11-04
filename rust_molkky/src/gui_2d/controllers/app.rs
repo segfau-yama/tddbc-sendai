@@ -151,13 +151,9 @@ impl Controller {
                         self.last_frame = now.max(self.last_frame);
                         let step = Duration::from_secs_f32(TIME_STEP);
                         while self.accumulator >= step {
-                            if !self.rules.step(&self.stick) {
-                                self.reset_input();
-                                self.phase = Phase::Ready;
-                                break;
-                            }
+                            let flying = self.rules.fly(&self.stick);
                             self.accumulator -= step;
-                            // 接触はstepが蓄積する。既にFallの個体も保持し、描画はこの状態だけを読む。
+                            // 最後の飛行更新の接触も採点前に反映し、既にFallの個体も保持する。
                             let updated = self
                                 .field
                                 .skittles()
@@ -165,7 +161,7 @@ impl Controller {
                                 .map(|skittle| self.rules.hit(&self.stick, skittle))
                                 .collect();
                             self.field = GuiField::new(*self.field.as_ref(), updated);
-                            if self.rules.is_settled() {
+                            if !flying {
                                 let fallen: Vec<_> = self
                                     .field
                                     .skittles()
@@ -203,7 +199,6 @@ impl Controller {
         self.reset_input();
         self.update_game_state();
         if !self.is_finished() {
-            self.rules.reset_throw();
             let standing = self
                 .field
                 .skittles()

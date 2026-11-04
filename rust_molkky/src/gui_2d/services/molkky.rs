@@ -15,16 +15,16 @@ pub struct GuiMolkky {
     pub(in crate::gui_2d) skittle_ids: HashMap<ColliderHandle, Id>,
     pub(in crate::gui_2d) peak_impulses: HashMap<Id, f32>,
     pub(in crate::gui_2d) origin: [f32; 2],
-    pub(in crate::gui_2d) ready: bool,
+    pub(in crate::gui_2d) flying: bool,
 }
 
 impl Molkky for GuiMolkky {
     type Stick = GuiStick;
     type Skittle = Skittle;
 
-    /// 最初のtickだけ棒の初速を反映し、1tick進める。無効な投擲条件ならfalse。
-    fn step(&mut self, stick: &GuiStick) -> bool {
-        if self.ready {
+    /// 完了後の呼び出しは次投を始める。開始条件が無効ならワールドを変更しない。
+    fn fly(&mut self, stick: &GuiStick) -> bool {
+        if !self.flying {
             let Some(direction) = direction(self, stick) else {
                 return false;
             };
@@ -32,16 +32,13 @@ impl Molkky for GuiMolkky {
                 return false;
             }
             let body = &mut self.world.bodies[self.stick_body];
+            body.set_translation(Vector::from_array(self.origin), false);
             body.set_rotation(
                 Rotation::from_angle(direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2),
-                true,
+                false,
             );
+            body.set_angvel(0.0, false);
             body.set_linvel(direction * stick.speed(), true);
-            // 停止後も初速を再適用せず、次投の準備はreset_throwで明示する。
-            self.ready = false;
-        }
-        if self.is_settled() {
-            return true;
         }
         self.world.step();
         for pair in self.world.narrow_phase.contact_pairs() {
@@ -63,30 +60,26 @@ impl Molkky for GuiMolkky {
                 }
             }
         }
-        true
+        // 棒が先に止まっても、ピンの連鎖が終わるまで採点を待つ。
+        self.flying = self
+            .world
+            .bodies
+            .iter()
+            .any(|(_, body)| !body.is_sleeping());
+        self.flying
     }
 
-    fn is_settled(&self) -> bool {
-        self.world.bodies.iter().all(|(_, body)| body.is_sleeping())
-    }
-
-    /// 位置とIdを保って立て直す。core個体のStandへの反映は呼び出し側で行う。
-    fn reset_throw(&mut self) {
-        for &collider in self.skittle_ids.keys() {
+    /// 倒れた地点で対象個体だけを立て直し、今回の接触記録も取り除く。
+    fn stand_up(&mut self, skittle: &Self::Skittle) -> Self::Skittle {
+        if let Some((&collider, _)) = self.skittle_ids.iter().find(|(_, id)| **id == skittle.id()) {
             let body = &mut self.world.bodies[self.world.colliders[collider].parent().unwrap()];
             body.set_rotation(Rotation::IDENTITY, false);
             body.set_linvel(Vector::ZERO, false);
             body.set_angvel(0.0, false);
             body.sleep();
         }
-        self.peak_impulses.clear();
-        let body = &mut self.world.bodies[self.stick_body];
-        body.set_translation(Vector::from_array(self.origin), false);
-        body.set_rotation(Rotation::IDENTITY, false);
-        body.set_linvel(Vector::ZERO, false);
-        body.set_angvel(0.0, false);
-        body.sleep();
-        self.ready = true;
+        self.peak_impulses.remove(&skittle.id());
+        skittle.with_state(SkittleState::Stand)
     }
 
     fn aim(&self, stick: &GuiStick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle> {

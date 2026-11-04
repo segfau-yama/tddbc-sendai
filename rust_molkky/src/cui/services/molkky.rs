@@ -34,6 +34,10 @@ impl Molkky for CuiMolkky {
     type Stick = CuiStick;
     type Skittle = CuiSkittle;
 
+    fn fly(&mut self, _stick: &CuiStick) -> bool {
+        false
+    }
+
     fn aim(&self, _stick: &CuiStick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle> {
         self.numbers
             .iter()
@@ -75,5 +79,9 @@ impl Molkky for CuiMolkky {
         } else {
             *chained_skittle
         }
+    }
+
+    fn stand_up(&mut self, skittle: &Self::Skittle) -> Self::Skittle {
+        skittle.as_ref().with_state(SkittleState::Stand).into()
     }
 }

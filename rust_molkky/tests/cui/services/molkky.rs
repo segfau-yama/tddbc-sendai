@@ -4,6 +4,24 @@ use crate::{
     cui::{models::CuiField, services::CuiMolkky},
 };
 
+mod flying {
+    use super::*;
+
+    #[test]
+    fn 飛行待ちをせず確率を保った棒で命中と採点を行う() {
+        let mut rules = CuiMolkky::new(vec![5]);
+        let stick = CuiStick::default().throw(1.0);
+        let original_id = stick.as_ref().id();
+        assert!(!Molkky::fly(&mut rules, &stick));
+        assert_eq!(stick.probability(), 1.0);
+        assert_eq!(stick.as_ref().id(), original_id);
+        let pin = CuiSkittle::from(Skittle::new(5));
+        let fallen = rules.hit(&stick, &pin);
+        assert_eq!(fallen.as_ref().state(), SkittleState::Fall);
+        assert_eq!(rules.calc_score(&[*fallen.as_ref()]).value(), 5);
+    }
+}
+
 mod aiming {
     use super::*;
 

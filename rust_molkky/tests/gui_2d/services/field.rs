@@ -29,7 +29,7 @@ mod initialization {
 
     #[test]
     fn 通常フィールドには一から十二の別個体が立っている() {
-        let (field, stick, rules) = create_field();
+        let (field, stick, mut rules) = create_field();
         assert_eq!(
             field
                 .skittles()
@@ -59,7 +59,7 @@ mod initialization {
             pose(&rules, stick.stick().id()).unwrap().0,
             GuiField::THROW_POSITION
         );
-        assert!(rules.is_settled());
+        assert!(!rules.fly(&stick));
     }
 
     #[test]

@@ -121,8 +121,9 @@ mod hit {
         use super::*;
 
         #[test]
-        fn 共通の立て直しは番号と識別子を保って立位を返す() {
-            let rules = CuiMolkky::default();
+        fn 立て直しの具象実装は番号と識別子を保って立位を返す() {
+            let mut service = CuiMolkky::default();
+            let rules: &mut dyn Molkky<Stick = CuiStick, Skittle = CuiSkittle> = &mut service;
             let original = CuiSkittle::new(Skittle::new(5).with_state(SkittleState::Fall), 0.8);
             let standing = rules.stand_up(&original);
             assert_eq!(

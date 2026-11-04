@@ -1,5 +1,22 @@
 # 開発支援方針の記録
 
+## 飛行と立て直しの抽象へ整理（2026-11-04）
+
+- coreのstepを必須メソッド`fly(&mut self, stick: &Self::Stick) -> bool`へ置き換える。1刻みの飛行を進め、連鎖を含めて動いている間true、完了/無効な入力はfalseを返す。is_settled/reset_throwは撤去し、GUIはflyの結果を受け取った後に最後のhitを反映して一度だけ採点する。CUIは飛行時間を持たずfalseを返す。
+- GUIのflyは一投の最初に棒を投擲位置へ戻し、回転・角速度・初速を設定する。完了後の次のfly呼び出しは次投を開始する。controllerはfalseを受け取ったら飛行更新を止め、次の解放まで呼ばない。初速の再適用を防ぐフラグは飛行中かの1つに置き換える。
+- stand_upを必須の`stand_up(&mut self, skittle: &Self::Skittle) -> Self::Skittle`とする。CUIはStandと連鎖確率0、GUIは対象個体だけの角度・速度・角速度・接触記録とStandを復元する。2Dは落下後の位置・Id・番号を保ち、棒や他の個体を変更しない。3Dの角度/位置の復元方針は具象実装に任せ、今回3D処理は追加しない。
+- stand_upのデフォルト撤去に伴い、関連型Skittleの不要なFrom<core::Skittle>制約も削除する。throwは更新したStickを返す従来の契約を保ち、coreに座標や物理エンジンは持ち込まない。
+- [x] 変更前の既存テストを確認する（GUI featureあり197件成功）。
+- [x] flyの継続/完了・次投の開始、対象個体だけのstand_upをテストで指定しRedを確認する。
+- [x] core/CUI/GUI・controllerと既存テストを移行する。
+- [x] 転倒・連鎖・採点・手番・二重加点防止・位置保持・無効入力を確認する。
+- [x] 次投の最初の物理更新前も、棒を投擲位置で表示する。
+- [x] fmt/Clippy・feature分離・Web/desktopコンパイル・Web実操作・差分を確認する。
+- Red：先にstand_upの対象個体だけの復元をテストしたところ、従来のデフォルトは転倒の接触記録を残し、再びhitするとFallになることを確認した（/tmp/molkky-stand-up-red.log）。続けてflyへテストを移行し、未実装でコンパイルできないことを確認した（/tmp/molkky-fly-red.log）。
+- Green/Refactor：cargo test --features gui_2dは199件、cargo testは145件成功。flyが完了を返す最後の更新もhitへ反映する。無効入力・飛行中の初速維持・完了後の次投・CUIの即時完了と確率/採点の保持を確認した。stand_upは元のモデルを変更せず、対象個体の位置・Id・番号を保ち、他のピンや棒の物理状態・転倒記録を変更しない。coreモデルのイミュータブルな更新は維持し、物理ワールドの更新だけを具象サービスが所有する。
+- 追加のRed→Green：棒を戻す責務をflyへ移すと、次投の最初の固定刻み前に前回の停止位置が表示されることをSSRテストで確認した（/tmp/molkky-fly-view-red.log）。controllers/stick.rsが実際の飛行開始までは投擲位置を選ぶよう変更し、余分なリセット処理や状態は増やしていない。
+- 検証：cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、coreのみ/GUIのみのcargo check、Web向けcargo check/build、desktop向けcargo check、git diff --checkが成功した。desktopは既存の/workspace/.cloud-tools/desktopをPKG_CONFIG_SYSROOT_DIR/PKG_CONFIG_PATHで参照した。Chromiumのtests/gui_2d/app.jsでDOM入力・capture・取消・領域外解放・連続投擲・採点・失格・結果・固定範囲・反射を確認した（/tmp/molkky-fly-browser.log）。デスクトップ実機の操作は今回は未確認。
+
 ## GUIサービスの固有implを撤去し制御をcontrollerへ集約（2026-11-04）
 
 - 対象：GuiMolkkyの固有impl、GUIのapp/controller、fieldサービスと呼び出し元。`impl Molkky for GuiMolkky`は残し、当たり判定と物理処理をここへ集約する。ワールド生成はfieldサービス、表示位置の取り出しとviewの合成・イベント制御はcontrollers/各ファイル.rsへ移す。appはDioxusの起動・寿命管理だけを担う。

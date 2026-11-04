@@ -113,6 +113,6 @@ pub fn create_world(
         skittle_ids,
         peak_impulses: HashMap::new(),
         origin,
-        ready: true,
+        flying: false,
     }
 }

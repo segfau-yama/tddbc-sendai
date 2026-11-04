@@ -24,8 +24,7 @@ fn shot(stick: &GuiStick, target: [f32; 2], speed: f32) -> GuiStick {
 
 fn settle(rules: &mut GuiMolkky, stick: &GuiStick) {
     for _ in 0..(20.0 / TIME_STEP) as usize {
-        assert!(rules.step(stick));
-        if rules.is_settled() {
+        if !rules.fly(stick) {
             return;
         }
     }
@@ -41,8 +40,7 @@ mod launching {
         let aimed = shot(&stick, [0.0, 1.0], 6.0);
         assert_eq!(rules.aim(&aimed, &pins), [pins[0]]);
         assert_eq!(pose(&rules, stick.stick().id()).unwrap().0, [0.0, 0.0]);
-        assert!(Molkky::step(&mut rules, &aimed));
-        assert!(!Molkky::is_settled(&rules));
+        assert!(Molkky::fly(&mut rules, &aimed));
         let (pos, angle) = pose(&rules, stick.stick().id()).unwrap();
         assert!(pos[1] > 0.0 && pos[1] < 0.11, "{pos:?}");
         assert!(pos[0].abs() < 0.001);
@@ -54,7 +52,7 @@ mod launching {
     }
 
     #[test]
-    fn 無効な投擲は進まず計算中は初速を上書きしない() {
+    fn 無効な投擲は進まず飛行中は初速を上書きせず完了後に次投を始める() {
         let (mut rules, stick, _) = scene(&[]);
         for invalid in [
             stick,
@@ -66,14 +64,13 @@ mod launching {
             shot(&stick, [0.0, 1.0], f32::INFINITY),
             shot(&GuiStick::default(), [0.0, 1.0], 6.0),
         ] {
-            assert!(!rules.step(&invalid));
-            assert!(rules.is_settled());
+            assert!(!rules.fly(&invalid));
             assert_eq!(pose(&rules, stick.stick().id()), Some(([0.0, 0.0], 0.0)));
         }
         let aimed = shot(&stick, [0.0, 1.0], 6.0);
-        assert!(rules.step(&aimed));
+        assert!(rules.fly(&aimed));
         let before = pose(&rules, stick.stick().id()).unwrap().0;
-        assert!(rules.step(&shot(&stick, [1.0, 0.0], 3.0)));
+        assert!(rules.fly(&shot(&stick, [1.0, 0.0], 3.0)));
         let (after, angle) = pose(&rules, stick.stick().id()).unwrap();
         assert!(after[0].abs() < 0.001);
         assert!(after[1] > before[1]);
@@ -81,9 +78,11 @@ mod launching {
         assert!(angle.abs() < 0.001);
         settle(&mut rules, &aimed);
         let stopped = pose(&rules, stick.stick().id());
-        assert!(rules.step(&aimed));
-        assert!(rules.is_settled());
-        assert_eq!(pose(&rules, stick.stick().id()), stopped);
+        assert!(rules.fly(&aimed));
+        let next_position = pose(&rules, stick.stick().id()).unwrap().0;
+        assert!(next_position[0].abs() < 0.001);
+        assert!(next_position[1] > 0.0 && next_position[1] < 0.11);
+        assert_ne!(pose(&rules, stick.stick().id()), stopped);
     }
 }
 
@@ -111,14 +110,15 @@ mod collisions {
         let (mut rules, stick, pins) = scene(&[[0.0, 0.7]]);
         let aimed = shot(&stick, [0.0, 1.0], 6.0);
         settle(&mut rules, &aimed);
-        assert_eq!(rules.hit(&aimed, &pins[0]).state(), SkittleState::Fall);
+        let fallen = rules.hit(&aimed, &pins[0]);
+        assert_eq!(fallen.state(), SkittleState::Fall);
         let position = pose(&rules, pins[0].id()).unwrap().0;
-        Molkky::reset_throw(&mut rules);
+        let stick_pose = pose(&rules, stick.stick().id());
+        assert_eq!(Molkky::stand_up(&mut rules, &fallen), pins[0]);
         assert_eq!(pose(&rules, pins[0].id()), Some((position, 0.0)));
-        assert_eq!(pose(&rules, stick.stick().id()), Some(([0.0, 0.0], 0.0)));
+        assert_eq!(pose(&rules, stick.stick().id()), stick_pose);
         assert_eq!(rules.hit(&aimed, &pins[0]), pins[0]);
-        assert!(!rules.step(&stick));
-        assert!(rules.is_settled());
+        assert!(!rules.fly(&stick));
         assert_eq!(pose(&rules, pins[0].id()), Some((position, 0.0)));
     }
 
@@ -128,10 +128,11 @@ mod collisions {
         let aimed = shot(&stick, [0.0, 1.0], 120.0);
         // 反射後に別の個体へ当たる場合と区別し、最初の衝突を確認する。
         for _ in 0..(20.0 / TIME_STEP) as usize {
-            assert!(rules.step(&aimed));
+            let flying = rules.fly(&aimed);
             if !fallen_skittles(&rules, &aimed, &pins).is_empty() {
                 break;
             }
+            assert!(flying, "衝突せずに飛行が完了しました");
         }
         let fallen = fallen_skittles(&rules, &aimed, &pins);
         assert_eq!(fallen, [pins[0].with_state(SkittleState::Fall)]);
@@ -170,7 +171,7 @@ mod collisions {
     }
 
     #[test]
-    fn chain_hitは確率を使わず物理の連鎖結果を反映しstand_upは個体だけを立てる() {
+    fn chain_hitは物理の連鎖を反映しstand_upは対象個体だけを復元する() {
         let (mut rules, stick, pins) = scene(&[[0.02, 0.7], [0.06, 0.85]]);
         let aimed = shot(&stick, [0.0, 1.0], 6.0);
         assert_eq!(
@@ -182,9 +183,15 @@ mod collisions {
         let chained = rules.chain_hit(&fallen, &pins[1]);
         assert_eq!(chained, pins[1].with_state(SkittleState::Fall));
         assert_eq!(rules.chain_hit(&pins[0], &pins[1]), pins[1]);
-        let original_pose = pose(&rules, chained.id());
+        let position = pose(&rules, chained.id()).unwrap().0;
+        let other_pose = pose(&rules, fallen.id());
+        let stick_pose = pose(&rules, stick.stick().id());
         assert_eq!(rules.stand_up(&chained), pins[1]);
-        assert_eq!(pose(&rules, chained.id()), original_pose);
+        assert_eq!(rules.hit(&aimed, &pins[1]), pins[1]);
+        assert_eq!(pose(&rules, chained.id()), Some((position, 0.0)));
+        assert_eq!(pose(&rules, fallen.id()), other_pose);
+        assert_eq!(rules.hit(&aimed, &pins[0]), fallen);
+        assert_eq!(pose(&rules, stick.stick().id()), stick_pose);
         assert_eq!(chained.state(), SkittleState::Fall);
     }
 
@@ -199,7 +206,9 @@ mod collisions {
             .map(|p| pose(&rules, p.id()).unwrap().0)
             .collect();
         // 後ろの壁で反射して当たる投擲ではなく、届かない弱い投擲でミスにする。
-        rules.reset_throw();
+        for pin in &pins {
+            assert_eq!(rules.stand_up(pin), *pin);
+        }
         let missed = shot(&stick, [1.0, 0.0], 0.1);
         assert!(fallen_skittles(&rules, &aimed, &pins).is_empty());
         assert_eq!(
@@ -210,8 +219,9 @@ mod collisions {
         );
         settle(&mut rules, &missed);
         assert!(fallen_skittles(&rules, &aimed, &pins).is_empty());
-        assert!(rules.step(&missed));
-        assert!(rules.is_settled());
+        let original_pose = pose(&rules, pins[0].id());
+        assert!(!rules.fly(&stick));
+        assert_eq!(pose(&rules, pins[0].id()), original_pose);
     }
 }
 
@@ -223,8 +233,9 @@ mod field_boundaries {
         let aimed = shot(&stick, target, speed);
         let mut previous = [0.0, 0.0];
         let mut reflected = [false; 2];
+        let mut flying = true;
         for _ in 0..(20.0 / TIME_STEP) as usize {
-            assert!(rules.step(&aimed));
+            flying = rules.fly(&aimed);
             let (position, angle) = pose(&rules, stick.stick().id()).unwrap();
             let half_segment = GuiStick::LENGTH / 2.0 - GuiStick::RADIUS;
             let extents = [angle.sin().abs(), angle.cos().abs()]
@@ -240,7 +251,7 @@ mod field_boundaries {
                 }
             }
             previous = position;
-            if rules.is_settled() {
+            if !flying {
                 break;
             }
         }
@@ -249,7 +260,7 @@ mod field_boundaries {
                 assert!(reflected[axis], "壁で反射しませんでした: {target:?}");
             }
         }
-        assert!(rules.is_settled(), "反射後に停止しませんでした");
+        assert!(!flying, "反射後に停止しませんでした");
     }
 
     #[test]
@@ -277,8 +288,9 @@ mod field_boundaries {
     fn 強く打たれたスキットルも外周の内側に残る() {
         let (mut rules, stick, skittles) = scene(&[[0.0, 0.7]]);
         let aimed = shot(&stick, [0.0, 1.0], 120.0);
+        let mut flying = true;
         for _ in 0..(20.0 / TIME_STEP) as usize {
-            assert!(rules.step(&aimed));
+            flying = rules.fly(&aimed);
             let [x, y] = pose(&rules, skittles[0].id()).unwrap().0;
             let radius = GuiSkittle::RADIUS;
             assert!(
@@ -288,11 +300,11 @@ mod field_boundaries {
                     && y + radius <= 1.355,
                 "スキットルがフィールドから出ました: {x}, {y}"
             );
-            if rules.is_settled() {
+            if !flying {
                 break;
             }
         }
-        assert!(rules.is_settled());
+        assert!(!flying);
         assert_eq!(
             fallen_skittles(&rules, &aimed, &skittles),
             [skittles[0].with_state(SkittleState::Fall)]

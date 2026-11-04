@@ -80,13 +80,13 @@ assert_eq!(field.skittles.len(), 12);
 
 `CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、CuiStick::throw(probability)は確率（f64、0〜1）を更新したCuiStickを返します。hitは1本ずつ確率判定し、更新後のCuiSkittleだけを返します。転倒時には投げたStickの命中確率を連鎖用に保持します。結果は内側のSkittleStateで判定し、既にFallの個体は状態と確率を保ちます。呼び出し側が今回倒れた個体をまとめて採点します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
 
-`Molkky`を実装する型は関連型Stick・Skittleとaim・hit・chain_hitを定義します。CuiMolkkyのStickはCuiStick、SkittleはCuiSkittleです。aim・hit・chain_hitは関連型の個体を返し、CUI固有の確率を保持します。stand_up・calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
+`Molkky`を実装する型は関連型Stick・Skittleとfly・aim・hit・chain_hit・stand_upを定義します。CuiMolkkyのStickはCuiStick、SkittleはCuiSkittleです。aim・hit・chain_hitは関連型の個体を返し、CUI固有の確率を保持します。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
 
 Throw<Input>はcore/models/stick.rsに置くStick側の操作契約です。CuiStickはf64の確率、GuiStickはf32の速度(m/s)を受け、Idとその他の属性を保つ新しいSelfを返します。元のStickや物理ワールドは変更しません。値は呼び出し側が指定します。MolkkyのthrowとThrowOutputは削除しました。
 
 chain_hit(fallen_skittle, chained_skittle)は、呼び出し側が指定した対象へ連鎖を判定します。初回転倒が80%なら次は60%、さらに次は40%と20パーセントポイントずつ下げ、成功した対象へ減衰後の確率を引き継ぎます。0%より下には下げません。連鎖元がStand、対象が既にFall、判定失敗の場合は対象をそのまま返します。現在のCUI入力ループは指定番号への直接hitを行い、隣接探索や連鎖対象の自動選択は追加していません。
 
-stand_upはcoreの共通メソッドで、Id・番号を保ってStandへ戻した個体を返します。CuiSkittleでは連鎖確率も初期値の0へ戻します。元の個体は変更しません。
+flyは一投の動きを更新し、動いている間true、完了時はfalseを返す抽象メソッドです。CUIは飛行時間を持たずfalseを返し、Stickの確率を変えません。stand_upも抽象メソッドで、CUIの実装はId・番号を保ってStandと連鎖確率0へ戻した個体を返します。元の個体は変更しません。
 
 ### テストと残課題
 
@@ -176,18 +176,16 @@ cargo build --locked --features gui_2d
 | API | 動作 |
 | --- | --- |
 | aim | 投擲方向上の候補を返す。候補外も物理ワールドには残す |
-| step | 更新後のGuiStickを受けて1/60秒だけ物理更新し、各個体の最大接触力積を記録する。最初の更新だけ方向・初速を反映し、無効な投擲条件ならfalseを返す |
+| fly | 更新後のGuiStickを受けて1/60秒だけ飛行を進め、各個体の最大接触力積を記録する。棒と連鎖するピンが動いている間true、完了時はfalseを返す |
 | hit | Stickと1本のSkittleを受け、更新後の個体だけを返す。物理時間は進めない |
 | chain_hit | 転倒元と対象を受け、Rapierが蓄積した対象の転倒状態を返す。CUIの確率は使わない |
-| stand_up | coreの共通処理で1本の状態をStandへ戻す。物理ワールドは更新しない |
-| reset_throw | 個体の位置・Idを保ち、速度・回転・今回の接触記録を消す。棒を投擲位置へ戻す |
-| is_settled | 物理計算中かを確認する。初期状態と全ボディのsleep後はtrue |
+| stand_up | 対象個体の位置・Id・番号を保ち、角度・速度・角速度・今回の接触記録とStandを復元する。棒や他の個体は変更しない |
 
-step・is_settled・reset_throwはcoreのMolkkyトレイトの契約です。即時判定のCUIは更新不要・停止済みのデフォルトを使い、GUIはワールドを更新します。coreに座標・Rapier型は追加しません。描画用の位置と回転はcontrollers::poseがIdから読み取ります。
+flyとstand_upはcoreのMolkkyトレイトの抽象です。flyの戻り値で継続/完了を伝えるため、停止確認専用のメソッドは不要です。stand_upは具象実装が必要な位置・角度の復元方法を決めます。今回の2Dでは倒れた場所で立て直します。coreに座標・Rapier型は追加しません。描画用の位置と回転はcontrollers::poseがIdから読み取ります。
 
-GuiStick::throw(speed)は速度を更新したGuiStickを返します。物理ボディへの反映はMolkky::stepの最初の更新で行います。計算中に初速を上書きせず、停止後もreset_throwまでは再開しません。Stick側は確率/速度の更新、MolkkyのGUI実装側はワールドへの反映を担当します。投擲開始専用の関数は追加しません。
+GuiStick::throw(speed)は速度を更新したGuiStickを返します。物理ボディへの反映はMolkky::flyの最初の更新で行います。flyが棒を投擲位置へ戻し、回転・角速度・初速を反映します。飛行中は初速を上書きしません。完了後の次のflyは次投を始めるので、呼び出し側はfalseを受け取ったら次の解放まで更新を止めます。飛行開始前の棒の表示はcontrollerが投擲位置へ合わせます。
 
-app controllerが固定時間ごとにstepし、物理更新後に各Skittleへhitの返却値を反映します。接触力積はstepが蓄積し、Fallに変わった個体はその投擲中ずっとFallを保ちます。描画はモデルの状態とposeを読むだけで、hitを呼びません。停止後に今回のFall一覧を一度だけcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を反映します。固定刻み未満のフレームでは採点しません。継続する場合はreset_throwで物理状態を準備し、各個体をcoreのstand_upでStandへ戻して、移動後の位置とIdを保って次の照準を開始できます。
+app controllerが固定時間ごとにflyを呼び、物理更新後に各Skittleへhitの返却値を反映します。接触力積はflyが蓄積し、Fallに変わった個体はその投擲中ずっとFallを保ちます。描画はモデルの状態とposeを読むだけで、hitを呼びません。flyがfalseを返した最後の更新も反映してから、今回のFall一覧を一度だけcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を反映します。固定刻み未満のフレームでは採点しません。継続する場合は各個体をstand_upで立て直し、移動後の位置とIdを保って次の照準を開始できます。
 
 転倒は高さ方向の横倒しを接触力積で近似します。半径・質量はGuiSkittle、棒の半径・長さ・質量はGuiStickの関連定数に置き、配置・物理生成・描画で共有します。時間刻み・共通減衰・接触による転倒閾値はGUIサービスのシミュレーション定数です。時間刻みはservices::TIME_STEPから参照します。hitとchain_hitは個体間の相互作用なのでサービスへ置きます。物理テストでは高速衝突、弱い衝突、連鎖衝突、停止・再投擲を確認しています。
 
@@ -199,7 +197,7 @@ MouseInput::default()はマウスの入力状態だけを用意します。press
 
 services::teams::from_namesが初期チームを生成します。controllers/app.rsのControllerはservices::field::create_fieldの生成物を受け取り、最初の手番を設定します。進行状態のPhaseはこのcontrollerに置き、Ready・Charging・Simulatingを表します。Finishedや勝者のフラグは保存せず、is_finished()はcoreのnext_teamの結果を参照します。勝者はjudge_gameで求め、最後の生存者、全失格、参加者なしも既存ルールに従います。
 
-app.jsはDOMのpointer captureと時刻通知を行う接続コードです。appが受信イベントをControllerへ渡し、マウス処理はMouseInputが担当します。待機中・未終了の場合だけ押下を受け付け、解放時の目標を設定し、GuiStick::throw(speed)で速度を更新します。Frameイベントではその棒をstepへ渡して固定刻みの物理更新、1本ずつの状態反映、停止検出を行い、今回の全転倒個体を一度だけ採点します。update_game_stateは初期化と投擲完了時に既存のjudge_game・next_teamの判定を反映します。取消は入力状態と表示用の照準・速度を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Webとdesktopで同じdocument::evalの接続を使います。
+app.jsはDOMのpointer captureと時刻通知を行う接続コードです。appが受信イベントをControllerへ渡し、マウス処理はMouseInputが担当します。待機中・未終了の場合だけ押下を受け付け、解放時の目標を設定し、GuiStick::throw(speed)で速度を更新します。Frameイベントではその棒をflyへ渡して固定刻みの物理更新、1本ずつの状態反映、完了の確認を行い、今回の全転倒個体を一度だけ採点します。update_game_stateは初期化と投擲完了時に既存のjudge_game・next_teamの判定を反映します。取消は入力状態と表示用の照準・速度を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Webとdesktopで同じdocument::evalの接続を使います。
 
 ## Java演習環境
 
