@@ -1,47 +1,21 @@
-use super::{app::Phase, skittle, stick};
-use crate::core::{Id, Molkky};
+use crate::core::StickState;
 use crate::gui_2d::{
     models::{GuiField, GuiStick},
-    services::GuiMolkky,
     view,
 };
 use dioxus::prelude::*;
 
-/// view用の位置(m)と回転(rad)。未知のIdはNone。
-pub fn pose(rules: &GuiMolkky, id: Id) -> Option<([f32; 2], f32)> {
-    // ponytail: 通常12本なので走査する。多数の個体が必要になったら逆引きを追加する。
-    let handle = if id == rules.stick_id {
-        rules.stick_body
-    } else {
-        let (&collider, _) = rules
-            .skittle_ids
-            .iter()
-            .find(|(_, skittle_id)| **skittle_id == id)?;
-        rules.world.colliders[collider].parent()?
-    };
-    let body = &rules.world.bodies[handle];
-    Some((body.translation().to_array(), body.rotation().angle()))
-}
-
-pub(super) fn render(
-    field: &GuiField,
-    stick: &GuiStick,
-    rules: &GuiMolkky,
-    phase: Phase,
-) -> Element {
-    let targets = if phase == Phase::Charging {
-        rules.aim(stick, field.skittles())
-    } else {
-        Vec::new()
-    };
+pub(super) fn render(field: &GuiField, stick: &GuiStick) -> Element {
+    let aiming = stick.as_ref().state() == StickState::Held && stick.target().is_some();
     let skittles = field.skittles().iter().map(|pin| {
-        let aimed = targets.iter().any(|target| target.id() == pin.id());
-        skittle::render(pin, rules, aimed)
+        let class = if aiming && pin.aimed() { "aimed" } else { "" };
+        let id = pin.as_ref().id();
+        rsx! { g { key: "{id}", class, {view::skittle(pin)} } }
     });
     let scene = rsx! {
         {skittles}
-        {view::aim(GuiField::THROW_POSITION, stick.target())}
-        {stick::render(stick, rules, phase == Phase::Simulating)}
+        if aiming { {view::aim(stick.position(), stick.target())} }
+        {view::stick(stick)}
     };
     view::field(GuiField::BOUNDS, scene)
 }

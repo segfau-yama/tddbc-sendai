@@ -2,7 +2,7 @@ use super::{
     field,
     mouse::{MouseInput, PointerSample, timestamp},
 };
-use crate::core::{Molkky, Skittle, SkittleState, Team, Throw};
+use crate::core::{Molkky, Skittle, SkittleState, StickState, Team, Throw};
 use crate::gui_2d::{
     models::{GuiField, GuiStick},
     services::{GuiMolkky, TIME_STEP, field::create_field},
@@ -87,7 +87,8 @@ impl Controller {
                     )
                 {
                     let (target, speed) = self.input.preview(now).unwrap();
-                    self.stick = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
+                    let prepared = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
+                    (self.field, self.stick) = self.rules.update(&self.field, prepared);
                     self.phase = Phase::Charging;
                 }
             }
@@ -97,7 +98,8 @@ impl Controller {
                 };
                 self.input.move_to(sample.pointer_id, sample.target());
                 if let Some((target, speed)) = self.input.preview(now) {
-                    self.stick = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
+                    let prepared = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
+                    (self.field, self.stick) = self.rules.update(&self.field, prepared);
                 }
             }
             DomEvent::Release(sample) => {
@@ -110,10 +112,9 @@ impl Controller {
                     Some(MouseButton::from_web_code(sample.button)),
                     now,
                 ) {
-                    let aimed =
-                        GuiStick::new(*self.stick.as_ref(), Some(target), self.stick.speed());
-                    self.stick = aimed.throw(speed);
-                    if target != GuiField::THROW_POSITION && speed > 0.0 {
+                    let prepared = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
+                    self.stick = GuiStick::throw(prepared);
+                    if self.stick.as_ref().state() == StickState::Move {
                         self.phase = Phase::Simulating;
                         self.last_frame = now;
                         self.accumulator = Duration::ZERO;
@@ -141,7 +142,8 @@ impl Controller {
                 if let Some(now) = timestamp(time) {
                     if self.phase == Phase::Charging {
                         if let Some((target, speed)) = self.input.preview(now) {
-                            self.stick = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
+                            let prepared = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
+                            (self.field, self.stick) = self.rules.update(&self.field, prepared);
                         }
                     } else if self.phase == Phase::Simulating {
                         // タブ復帰時に大量の物理更新で描画を止めない。
@@ -151,23 +153,23 @@ impl Controller {
                         self.last_frame = now.max(self.last_frame);
                         let step = Duration::from_secs_f32(TIME_STEP);
                         while self.accumulator >= step {
-                            let flying = self.rules.fly(&self.stick);
+                            (self.field, self.stick) = self.rules.update(&self.field, self.stick);
                             self.accumulator -= step;
-                            // 最後の飛行更新の接触も採点前に反映し、既にFallの個体も保持する。
-                            let updated = self
-                                .field
-                                .skittles()
-                                .iter()
-                                .map(|skittle| self.rules.hit(&self.stick, skittle))
-                                .collect();
-                            self.field = GuiField::new(*self.field.as_ref(), updated);
-                            if !flying {
+                            if self.stick.as_ref().state() == StickState::Stop
+                                && self
+                                    .field
+                                    .skittles()
+                                    .iter()
+                                    .all(|pin| pin.as_ref().state() != SkittleState::Hit)
+                            {
                                 let fallen: Vec<_> = self
                                     .field
                                     .skittles()
                                     .iter()
-                                    .filter(|skittle| skittle.state() == SkittleState::Fall)
-                                    .copied()
+                                    .filter(|skittle| {
+                                        skittle.as_ref().state() == SkittleState::Fall
+                                    })
+                                    .map(|skittle| *skittle.as_ref())
                                     .collect();
                                 self.finish_throw(&fallen);
                                 break;
@@ -244,7 +246,7 @@ pub(crate) fn render(state: &Controller) -> Element {
         p { role: "status", "{status}" }
         div { class: "game-layout",
             div { id: "molkky-input", "data-phase": phase,
-                {field::render(field, stick, rules, input_phase)}
+                {field::render(field, stick)}
                 {view::speedometer(stick.speed(), MouseInput::MAX_SPEED)}
             }
             div { class: "scores",

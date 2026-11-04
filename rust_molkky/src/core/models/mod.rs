@@ -11,5 +11,5 @@ pub use id::Id;
 pub use name::Name;
 pub use score::{Point, ScoreBoard, ScoreState};
 pub use skittle::{Skittle, SkittleState};
-pub use stick::{Stick, Throw};
+pub use stick::{Move, Stick, StickState, Throw};
 pub use team::Team;

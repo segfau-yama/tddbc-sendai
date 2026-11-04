@@ -55,8 +55,12 @@ mod state {
     #[test]
     fn 状態を更新しても元の状態と識別子と番号を保つ() {
         let original = Skittle::new(12);
-        let updated = original.with_state(SkittleState::Fall);
+        let hit = original.with_state(SkittleState::Hit);
+        let updated = hit.with_state(SkittleState::Fall);
         assert_eq!(original.state(), SkittleState::Stand);
+        assert_eq!(hit.state(), SkittleState::Hit);
+        assert_eq!(hit.id(), original.id());
+        assert_eq!(hit.number(), original.number());
         assert_eq!(updated.state(), SkittleState::Fall);
         assert_eq!(updated.id(), original.id());
         assert_eq!(updated.number(), original.number());

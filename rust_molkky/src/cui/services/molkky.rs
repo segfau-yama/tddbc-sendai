@@ -34,10 +34,6 @@ impl Molkky for CuiMolkky {
     type Stick = CuiStick;
     type Skittle = CuiSkittle;
 
-    fn fly(&mut self, _stick: &CuiStick) -> bool {
-        false
-    }
-
     fn aim(&self, _stick: &CuiStick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle> {
         self.numbers
             .iter()

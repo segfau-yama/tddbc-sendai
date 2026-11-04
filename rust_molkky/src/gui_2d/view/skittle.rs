@@ -1,12 +1,16 @@
-use crate::core::{Skittle, SkittleState};
+use crate::core::SkittleState;
+use crate::gui_2d::models::GuiSkittle;
 use dioxus::prelude::*;
 
-pub fn skittle(pin: &Skittle, position: [f32; 2], radius: f32) -> Element {
-    let [x, y] = position;
+pub fn skittle(skittle: &GuiSkittle) -> Element {
+    let [x, y] = skittle.position();
+    let radius = GuiSkittle::RADIUS;
+    let pin = skittle.as_ref();
     let id = pin.id();
     let number = pin.number();
     let (state, fill) = match pin.state() {
         SkittleState::Stand => ("stand", "#e5bd79"),
+        SkittleState::Hit => ("hit", "#eaa63c"),
         SkittleState::Fall => ("fall", "#a5a5a5"),
     };
     let font_size = radius * 0.9;

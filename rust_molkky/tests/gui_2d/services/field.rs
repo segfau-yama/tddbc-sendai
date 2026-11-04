@@ -1,8 +1,7 @@
 use rust_molkky::{
-    Id, Molkky, Skittle, SkittleState,
+    Skittle, SkittleState, StickState,
     gui_2d::{
-        controllers::pose,
-        models::{GuiField, GuiStick},
+        models::{GuiField, GuiSkittle, GuiStick},
         services::field::{create_field, create_world},
     },
 };
@@ -14,27 +13,26 @@ mod initialization {
     #[test]
     fn 不正な配置を物理ワールドへ渡さない() {
         let stick = GuiStick::default();
-        let id = Id::new();
-        for placement in [
-            vec![(id, [0.0, 1.0]), (id, [1.0, 1.0])],
-            vec![(stick.stick().id(), [0.0, 1.0])],
-            vec![(id, [f32::INFINITY, 1.0])],
+        let pin = Skittle::new(12);
+        for pins in [
+            vec![
+                GuiSkittle::new(pin, [0.0, 1.0]),
+                GuiSkittle::new(pin, [0.1, 1.0]),
+            ],
+            vec![GuiSkittle::new(pin, [f32::INFINITY, 1.0])],
         ] {
-            assert!(
-                std::panic::catch_unwind(|| create_world(&stick, [0.0, 0.0], &placement)).is_err()
-            );
+            assert!(std::panic::catch_unwind(|| create_world(&stick, &pins)).is_err());
         }
-        assert!(std::panic::catch_unwind(|| create_world(&stick, [f32::NAN, 0.0], &[])).is_err());
     }
 
     #[test]
     fn 通常フィールドには一から十二の別個体が立っている() {
-        let (field, stick, mut rules) = create_field();
+        let (field, stick, _) = create_field();
         assert_eq!(
             field
                 .skittles()
                 .iter()
-                .map(Skittle::number)
+                .map(|pin| pin.as_ref().number())
                 .collect::<Vec<_>>(),
             (1..=12).collect::<Vec<_>>()
         );
@@ -42,7 +40,7 @@ mod initialization {
             field
                 .skittles()
                 .iter()
-                .map(Skittle::id)
+                .map(|pin| pin.as_ref().id())
                 .collect::<HashSet<_>>()
                 .len(),
             12
@@ -51,20 +49,17 @@ mod initialization {
             field
                 .skittles()
                 .iter()
-                .all(|s| s.state() == SkittleState::Stand)
+                .all(|s| s.as_ref().state() == SkittleState::Stand)
         );
         assert_eq!(stick.target(), None);
         assert_eq!(stick.speed(), 0.0);
-        assert_eq!(
-            pose(&rules, stick.stick().id()).unwrap().0,
-            GuiField::THROW_POSITION
-        );
-        assert!(!rules.fly(&stick));
+        assert_eq!(stick.position(), GuiField::THROW_POSITION);
+        assert_eq!(stick.as_ref().state(), StickState::Held);
     }
 
     #[test]
     fn 同じ個体を標準の四列へ配置し投擲位置から一メートル離す() {
-        let (field, _, rules) = create_field();
+        let (field, _, _) = create_field();
         for (number, expected) in [
             (1, [-0.0275, 1.0]),
             (2, [0.0275, 1.0]),
@@ -82,13 +77,13 @@ mod initialization {
             let skittle = field
                 .skittles()
                 .iter()
-                .find(|s| s.number() == number)
+                .find(|s| s.as_ref().number() == number)
                 .unwrap();
-            let (position, angle) = pose(&rules, skittle.id()).unwrap();
+            let (position, angle) = (skittle.position(), skittle.angle());
             assert!((position[0] - expected[0]).abs() < 0.000001);
             assert!((position[1] - expected[1]).abs() < 0.000001);
             assert_eq!(angle, 0.0);
-            assert_eq!(pose(&rules, skittle.id()).unwrap().0, position);
+            assert_eq!(skittle.position(), position);
         }
         assert_eq!(GuiField::THROW_POSITION, [0.0, 0.0]);
     }

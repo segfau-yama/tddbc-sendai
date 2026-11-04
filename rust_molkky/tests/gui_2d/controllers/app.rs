@@ -1,11 +1,11 @@
 use super::*;
-use crate::Name;
-use crate::gui_2d::controllers::pose;
+use crate::gui_2d::models::GuiSkittle;
 use crate::gui_2d::services::field::create_world;
+use crate::{Field, Name};
 
 fn team(name: &str, points: &[i32]) -> Team {
     let stick = GuiStick::default();
-    let rules = create_world(&stick, GuiField::THROW_POSITION, &[]);
+    let rules = create_world(&stick, &[]);
     let history = points
         .iter()
         .map(|&value| {
@@ -39,8 +39,9 @@ fn result(state: &mut Controller, numbers: &[i32]) {
                 .field
                 .skittles()
                 .iter()
-                .find(|skittle| skittle.number() == *number)
+                .find(|skittle| skittle.as_ref().number() == *number)
                 .unwrap()
+                .as_ref()
                 .with_state(SkittleState::Fall)
         })
         .collect();
@@ -69,7 +70,10 @@ mod composition {
     fn 描画は物理のhitを呼ばずモデルに反映された転倒状態を使う() {
         let mut state = Controller::new(vec![team("赤", &[])]);
         let mut pins = state.field.skittles().to_vec();
-        pins[0] = pins[0].with_state(SkittleState::Fall);
+        pins[0] = GuiSkittle::new(
+            pins[0].as_ref().with_state(SkittleState::Fall),
+            pins[0].position(),
+        );
         state.field = GuiField::new(*state.field.as_ref(), pins);
         let html = dioxus_ssr::render_element(render(&state));
         assert_eq!(html.matches("data-state=\"fall\"").count(), 1);
@@ -190,32 +194,31 @@ mod input {
         let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         state.handle(DomEvent::Release(pointer([0.0, 1.0], 600.0)));
-        let origin = pose(&state.rules, state.stick.as_ref().id());
+        let origin = state.stick.position();
         state.handle(DomEvent::Frame { time: 601.0 });
         assert_eq!(state.phase, Phase::Simulating);
         assert!(state.teams[0].score_board().history().is_empty());
         assert!(state.teams[0].turn());
-        assert_eq!(pose(&state.rules, state.stick.as_ref().id()), origin);
+        assert_eq!(state.stick.position(), origin);
         state.handle(DomEvent::Frame { time: 620.0 });
-        assert_ne!(pose(&state.rules, state.stick.as_ref().id()), origin);
+        assert_ne!(state.stick.position(), origin);
         assert!(state.teams[0].score_board().history().is_empty());
     }
 
     #[test]
-    fn 早期転倒を保持して連鎖した二本を一投で採点し次の照準前に立て直す() {
+    fn 早期の命中を追跡して連鎖した二本を一投で採点し次の照準前に立て直す() {
         let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         let field_id = state.field.as_ref().id();
-        let pins = vec![Skittle::new(5), Skittle::new(8)];
-        let ids: Vec<_> = pins.iter().map(Skittle::id).collect();
-        state.rules = create_world(
-            &state.stick,
-            GuiField::THROW_POSITION,
-            &[(ids[0], [0.02, 0.7]), (ids[1], [0.06, 0.85])],
-        );
+        let pins = vec![
+            GuiSkittle::new(Skittle::new(5), [0.02, 0.7]),
+            GuiSkittle::new(Skittle::new(8), [0.06, 0.85]),
+        ];
+        let ids: Vec<_> = pins.iter().map(|p| p.as_ref().id()).collect();
+        state.rules = create_world(&state.stick, &pins);
         state.field = GuiField::new(*state.field.as_ref(), pins);
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         state.handle(DomEvent::Release(pointer([0.0, 1.0], 600.0)));
-        let mut fallen_ids = std::collections::HashSet::new();
+        let mut hit_ids = std::collections::HashSet::new();
         for tick in 1..1200 {
             state.handle(DomEvent::Frame {
                 time: 600.0 + f64::from(tick) * 20.0,
@@ -224,15 +227,12 @@ mod input {
                 break;
             }
             for pin in state.field.skittles() {
-                if fallen_ids.contains(&pin.id()) {
-                    assert_eq!(pin.state(), SkittleState::Fall);
-                }
-                if pin.state() == SkittleState::Fall {
-                    fallen_ids.insert(pin.id());
+                if pin.as_ref().state() == SkittleState::Hit {
+                    hit_ids.insert(pin.as_ref().id());
                 }
             }
         }
-        assert_eq!(fallen_ids.len(), 2);
+        assert_eq!(hit_ids.len(), 2);
         assert_eq!(state.phase, Phase::Ready);
         assert_eq!(
             state.teams[0]
@@ -250,7 +250,7 @@ mod input {
                 .field
                 .skittles()
                 .iter()
-                .map(Skittle::id)
+                .map(|p| p.as_ref().id())
                 .collect::<Vec<_>>(),
             ids
         );
@@ -259,17 +259,22 @@ mod input {
                 .field
                 .skittles()
                 .iter()
-                .all(|p| p.state() == SkittleState::Stand)
+                .all(|p| p.as_ref().state() == SkittleState::Stand)
         );
-        let positions: Vec<_> = ids
+        let positions: Vec<_> = state
+            .field
+            .skittles()
             .iter()
-            .map(|&id| pose(&state.rules, id).unwrap())
+            .map(|p| (p.position(), p.angle()))
             .collect();
         state.handle(DomEvent::Frame { time: 50000.0 });
         assert_eq!(state.teams[0].score_board().history().len(), 1);
         assert_eq!(
-            ids.iter()
-                .map(|&id| pose(&state.rules, id).unwrap())
+            state
+                .field
+                .skittles()
+                .iter()
+                .map(|p| (p.position(), p.angle()))
                 .collect::<Vec<_>>(),
             positions
         );
@@ -279,8 +284,43 @@ mod input {
                 .rules
                 .aim(&aimed, state.field.skittles())
                 .iter()
-                .any(|p| p.id() == ids[0])
+                .any(|p| p.as_ref().id() == ids[0])
         );
+    }
+
+    #[test]
+    fn 棒が停止しても命中中のスキットルが残る間は採点しない() {
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
+        state.stick = GuiStick {
+            stick: state.stick.as_ref().with_state(StickState::Stop),
+            ..state.stick
+        };
+        let pin = GuiSkittle::new(Skittle::new(5).with_state(SkittleState::Hit), [0.0, 0.7]);
+        state.field = GuiField::new(Field::new(), vec![pin]);
+        state.rules = create_world(&state.stick, state.field.skittles());
+        state.phase = Phase::Simulating;
+        state.handle(DomEvent::Frame { time: 20.0 });
+        assert_eq!(state.stick.as_ref().state(), StickState::Stop);
+        assert_eq!(
+            state.field.skittles()[0].as_ref().state(),
+            SkittleState::Hit
+        );
+        assert_eq!(state.phase, Phase::Simulating);
+        assert!(state.teams[0].score_board().history().is_empty());
+        for tick in 2..1200 {
+            state.handle(DomEvent::Frame {
+                time: f64::from(tick) * 20.0,
+            });
+            if state.phase != Phase::Simulating {
+                break;
+            }
+        }
+        assert_eq!(state.phase, Phase::Ready);
+        assert_eq!(state.teams[0].score_board().history().len(), 1);
+        assert_eq!(state.teams[0].score_board().total(), 0);
+        assert!(state.teams[1].turn());
+        state.handle(DomEvent::Frame { time: 100000.0 });
+        assert_eq!(state.teams[0].score_board().history().len(), 1);
     }
 
     #[test]

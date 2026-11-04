@@ -1,35 +1,37 @@
-use rust_molkky::{Stick, Throw, gui_2d::models::GuiStick};
+use rust_molkky::{Move, Stick, StickState, Throw, gui_2d::models::GuiStick};
 
 mod throwing {
     use super::*;
-
     #[test]
-    fn 速度だけを更新し照準と個体を保ち元の棒を変更しない() {
-        let original = GuiStick::new(Stick::new(), Some([1.5, 3.0]), 2.0);
-        let updated = original.throw(6.0);
-        assert_eq!(updated.speed(), 6.0);
-        assert_eq!(updated.target(), original.target());
-        assert_eq!(updated.as_ref(), original.as_ref());
-        assert_eq!(original.speed(), 2.0);
+    fn 棒だけを受けて目標と強さから速度を生成し同じ個体の移動状態を返す() {
+        let original = GuiStick::new(Stick::new(), Some([3.0, 4.0]), 10.0);
+        let thrown = GuiStick::throw(original);
+        assert_eq!(thrown.velocity(), [6.0, 8.0]);
+        assert_eq!(thrown.target(), original.target());
+        assert_eq!(thrown.as_ref().id(), original.as_ref().id());
+        assert_eq!(thrown.as_ref().state(), StickState::Move);
+        assert_eq!(original.velocity(), [0.0; 2]);
+        assert_eq!(original.as_ref().state(), StickState::Held);
+        assert_eq!(GuiStick::r#move(thrown), thrown);
     }
 }
 
-mod aiming {
+mod initialization {
     use super::*;
-
     #[test]
-    fn 未照準から同じ棒に目標と確率ではない初速を設定できる() {
+    fn 同じ個体を保持位置と零速度へ初期化し入力した強さを持つ() {
         let initial = GuiStick::default();
         assert_eq!(initial.target(), None);
         assert_eq!(initial.speed(), 0.0);
-
-        let core_stick: Stick = *initial.stick();
-        let aimed = GuiStick::new(core_stick, Some([1.5, 3.0]), 6.0);
-        assert_eq!(aimed.stick().id(), initial.stick().id());
-        assert_eq!(aimed.as_ref(), &core_stick);
-        assert_eq!(aimed.target(), Some([1.5, 3.0]));
-        assert_eq!(aimed.speed(), 6.0);
+        let prepared = GuiStick::new(*initial.as_ref(), Some([1.5, 3.0]), 6.0);
+        assert_eq!(prepared.as_ref().id(), initial.as_ref().id());
+        assert_eq!(prepared.target(), Some([1.5, 3.0]));
+        assert_eq!(prepared.speed(), 6.0);
+        assert_eq!(prepared.position(), [0.0; 2]);
+        assert_eq!(prepared.velocity(), [0.0; 2]);
+        assert_eq!(prepared.angle(), 0.0);
+        assert_eq!(prepared.as_ref().state(), StickState::Held);
+        assert_eq!(GuiStick::r#move(prepared), prepared);
         assert_eq!(initial.target(), None);
-        assert_eq!(initial.speed(), 0.0);
     }
 }

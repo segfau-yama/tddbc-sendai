@@ -1,4 +1,4 @@
-use crate::core::Id;
+use crate::gui_2d::models::GuiStick;
 use dioxus::prelude::*;
 
 pub fn aim(origin: [f32; 2], target: Option<[f32; 2]>) -> Element {
@@ -12,8 +12,12 @@ pub fn aim(origin: [f32; 2], target: Option<[f32; 2]>) -> Element {
 }
 
 /// angleはworld座標のラジアン。棒の長軸はローカルY軸。
-pub fn stick(id: Id, position: [f32; 2], angle: f32, length: f32, width: f32) -> Element {
-    let [x, y] = position;
+pub fn stick(stick: &GuiStick) -> Element {
+    let [x, y] = stick.position();
+    let id = stick.as_ref().id();
+    let angle = stick.angle();
+    let length = GuiStick::LENGTH;
+    let width = 2.0 * GuiStick::RADIUS;
     let degrees = angle.to_degrees();
     let left = -width / 2.0;
     let top = -length / 2.0;

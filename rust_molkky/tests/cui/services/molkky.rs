@@ -1,18 +1,17 @@
 use crate::cui::models::{CuiSkittle, CuiStick};
 use crate::{
-    Molkky, Skittle, SkittleState, Stick, Throw,
+    Molkky, Skittle, SkittleState, Stick,
     cui::{models::CuiField, services::CuiMolkky},
 };
 
-mod flying {
+mod simulation {
     use super::*;
 
     #[test]
-    fn 飛行待ちをせず確率を保った棒で命中と採点を行う() {
-        let mut rules = CuiMolkky::new(vec![5]);
-        let stick = CuiStick::default().throw(1.0);
+    fn 投擲を呼ばず設定済みの確率を保った棒で命中と採点を行う() {
+        let rules = CuiMolkky::new(vec![5]);
+        let stick = CuiStick::new(Stick::new(), 1.0);
         let original_id = stick.as_ref().id();
-        assert!(!Molkky::fly(&mut rules, &stick));
         assert_eq!(stick.probability(), 1.0);
         assert_eq!(stick.as_ref().id(), original_id);
         let pin = CuiSkittle::from(Skittle::new(5));
@@ -149,7 +148,7 @@ mod chaining {
             random: || 0.3,
             ..CuiMolkky::default()
         };
-        let stick = CuiStick::default().throw(0.8);
+        let stick = CuiStick::new(Stick::new(), 0.8);
         let original = CuiSkittle::from(Skittle::new(5));
         let first = rules.hit(&stick, &original);
         assert_eq!(first.probability(), 0.8);

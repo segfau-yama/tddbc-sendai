@@ -1,5 +1,6 @@
-use crate::{Stick, Throw};
+use crate::{Move, Stick, StickState, Throw};
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CuiStick {
     stick: Stick,
     probability: f64,
@@ -32,8 +33,21 @@ impl AsRef<Stick> for CuiStick {
     }
 }
 
-impl Throw<f64> for CuiStick {
-    fn throw(&self, probability: f64) -> Self {
-        Self::new(self.stick, probability)
+impl Throw for CuiStick {
+    fn throw(stick: Self) -> Self {
+        Self::new(stick.stick.with_state(StickState::Move), rand::random())
+    }
+}
+
+impl Move for CuiStick {
+    fn r#move(stick: Self) -> Self {
+        if stick.stick.state() == StickState::Move {
+            Self {
+                stick: stick.stick.with_state(StickState::Stop),
+                ..stick
+            }
+        } else {
+            stick
+        }
     }
 }

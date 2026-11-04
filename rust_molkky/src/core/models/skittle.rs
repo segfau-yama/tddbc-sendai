@@ -3,6 +3,7 @@ use super::Id;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SkittleState {
     Stand,
+    Hit,
     Fall,
 }
 

@@ -1,5 +1,25 @@
 # 開発支援方針の記録
 
+## StickとHit状態を使う投擲モデルを実装（2026-11-04）
+
+- 最新の1〜7の指定を実装する。core::StickにHeld/Move/Stopを追加し、Throw/Moveは具象Stickを値で受け取り、新しい同型のStickを返す。汎用Inputとflyを削除する。GUIのthrowは準備済みの目標・強さから速度ベクトルを作る。CUIのthrowは確率を生成する具象として残すが、シミュレーションの実行ループでは呼ばず、従来の指定確率を使う。
+- ユーザー回答に従い、StickのStopは棒自身の停止とする。SkittleState::Hitを追加し、物理移動中はHit、停止時に力積からFall/Standへ確定する。投擲完了はStickがStopかつHitが0本になった時点。Fallだけを採点する。
+- GuiStick::newが保持位置・角度・速度の初期値を決める。GUIモデルが位置・角度・運動結果を保持し、サービスのupdateが共有ワールドを固定刻みで一度だけ更新して新しいモデルを返す。aimはRapierの形状問い合わせ、hit/chain_hitは指定された接触ペアとボディの結果をモデルへ反映する。共通ヘルパーdirection/resolve_hitとcontrollerのposeを削除する。
+- controllerとviewはモデルを描画へ渡す。物理ワールドをcontrollerから参照しない。物理更新のために必要なupdateだけをGUIサービスへ追加し、不要な開始/終了判定の関数・traitは作らない。next_teamはjudge_gameを再利用し、生存者数による終了判定の重複を削除する。
+- [x] 変更前の199テストを確認する。
+- [x] coreの状態保持とStick→Stickの操作をテストし、未定義の状態・操作によるRedを確認する。
+- [x] core/CUI/GUIモデルと操作を実装する。
+- [x] updateと物理ベースのaim/hit/chain_hit/stand_upを実装する。
+- [x] controller/viewをモデル参照へ変更する。CUIの確率シミュレーションを維持する。
+- [x] 棒停止後もHitが残る間は採点せず、Hit解消後だけ一度採点することを確認する。
+- [x] 命中/不命中・弱い衝突・連鎖・立て直し・位置保持・壁・次投・勝敗/手番を確認する。
+- [x] fmt/Clippy・feature分離・Web/desktop・Web実操作・差分を確認する。
+- Red/Green：coreモデルの状態保持テストを先に追加し、StickState・state・with_stateの未実装で失敗することを確認した（/tmp/molkky-model-update-red.log）。実装後はcoreモデル50件が成功した。具象のthrow/moveとサービスの既存テストを新しい契約へ移行し、GUI featureあり201件、既定feature146件が成功した。API移行で更新したテスト全てをテスト先行とは扱わない。
+- 進行の検証：実際のRapierでStopの棒とHitのスキットルを用意し、Hitが残る間は採点・手番変更せず、停止後だけ一度採点するテストを追加した。Hitの条件だけを一時的に外すと早期採点で失敗することも確認し、元へ戻して成功した（/tmp/molkky-update-hit-negative-control.log）。弱い衝突はHitからStandへ戻り採点しない。確定済みFallを接触記録の欠落でStandへ戻さないテストも先に失敗させ、hit/chain_hitでFallを保持して成功した（/tmp/molkky-update-confirmed-fall-red.log）。
+- 責務とテストの移行：GUIのスキットルを位置・角度付きのGuiSkittleとして保持し、ワールド生成もモデルを受け取る。初期化で表現できなくなった生のId・座標タプルの不正ケースは、対応するモデルの契約へ置き換えた。重複Id・不正な位置の拒否、標準配置・衝突・CCD・壁・立て直し・位置保持は維持した。controllerの単なる描画転送ファイルを削除し、次投の最初の更新前の表示テストはview/stick.rsへ移した。新しい依存・物理抽象・開始/完了ヘルパーは追加していない。
+- 検証：cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、coreのみ/GUIのみ/Webのcargo check、desktopのcargo check、git diff --checkが成功した。全テストの記録は/tmp/molkky-model-update-final.logと/tmp/molkky-model-update-cui.log。desktopは既存の/workspace/.cloud-tools/desktopをPKG_CONFIG_SYSROOT_DIR/PKG_CONFIG_PATHで参照した。
+- Web実操作：ビルド後にChromiumのtests/gui_2d/app.jsでDOM入力・capture・取消・領域外解放・連続投擲・採点・失格・結果・固定範囲・反射が成功した（/tmp/molkky-model-update-browser.log）。検証用8081番サーバーは終了した。デスクトップ実機の操作は今回は未確認。確認後はConventional Commitで記録し、通常pushする。
+
 ## Stick入出力に限定した操作とモデル・サービスの利用状況（2026-11-04）
 
 - 対象：f989960時点のcore、CUI/GUIのmodels/services、CUIのrun、GUIのcontrollers。最新の依頼に従い、実装より先に利用できていない箇所を洗い出す。flyは削除対象、throwとmoveはどちらもStick→Stickとし、数値や汎用Inputを追加引数にしない。前節のMove<Input>案はこの制約で見直す。Rustのmoveという名称を維持する場合はr#moveを使う。

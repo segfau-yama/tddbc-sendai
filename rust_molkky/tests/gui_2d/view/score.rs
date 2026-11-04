@@ -4,7 +4,7 @@ use rust_molkky::{
 };
 
 fn team(name: &str, points: &[i32]) -> Team {
-    let rules = create_world(&GuiStick::default(), [0.0, 0.0], &[]);
+    let rules = create_world(&GuiStick::default(), &[]);
     let history = points
         .iter()
         .map(|&value| {

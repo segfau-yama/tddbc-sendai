@@ -1,21 +1,45 @@
 use crate::Skittle;
 
-pub struct GuiSkittle(Skittle);
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GuiSkittle {
+    pub(in crate::gui_2d) skittle: Skittle,
+    pub(in crate::gui_2d) position: [f32; 2],
+    pub(in crate::gui_2d) angle: f32,
+    pub(in crate::gui_2d) aimed: bool,
+}
 
 impl GuiSkittle {
-    // 半径はm、質量はkg。
+    // 寸法はm、質量はkg。
     pub const RADIUS: f32 = 0.0275;
     pub const MASS: f32 = 0.15;
+
+    pub fn new(skittle: Skittle, position: [f32; 2]) -> Self {
+        Self {
+            skittle,
+            position,
+            angle: 0.0,
+            aimed: false,
+        }
+    }
+    pub fn position(&self) -> [f32; 2] {
+        self.position
+    }
+    pub fn angle(&self) -> f32 {
+        self.angle
+    }
+    pub fn aimed(&self) -> bool {
+        self.aimed
+    }
 }
 
 impl From<Skittle> for GuiSkittle {
-    fn from(value: Skittle) -> Self {
-        Self(value)
+    fn from(skittle: Skittle) -> Self {
+        Self::new(skittle, [0.0; 2])
     }
 }
 
 impl AsRef<Skittle> for GuiSkittle {
     fn as_ref(&self) -> &Skittle {
-        &self.0
+        &self.skittle
     }
 }

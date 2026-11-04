@@ -1,24 +1,28 @@
-use rust_molkky::{Skittle, SkittleState, gui_2d::view::skittle};
+use rust_molkky::{
+    Skittle, SkittleState,
+    gui_2d::{models::GuiSkittle, view::skittle},
+};
 
 mod appearance {
     use super::*;
-
     #[test]
-    fn 同じ個体の番号と配置を保ち立位と転倒を描き分ける() {
+    fn モデルの番号と配置を保ち立位と命中中と転倒を描き分ける() {
         let pin = Skittle::new(12);
-        let standing = dioxus_ssr::render_element(skittle(&pin, [1.0, 2.0], 0.1));
-        let fallen = dioxus_ssr::render_element(skittle(
-            &pin.with_state(SkittleState::Fall),
-            [1.0, 2.0],
-            0.1,
-        ));
-        for html in [&standing, &fallen] {
+        let mut htmls = Vec::new();
+        for (state, tag) in [
+            (SkittleState::Stand, "stand"),
+            (SkittleState::Hit, "hit"),
+            (SkittleState::Fall, "fall"),
+        ] {
+            let model = GuiSkittle::new(pin.with_state(state), [1.0, 2.0]);
+            let html = dioxus_ssr::render_element(skittle(&model));
             assert!(html.contains(&format!("skittle-{}", pin.id())));
             assert!(html.contains("translate(1 2)"));
-            assert!(html.contains(">12</text>"), "{html}");
+            assert!(html.contains(">12</text>"));
+            assert!(html.contains(&format!("data-state=\"{tag}\"")));
+            htmls.push(html);
         }
-        assert!(standing.contains("data-state=\"stand\""));
-        assert!(fallen.contains("data-state=\"fall\""));
-        assert_ne!(standing, fallen);
+        assert_ne!(htmls[0], htmls[1]);
+        assert_ne!(htmls[1], htmls[2]);
     }
 }

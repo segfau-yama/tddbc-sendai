@@ -21,7 +21,8 @@ cargo test --locked --test application
 | 場所 | 責務 |
 | --- | --- |
 | src/core/models/ | Team・Skittle・ScoreBoardなどのドメインモデル |
-| src/core/services/molkky.rs | 照準・当たり判定・物理更新の契約、採点・勝者・次のチームの判定 |
+| src/core/services/molkky.rs | 照準・命中・連鎖・立て直しの契約、採点・勝者・次のチームの判定 |
+| src/core/models/stick.rs | Stickの状態、Stick→StickのThrow/Moveの契約 |
 | src/cui/models/ | coreモデルを内包するCuiXxxxの委譲型（AsRefで参照） |
 | src/cui/services/teams.rs | 名前の検証・Vec<Team>の生成と追加 |
 | src/cui/models/field.rs | CuiField：core::Fieldと1〜12番のVec<Skittle>の保持 |
@@ -37,8 +38,7 @@ cargo test --locked --test application
 | src/gui_2d/services/teams.rs | 名前からチームを生成 |
 | src/gui_2d/controllers/mouse.rs | マウス入力の解釈・座標変換・蓄力・解放・取消 |
 | src/gui_2d/controllers/app.rs | 進行・入力と物理の接続、状態に応じた画面・得点表・結果の合成 |
-| src/gui_2d/controllers/field.rs | 描画用の位置の取り出し、フィールド内の描画部品の合成 |
-| src/gui_2d/controllers/stick.rs・skittle.rs | 棒の待機/投擲中の表示、個体の位置と照準候補の表示制御 |
+| src/gui_2d/controllers/field.rs | モデルをviewへ渡し、照準・フィールド内の描画部品を合成 |
 | src/gui_2d/app.js | DOMのpointer capture・イベントと時刻の通知 |
 | src/gui_2d/services/molkky.rs | Rapierによる投擲・物理更新・転倒判定、coreルールの利用 |
 | src/gui_2d/view/ | SVG、速度メーター、得点表、結果表示 |
@@ -62,11 +62,11 @@ InputとOutputはプレゼンテーション層の入出力処理なので、ド
 ### aimからhitへ渡す
 
 ```rust
-use rust_molkky::{Molkky, SkittleState, Throw};
+use rust_molkky::{Molkky, SkittleState, Stick};
 use rust_molkky::cui::{models::{CuiField, CuiStick}, services::CuiMolkky};
 
 let field = CuiField::default();
-let stick = CuiStick::default().throw(0.8);
+let stick = CuiStick::new(Stick::new(), 0.8);
 let rules = CuiMolkky::new(vec![5, 8]);
 let targets = rules.aim(&stick, &field.skittles);
 let fallen: Vec<_> = targets.iter()
@@ -78,15 +78,17 @@ println!("{}点", rules.calc_score(&fallen).value());
 assert_eq!(field.skittles.len(), 12);
 ```
 
-`CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、CuiStick::throw(probability)は確率（f64、0〜1）を更新したCuiStickを返します。hitは1本ずつ確率判定し、更新後のCuiSkittleだけを返します。転倒時には投げたStickの命中確率を連鎖用に保持します。結果は内側のSkittleStateで判定し、既にFallの個体は状態と確率を保ちます。呼び出し側が今回倒れた個体をまとめて採点します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
+`CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選びます。CUIの実行ループはthrowを呼ばず、設定済みの確率でシミュレーションします。hitは1本ずつ確率判定し、更新後のCuiSkittleだけを返します。転倒時には投げたStickの命中確率を連鎖用に保持します。結果は内側のSkittleStateで判定し、既にFallの個体は状態と確率を保ちます。呼び出し側が今回倒れた個体をまとめて採点します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
 
-`Molkky`を実装する型は関連型Stick・Skittleとfly・aim・hit・chain_hit・stand_upを定義します。CuiMolkkyのStickはCuiStick、SkittleはCuiSkittleです。aim・hit・chain_hitは関連型の個体を返し、CUI固有の確率を保持します。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
+`Molkky`を実装する型は関連型Stick・Skittleとaim・hit・chain_hit・stand_upを定義します。CuiMolkkyのStickはCuiStick、SkittleはCuiSkittleです。aim・hit・chain_hitは関連型の個体を返し、CUI固有の確率を保持します。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
 
-Throw<Input>はcore/models/stick.rsに置くStick側の操作契約です。CuiStickはf64の確率、GuiStickはf32の速度(m/s)を受け、Idとその他の属性を保つ新しいSelfを返します。元のStickや物理ワールドは変更しません。値は呼び出し側が指定します。MolkkyのthrowとThrowOutputは削除しました。
+ThrowとMoveはcore/models/stick.rsに置く個体の操作契約です。`throw(stick: Self) -> Self`と`r#move(stick: Self) -> Self`はStickだけを値で受け、同じIdを保った新しいStickを返します。moveはRustの予約語なのでr#moveと表記します。状態はcore::StickStateのHeld/Move/Stopを使い、GUIに同じ状態のenumや完了boolは作りません。
+
+GuiStick::newは保持位置・零速度を初期化し、目標と強さを設定します。GuiStick::throw(stick)がその値から初速度ベクトルを生成してMoveへ変更します。GuiStick::r#move(stick)は個体自身の運動結果からMove/Stopを返します。CuiStick::throw(stick)は0以上1未満の確率を生成しますが、CUIのシミュレーションでは使いません。既定の50%や呼び出し側が指定した確率はそのまま維持します。
 
 chain_hit(fallen_skittle, chained_skittle)は、呼び出し側が指定した対象へ連鎖を判定します。初回転倒が80%なら次は60%、さらに次は40%と20パーセントポイントずつ下げ、成功した対象へ減衰後の確率を引き継ぎます。0%より下には下げません。連鎖元がStand、対象が既にFall、判定失敗の場合は対象をそのまま返します。現在のCUI入力ループは指定番号への直接hitを行い、隣接探索や連鎖対象の自動選択は追加していません。
 
-flyは一投の動きを更新し、動いている間true、完了時はfalseを返す抽象メソッドです。CUIは飛行時間を持たずfalseを返し、Stickの確率を変えません。stand_upも抽象メソッドで、CUIの実装はId・番号を保ってStandと連鎖確率0へ戻した個体を返します。元の個体は変更しません。
+stand_upはcoreの抽象メソッドです。CUIの実装はId・番号を保ってStandと連鎖確率0へ戻した個体を返します。GUIでは対象個体の物理ボディも立て直します。元のモデルは変更しません。
 
 ### テストと残課題
 
@@ -129,7 +131,7 @@ cargo run --locked --no-default-features --features gui_2d_desktop --bin gui_2d
 
 CUIは既定のcui feature、GUIはgui_2d_webまたはgui_2d_desktopを選択します。Webの起動スクリプトはCUI依存を除外し、UUIDのjs機能を有効にします。単なるgui_2d featureはヘッドレスのテスト・ライブラリ利用向けで、起動時はレンダラーを選択してください。
 
-`services::field::create_field`が標準12本・共通フィールド・棒とGuiMolkkyを組み立てます。`controllers/app.rs`のControllerはそれらとチーム・MouseInputを所有し、Molkkyトレイトを通じて固定刻みの更新・停止確認・採点・交代を接続します。画面全体はapp controller、フィールド・棒・スキットルの表示制御はcontrollersの各ファイルが担当します。`app.rs`はDioxusの状態とDOM接続の寿命を管理します。全チームで同じフィールドと棒を共有し、現在位置はGuiMolkkyの物理ワールドに保持します。操作用の初期投擲距離は1mです。高さ方向の転倒は物理サービスの力積による近似です。
+`services::field::create_field`が標準12本・共通フィールド・棒とGuiMolkkyを組み立てます。`controllers/app.rs`のControllerはサービスのupdateを固定刻みで呼び、返されたモデルの状態から採点・交代を接続します。controllerは物理ワールドを参照せず、GuiStick/GuiSkittleの位置・角度・coreの状態をviewへ渡します。`app.rs`はDioxusとDOM接続の寿命を管理します。全チームで同じフィールドと棒を共有します。操作用の初期投擲距離は1m、高さ方向の転倒は物理サービスの力積による近似です。
 
 表示範囲はx=-0.3〜0.3m、y=-0.15〜1.35mで固定し、物体の移動による拡大縮小は行いません。`GuiField::BOUNDS`と`WALL_THICKNESS`を描画と物理で共用し、外周の厚さ2cmの壁で棒・スキットルが反射します。反発係数は0.5で、既存の減衰と合わせて停止します。壁と反射はこのGUIの取り決めです。
 
@@ -159,7 +161,7 @@ NODE_PATH=/tmp/molkky-browser-tools/node_modules node tests/gui_2d/app.js
 
 `src/gui_2d/view/`にDioxusのElementを返す関数を実装しています。`gui_2d` featureを有効にすると、`gui_2d::view`から`field`、`skittle`、`stick`、`speedometer`、`scores`、`result`、`aim`を利用できます。
 
-フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。棒・スキットルの位置や寸法はappが渡します。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。aimは照準の線と目標を表示します。
+フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。棒・スキットルのviewはGuiStick/GuiSkittleを受け取り、モデルの位置と状態・型の寸法定数を読み取ります。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。aimは照準の線と目標を表示します。
 
 ```sh
 cd rust_molkky
@@ -171,23 +173,21 @@ cargo build --locked --features gui_2d
 
 ### GUI 2Dの投擲サービス
 
-`gui_2d::services::GuiMolkky`はRapier2Dの状態を保持し、当たり判定・物理更新は`impl Molkky for GuiMolkky`に実装します。固有の`impl GuiMolkky`、physics.rs、エンジン専用traitはありません。services::field::create_worldにGuiStick、投擲位置、`(Id, [x, y])`の配置一覧を渡して生成します。座標・寸法はm、速度はm/s、角度はラジアンです。services::field::create_fieldが標準の個体と配置を生成して渡します。
+`gui_2d::services::GuiMolkky`は共有のRapier2Dワールドを所有します。services::field::create_worldはGuiStickとGuiSkittleのモデル一覧を受け、Idで対応するボディを生成します。座標・寸法はm、速度はm/s、角度はラジアンです。coreに座標・Rapier型は追加しません。
 
 | API | 動作 |
 | --- | --- |
-| aim | 投擲方向上の候補を返す。候補外も物理ワールドには残す |
-| fly | 更新後のGuiStickを受けて1/60秒だけ飛行を進め、各個体の最大接触力積を記録する。棒と連鎖するピンが動いている間true、完了時はfalseを返す |
-| hit | Stickと1本のSkittleを受け、更新後の個体だけを返す。物理時間は進めない |
-| chain_hit | 転倒元と対象を受け、Rapierが蓄積した対象の転倒状態を返す。CUIの確率は使わない |
-| stand_up | 対象個体の位置・Id・番号を保ち、角度・速度・角速度・今回の接触記録とStandを復元する。棒や他の個体は変更しない |
+| update | GuiFieldとGuiStickから、1/60秒の物理更新を反映した新しいGuiField/GuiStickを返す。保持中は照準だけを更新する |
+| aim | Rapierの形状問い合わせで候補を選び、位置・角度・照準状態を反映したGuiSkittleを返す |
+| hit | 指定したStickとSkittleの接触とボディ状態から、位置・角度・状態を更新したGuiSkittleを返す |
+| chain_hit | 指定した2個体の実際の接触ペアから、対象の物理状態を反映したGuiSkittleを返す |
+| stand_up | 位置・Id・番号を保ち、対象ボディの角度・速度・角速度・接触記録とStandを復元する |
 
-flyとstand_upはcoreのMolkkyトレイトの抽象です。flyの戻り値で継続/完了を伝えるため、停止確認専用のメソッドは不要です。stand_upは具象実装が必要な位置・角度の復元方法を決めます。今回の2Dでは倒れた場所で立て直します。coreに座標・Rapier型は追加しません。描画用の位置と回転はcontrollers::poseがIdから読み取ります。
+updateだけが時間を進めます。aim/hit/chain_hit/stand_upは既存Molkkyの具象実装で、updateはその操作を使って全個体へ結果を反映します。direction/resolve_hit、描画のためのpose、flyは削除しました。初速はthrowでモデルへ設定し、updateがボディへ反映します。停止したStickを繰り返しupdateしても新しい投擲を始めません。次投はGuiStick::newで保持状態を用意します。
 
-GuiStick::throw(speed)は速度を更新したGuiStickを返します。物理ボディへの反映はMolkky::flyの最初の更新で行います。flyが棒を投擲位置へ戻し、回転・角速度・初速を反映します。飛行中は初速を上書きしません。完了後の次のflyは次投を始めるので、呼び出し側はfalseを受け取ったら次の解放まで更新を止めます。飛行開始前の棒の表示はcontrollerが投擲位置へ合わせます。
+Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。投擲完了は「StickがStop、かつHitが0本」です。controllerはその時点でFallだけをcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を一度だけ反映します。弱い衝突はHitになっても最終的にStandへ戻り、得点には含めません。継続時はstand_upで移動後の位置とIdを保って立て直します。
 
-app controllerが固定時間ごとにflyを呼び、物理更新後に各Skittleへhitの返却値を反映します。接触力積はflyが蓄積し、Fallに変わった個体はその投擲中ずっとFallを保ちます。描画はモデルの状態とposeを読むだけで、hitを呼びません。flyがfalseを返した最後の更新も反映してから、今回のFall一覧を一度だけcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を反映します。固定刻み未満のフレームでは採点しません。継続する場合は各個体をstand_upで立て直し、移動後の位置とIdを保って次の照準を開始できます。
-
-転倒は高さ方向の横倒しを接触力積で近似します。半径・質量はGuiSkittle、棒の半径・長さ・質量はGuiStickの関連定数に置き、配置・物理生成・描画で共有します。時間刻み・共通減衰・接触による転倒閾値はGUIサービスのシミュレーション定数です。時間刻みはservices::TIME_STEPから参照します。hitとchain_hitは個体間の相互作用なのでサービスへ置きます。物理テストでは高速衝突、弱い衝突、連鎖衝突、停止・再投擲を確認しています。
+半径・質量はGuiSkittle、棒の半径・長さ・質量はGuiStickの関連定数です。時間刻み・共通減衰・転倒閾値はGUIサービスの定数で、時間刻みはservices::TIME_STEPから参照します。エンジン専用traitやphysics.rs、開始用のラッパーは追加していません。
 
 ### GUI 2Dの入力と進行
 
@@ -197,7 +197,7 @@ MouseInput::default()はマウスの入力状態だけを用意します。press
 
 services::teams::from_namesが初期チームを生成します。controllers/app.rsのControllerはservices::field::create_fieldの生成物を受け取り、最初の手番を設定します。進行状態のPhaseはこのcontrollerに置き、Ready・Charging・Simulatingを表します。Finishedや勝者のフラグは保存せず、is_finished()はcoreのnext_teamの結果を参照します。勝者はjudge_gameで求め、最後の生存者、全失格、参加者なしも既存ルールに従います。
 
-app.jsはDOMのpointer captureと時刻通知を行う接続コードです。appが受信イベントをControllerへ渡し、マウス処理はMouseInputが担当します。待機中・未終了の場合だけ押下を受け付け、解放時の目標を設定し、GuiStick::throw(speed)で速度を更新します。Frameイベントではその棒をflyへ渡して固定刻みの物理更新、1本ずつの状態反映、完了の確認を行い、今回の全転倒個体を一度だけ採点します。update_game_stateは初期化と投擲完了時に既存のjudge_game・next_teamの判定を反映します。取消は入力状態と表示用の照準・速度を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Webとdesktopで同じdocument::evalの接続を使います。
+app.jsはDOMのpointer captureと時刻通知を行う接続コードです。appが受信イベントをControllerへ渡し、マウス処理はMouseInputが担当します。待機中・未終了の場合だけ押下を受け付け、解放時の目標と強さをGuiStickへ設定し、GuiStick::throw(stick)で投擲した棒を受け取ります。Frameイベントではupdateからモデルを受け取り、StickのStopとHitの解消を確認して、今回のFall個体だけを一度採点します。update_game_stateは初期化と投擲完了時に既存のjudge_game・next_teamの判定を反映します。取消は入力状態と表示用の照準・速度を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Webとdesktopで同じdocument::evalの接続を使います。
 
 ## Java演習環境
 

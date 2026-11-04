@@ -5,9 +5,6 @@ pub trait Molkky {
     type Stick: AsRef<Stick>;
     type Skittle: AsRef<Skittle>;
 
-    /// 一投の飛行を更新し、連鎖も含め動いている間trueを返す。
-    fn fly(&mut self, stick: &Self::Stick) -> bool;
-
     fn aim(&self, stick: &Self::Stick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle>;
 
     fn hit(&self, stick: &Self::Stick, skittle: &Self::Skittle) -> Self::Skittle;
@@ -49,11 +46,7 @@ pub trait Molkky {
     }
 
     fn next_team<'teams>(&self, teams: &'teams [Team]) -> Option<&'teams Team> {
-        let remaining = teams
-            .iter()
-            .filter(|team| team.score_board().state() != ScoreState::Disqualified)
-            .count();
-        if self.judge_game(teams).is_some() || (teams.len() > 1 && remaining == 1) {
+        if self.judge_game(teams).is_some() {
             return None;
         }
         let start = teams

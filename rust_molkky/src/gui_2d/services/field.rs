@@ -1,6 +1,6 @@
 use super::{GuiMolkky, TIME_STEP, molkky::DAMPING};
 use crate::{
-    Field, Id, Skittle,
+    Field, Skittle, SkittleState,
     gui_2d::models::{GuiField, GuiSkittle, GuiStick},
 };
 use rapier2d::prelude::*;
@@ -8,40 +8,30 @@ use std::collections::{HashMap, HashSet};
 
 /// 全チーム共通の標準配置、棒、対応する物理ワールドを組み立てる。
 pub fn create_field() -> (GuiField, GuiStick, GuiMolkky) {
-    let field = GuiField::new(Field::new(), (1..=12).map(Skittle::new).collect());
-    let stick = GuiStick::default();
     let rows: &[&[i32]] = &[&[1, 2], &[3, 10, 4], &[5, 11, 12, 6], &[7, 9, 8]];
-    let radius = GuiSkittle::RADIUS;
-    let placements: Vec<_> = rows
+    let mut pins: Vec<_> = rows
         .iter()
         .enumerate()
         .flat_map(|(row, numbers)| {
-            let field = &field;
-            numbers.iter().enumerate().map(move |(column, number)| {
-                let skittle = field
-                    .skittles()
-                    .iter()
-                    .find(|s| s.number() == *number)
-                    .unwrap();
+            numbers.iter().enumerate().map(move |(column, &number)| {
+                let radius = GuiSkittle::RADIUS;
                 let x = (2.0 * column as f32 - (numbers.len() - 1) as f32) * radius;
-                (
-                    skittle.id(),
+                GuiSkittle::new(
+                    Skittle::new(number),
                     [x, 1.0 + row as f32 * 3.0_f32.sqrt() * radius],
                 )
             })
         })
         .collect();
-    let rules = create_world(&stick, GuiField::THROW_POSITION, &placements);
+    pins.sort_by_key(|pin| pin.as_ref().number());
+    let field = GuiField::new(Field::new(), pins);
+    let stick = GuiStick::default();
+    let rules = create_world(&stick, field.skittles());
     (field, stick, rules)
 }
 
-/// originとplacementsはメートル座標。標準配置の生成は呼び出し側で行う。
-pub fn create_world(
-    stick: &GuiStick,
-    origin: [f32; 2],
-    placements: &[(Id, [f32; 2])],
-) -> GuiMolkky {
-    assert!(origin.iter().all(|v| v.is_finite()), "投擲位置は有限値です");
+/// 各モデルの位置(m)と姿勢から、全チーム共通の物理ワールドを構築する。
+pub fn create_world(stick: &GuiStick, skittles: &[GuiSkittle]) -> GuiMolkky {
     let mut world = PhysicsWorld::new();
     world.gravity = Vector::ZERO;
     world.integration_parameters.dt = TIME_STEP;
@@ -80,9 +70,9 @@ pub fn create_world(
             None,
         );
     }
-    let (stick_body, _) = world.insert(
+    let (stick_body, stick_collider) = world.insert(
         RigidBodyBuilder::dynamic()
-            .translation(Vector::from_array(origin))
+            .translation(Vector::from_array(stick.position()))
             .linear_damping(DAMPING)
             .angular_damping(DAMPING)
             .ccd_enabled(true)
@@ -92,7 +82,9 @@ pub fn create_world(
     );
     let mut ids = HashSet::from([stick.stick().id()]);
     let mut skittle_ids = HashMap::new();
-    for &(id, position) in placements {
+    for pin in skittles {
+        let id = pin.as_ref().id();
+        let position = pin.position();
         assert!(ids.insert(id), "個体Idは一意です");
         assert!(position.iter().all(|v| v.is_finite()), "配置は有限値です");
         let (_, collider) = world.insert(
@@ -101,7 +93,7 @@ pub fn create_world(
                 .linear_damping(DAMPING)
                 .angular_damping(DAMPING)
                 .ccd_enabled(true)
-                .sleeping(true),
+                .sleeping(pin.as_ref().state() != SkittleState::Hit),
             ColliderBuilder::ball(GuiSkittle::RADIUS).mass(GuiSkittle::MASS),
         );
         skittle_ids.insert(collider, id);
@@ -111,8 +103,7 @@ pub fn create_world(
         stick_id: stick.stick().id(),
         stick_body,
         skittle_ids,
-        peak_impulses: HashMap::new(),
-        origin,
-        flying: false,
+        stick_collider,
+        impacts: HashMap::new(),
     }
 }
