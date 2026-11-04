@@ -1,5 +1,16 @@
 # 開発支援方針の記録
 
+## ThrowOutputとStick側のThrowトレイトを評価（2026-11-04）
+
+- 対象：82eedf9のcore::Molkky::throw、core/GUI/CUIのStick、GuiMolkky::throw/reset_throwとappの解放処理。設計相談のみで、ソースやAPIは変更しない。
+- 更新対象がStick自身の投擲状態であれば、ThrowOutputをなくしてSelfの更新値を返すThrowトレイトをStick側へ実装する案は妥当。例は `trait Throw: AsRef<Stick> + Sized { fn throw(&self) -> Self; }`。これは状態遷移の契約であり、物理ワールドの処理までモデルへ移す指定ではない。
+- 現状のcore::StickはIdだけ、GuiStickは目標と速度、CuiStickは命中確率を保持する。目標・速度は投擲の解放までに既に設定されており、現在のthrowはStick自体のフィールドを更新していない。何が変わったStickを返すのかを定めず、同じ値を返すためだけにtraitや新しい状態フラグを追加しない。
+- GuiMolkky::throw:L219はselfが所有するワールドをリセットし、棒ボディの回転・速度と計算中の状態を更新する。引数にStickしかなくてもselfのワールドへ作用しているため、この物理反映はサービス側に置く。Stickへワールドの所有・参照を追加して処理全体を移さない。
+- 責務案：Stick側のThrowは必要になった個体自身の更新を返し、GuiMolkkyはそのモデルを物理ワールドへ反映して投擲を開始する。appがこの順序を接続する。無効な方向/速度を拒否する現在のboolの役割も、受付条件または状態の契約として維持する必要がある。
+- CUIのthrowは確率を返すだけでrunからは未使用。GUIは物理開始なので、ThrowOutputは型の違いを扱えても動作の意味を揃えていない。再設計時はこの意味の不一致を解消し、CUIのgetterを共通の投擲動作として残すためだけの抽象を避ける。
+- [x] 実装と実行経路を静的に確認し、個体更新と物理反映の境界を記録した。
+- [x] 文書差分をgit diff --checkで確認した。実装・動作テストは行っていない。
+
 ## GUI個体の定数を所有モデルへ移動（2026-11-04）
 
 - GuiMolkkyへまとめていた個体固有の定数を移す。半径と質量はGuiSkittle::RADIUS/MASS、棒の半径・長さ・質量はGuiStick::RADIUS/LENGTH/MASSとする。値と単位（m/kg）は変更しない。物理生成・配置・描画・テストは同じモデル定数を参照する。
