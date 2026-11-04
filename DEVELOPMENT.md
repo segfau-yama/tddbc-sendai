@@ -1,5 +1,14 @@
 # 開発支援方針の記録
 
+## CUIの値オブジェクト用ラッパーを削除（2026-11-04）
+
+- 前回の「全公開モデルを委譲型にする」方針を修正する。Id/Name/Pointと状態enumはcoreの型を直接利用し、CUI側へ重複した型を設けない。
+- CuiId/CuiName/CuiPoint/CuiScoreState/CuiSkittleStateと公開宣言を削除する。CuiField/CuiStick/CuiSkittle/CuiTeam/CuiScoreBoardは維持し、coreや入力・採点・描画処理は変更しない。
+- [x] 参照先と変更前の既存テストを確認する。対象ラッパーは実行処理・テストで未使用だった。
+- [x] 不要な型・ファイル・公開宣言を削除しREADMEを更新する。
+- [x] 変更後の既存テスト、fmt、Clippy、差分を確認する。振る舞いを追加しないため新規テストやRedは設けない。
+- 検証：変更前後のcargo test --features gui_2d（179件）、cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、git diff --checkが成功。rgで削除した型への参照がsrc/testsに残っていないことを確認した。
+
 ## CUIモデルをcoreへの委譲型へ統一（2026-11-04）
 
 - 範囲：独自のTeamsモデルを削除し、名前の検証・チーム一覧生成をservices/teams.rsのfrom_names/add_nameへ移す。入出力とrunはVec<Team>を受け渡し、一覧を包む別モデルは設けない。

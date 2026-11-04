@@ -1,4 +1,4 @@
-use crate::{Skittle, SkittleState};
+use crate::Skittle;
 
 pub struct CuiSkittle(Skittle);
 
@@ -10,20 +10,6 @@ impl From<Skittle> for CuiSkittle {
 
 impl AsRef<Skittle> for CuiSkittle {
     fn as_ref(&self) -> &Skittle {
-        &self.0
-    }
-}
-
-pub struct CuiSkittleState(SkittleState);
-
-impl From<SkittleState> for CuiSkittleState {
-    fn from(value: SkittleState) -> Self {
-        Self(value)
-    }
-}
-
-impl AsRef<SkittleState> for CuiSkittleState {
-    fn as_ref(&self) -> &SkittleState {
         &self.0
     }
 }

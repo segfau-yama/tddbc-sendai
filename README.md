@@ -39,7 +39,7 @@ cargo test --locked --test application
 | src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
 
 InputとOutputはプレゼンテーション層の入出力処理なので、ドメインサービスの実装とは別の`io/`へ配置します。
-`cui::models`はcoreの各公開モデルに対応する`CuiXxxx`を公開します。単純な委譲型は`From<Core>`で生成して`AsRef<Core>`で参照し、状態enumもcoreの値をそのまま内包します。`CuiField`と`CuiStick`はCUI固有の情報を合成します。チーム一覧には`Vec<Team>`を使い、`cui::services::teams::{from_names, add_name}`が名前の検証・生成を担当します。`CuiMolkky`は`cui::services`、`Input`と`Output`は`cui::io`から公開します。
+`cui::models`は`CuiField`・`CuiStick`・`CuiSkittle`・`CuiTeam`・`CuiScoreBoard`を公開します。単純な委譲型は`From<Core>`で生成して`AsRef<Core>`で参照します。Id・Name・Pointなどの値オブジェクトと状態enumにはcoreの型を直接使います。`CuiField`と`CuiStick`はCUI固有の情報を合成します。チーム一覧には`Vec<Team>`を使い、`cui::services::teams::{from_names, add_name}`が名前の検証・生成を担当します。`CuiMolkky`は`cui::services`、`Input`と`Output`は`cui::io`から公開します。
 
 ### CUIの操作
 
