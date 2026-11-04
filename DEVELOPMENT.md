@@ -1,5 +1,20 @@
 # 開発支援方針の記録
 
+## Stick側のThrowトレイトを実装（2026-11-04）
+
+- Throw<Input>をcore/models/stick.rsに定義し、確率f64を受けるCuiStickと速度f32を受けるGuiStickへ実装する。throwはIdと他の属性を保って新しいSelfを返す。更新値は呼び出し側が指定し、確率や速度をランダムに生成する処理は追加しない。
+- Molkkyのthrow/ThrowOutputとCUIの確率getterとしてのthrowを撤去する。Stick側のthrowはワールドを所有・更新せず、appは入力で確定した速度を反映した棒を既存のGuiMolkky::stepへ渡す。最初のstepだけ初速を設定し、停止後はreset_throwまで再投擲しない。ユーザーの追加指定に従いstart_throwなどの開始用関数は追加しない。
+- [x] 変更前の既存テストを確認する（GUI featureあり195件成功）。
+- [x] CUI/GUIの更新値・元の値の不変性・Idと照準の保持をテストしRedを確認する。
+- [x] 共通トレイトと具象実装、core契約・app・既存テスト・READMEを移行する。
+- [x] 物理更新の最初だけ初速を反映し、途中の入力で方向・速度を上書きしない。停止後は再開せず、立て直して次投へ進める。
+- [x] 固定刻み未満のFrameでは採点せず、停止後の採点は一度だけ行う。
+- [x] 全テスト・fmt/Clippy・feature分離・Webコンパイル・実操作・差分を確認する。
+- Red：先に追加したモデルのテストは、Throwの未定義・throwメソッド未実装によるコンパイル失敗を確認した（/tmp/molkky-stick-throw-red.log）。既存stepへStickを渡す契約への移行も、先にテストを変更して引数・戻り値の不一致を確認した（/tmp/molkky-stick-step-red.log）。
+- Green/Refactor：cargo test --features gui_2dは197件、cargo testは144件成功。CUIサービスの確率getterのテストはモデルの不変更新のテストへ移し、更新後の確率がhit・連鎖へ渡る検証も維持した。GUIは既存のactiveフラグを初速の未反映を示すreadyへ置き換え、停止状態はRapierのsleepから求める。appは実際に物理更新した後だけ停止・採点を確認する。開始用ヘルパーやモデルの投擲状態enumは追加していない。
+- 検証：cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、coreのみ/GUIのみのcargo check、Web向けcargo check/build、git diff --checkが成功した。Chromiumのtests/gui_2d/app.jsでDOM入力・capture・取消・領域外解放・採点・失格・結果・固定範囲・反射を確認した（/tmp/molkky-stick-throw-browser.log）。検証用8081番のサーバーは終了した。デスクトップ実機の操作は今回は未確認。
+- デスクトップ向けcargo checkも成功した。初回のGLib未検出は既存のローカル依存を参照する環境設定で解消した：PKG_CONFIG_SYSROOT_DIR=/workspace/.cloud-tools/desktop、PKG_CONFIG_PATH=/workspace/.cloud-tools/desktop/usr/lib/x86_64-linux-gnu/pkgconfig:/workspace/.cloud-tools/desktop/usr/share/pkgconfigを指定し、cargo check --no-default-features --features gui_2d_desktopを実行した。
+
 ## ThrowOutputとStick側のThrowトレイトを評価（2026-11-04）
 
 - 対象：82eedf9のcore::Molkky::throw、core/GUI/CUIのStick、GuiMolkky::throw/reset_throwとappの解放処理。設計相談のみで、ソースやAPIは変更しない。

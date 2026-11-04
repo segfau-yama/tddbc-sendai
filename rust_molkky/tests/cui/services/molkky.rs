@@ -1,6 +1,6 @@
 use crate::cui::models::{CuiSkittle, CuiStick};
 use crate::{
-    Molkky, Skittle, SkittleState, Stick,
+    Molkky, Skittle, SkittleState, Stick, Throw,
     cui::{models::CuiField, services::CuiMolkky},
 };
 
@@ -11,7 +11,7 @@ mod aiming {
     fn 指定番号の既存個体を入力順に選んで返す() {
         let field = CuiField::default();
         let rules = CuiMolkky::new(vec![12, 5]);
-        let rules: &dyn Molkky<Stick = CuiStick, Skittle = CuiSkittle, ThrowOutput = f64> = &rules;
+        let rules: &dyn Molkky<Stick = CuiStick, Skittle = CuiSkittle> = &rules;
         assert_eq!(
             rules.aim(&CuiStick::new(Stick::new(), 1.0), &field.skittles),
             [field.skittles[11], field.skittles[4]]
@@ -110,15 +110,6 @@ mod probability {
     use super::*;
 
     #[test]
-    fn throwは渡した棒ごとの確率を返す() {
-        let mut rules = CuiMolkky::default();
-        for probability in [0.0, 0.25, 0.5, 1.0] {
-            let stick = CuiStick::new(Stick::new(), probability);
-            assert_eq!(rules.throw(&stick), probability);
-        }
-    }
-
-    #[test]
     fn 確率零なら狙った個体は一本も倒れない() {
         let field = CuiField::default();
         let original = field.skittles.clone();
@@ -140,7 +131,7 @@ mod chaining {
             random: || 0.3,
             ..CuiMolkky::default()
         };
-        let stick = CuiStick::new(Stick::new(), 0.8);
+        let stick = CuiStick::default().throw(0.8);
         let original = CuiSkittle::from(Skittle::new(5));
         let first = rules.hit(&stick, &original);
         assert_eq!(first.probability(), 0.8);

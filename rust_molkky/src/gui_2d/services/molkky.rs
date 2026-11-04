@@ -10,7 +10,7 @@ pub struct GuiMolkky {
     skittle_ids: HashMap<ColliderHandle, Id>,
     peak_impulses: HashMap<Id, f32>,
     origin: [f32; 2],
-    active: bool,
+    ready: bool,
 }
 
 impl GuiMolkky {
@@ -93,14 +93,30 @@ impl GuiMolkky {
             skittle_ids,
             peak_impulses: HashMap::new(),
             origin,
-            active: false,
+            ready: true,
         }
     }
 
-    /// 1tickだけ進める。描画や実時間の待機は行わない。
-    pub fn step(&mut self) {
-        if !self.active {
-            return;
+    /// 最初のtickだけ棒の初速を反映し、1tick進める。無効な投擲条件ならfalse。
+    pub fn step(&mut self, stick: &GuiStick) -> bool {
+        if self.ready {
+            let Some(direction) = self.direction(stick) else {
+                return false;
+            };
+            if !stick.speed().is_finite() || stick.speed() <= 0.0 {
+                return false;
+            }
+            let body = &mut self.world.bodies[self.stick_body];
+            body.set_rotation(
+                Rotation::from_angle(direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2),
+                true,
+            );
+            body.set_linvel(direction * stick.speed(), true);
+            // 停止後も初速を再適用せず、次投の準備はreset_throwで明示する。
+            self.ready = false;
+        }
+        if self.is_settled() {
+            return true;
         }
         self.world.step();
         for pair in self.world.narrow_phase.contact_pairs() {
@@ -122,15 +138,11 @@ impl GuiMolkky {
                 }
             }
         }
-        self.active = self
-            .world
-            .bodies
-            .iter()
-            .any(|(_, body)| !body.is_sleeping());
+        true
     }
 
     pub fn is_settled(&self) -> bool {
-        !self.active
+        self.world.bodies.iter().all(|(_, body)| body.is_sleeping())
     }
 
     /// view用の位置(m)と回転(rad)。未知のIdはNone。
@@ -165,7 +177,7 @@ impl GuiMolkky {
         body.set_linvel(Vector::ZERO, false);
         body.set_angvel(0.0, false);
         body.sleep();
-        self.active = false;
+        self.ready = true;
     }
 
     fn resolve_hit(&self, skittle: &Skittle) -> Skittle {
@@ -193,7 +205,6 @@ impl GuiMolkky {
 impl Molkky for GuiMolkky {
     type Stick = GuiStick;
     type Skittle = Skittle;
-    type ThrowOutput = bool;
 
     fn aim(&self, stick: &GuiStick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle> {
         let Some(direction) = self.direction(stick) else {
@@ -214,24 +225,6 @@ impl Molkky for GuiMolkky {
             })
             .copied()
             .collect()
-    }
-
-    fn throw(&mut self, stick: &GuiStick) -> bool {
-        let Some(direction) = self.direction(stick) else {
-            return false;
-        };
-        if self.active || !stick.speed().is_finite() || stick.speed() <= 0.0 {
-            return false;
-        }
-        self.reset_throw();
-        let body = &mut self.world.bodies[self.stick_body];
-        body.set_rotation(
-            Rotation::from_angle(direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2),
-            true,
-        );
-        body.set_linvel(direction * stick.speed(), true);
-        self.active = true;
-        true
     }
 
     fn hit(&self, stick: &GuiStick, skittle: &Self::Skittle) -> Self::Skittle {

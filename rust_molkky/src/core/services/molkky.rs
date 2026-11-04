@@ -4,12 +4,7 @@ use itertools::Itertools;
 pub trait Molkky {
     type Stick: AsRef<Stick>;
     type Skittle: AsRef<Skittle> + From<Skittle>;
-    /// 投擲方式ごとの結果。確率や初速などを同じ数値型に固定しない。
-    type ThrowOutput;
-
     fn aim(&self, stick: &Self::Stick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle>;
-
-    fn throw(&mut self, stick: &Self::Stick) -> Self::ThrowOutput;
 
     fn hit(&self, stick: &Self::Stick, skittle: &Self::Skittle) -> Self::Skittle;
 

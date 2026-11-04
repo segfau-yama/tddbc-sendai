@@ -184,6 +184,22 @@ mod input {
     use super::*;
 
     #[test]
+    fn 解放後の固定刻み未満のフレームでは採点せず次の刻みで移動を始める() {
+        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
+        state.handle(DomEvent::Release(pointer([0.0, 1.0], 600.0)));
+        let origin = state.rules.pose(state.stick.as_ref().id());
+        state.handle(DomEvent::Frame { time: 601.0 });
+        assert_eq!(state.phase, Phase::Simulating);
+        assert!(state.teams[0].score_board().history().is_empty());
+        assert!(state.teams[0].turn());
+        assert_eq!(state.rules.pose(state.stick.as_ref().id()), origin);
+        state.handle(DomEvent::Frame { time: 620.0 });
+        assert_ne!(state.rules.pose(state.stick.as_ref().id()), origin);
+        assert!(state.teams[0].score_board().history().is_empty());
+    }
+
+    #[test]
     fn 早期転倒を保持して連鎖した二本を一投で採点し次の照準前に立て直す() {
         let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
         let field_id = state.field.as_ref().id();

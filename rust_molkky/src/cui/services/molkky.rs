@@ -33,7 +33,6 @@ impl CuiMolkky {
 impl Molkky for CuiMolkky {
     type Stick = CuiStick;
     type Skittle = CuiSkittle;
-    type ThrowOutput = f64;
 
     fn aim(&self, _stick: &CuiStick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle> {
         self.numbers
@@ -41,10 +40,6 @@ impl Molkky for CuiMolkky {
             .filter_map(|number| skittles.iter().find(|s| s.as_ref().number() == *number))
             .copied()
             .collect()
-    }
-
-    fn throw(&mut self, stick: &CuiStick) -> f64 {
-        stick.probability()
     }
 
     fn hit(&self, stick: &CuiStick, skittle: &Self::Skittle) -> Self::Skittle {

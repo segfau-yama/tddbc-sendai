@@ -1,4 +1,19 @@
-use rust_molkky::{Stick, cui::models::CuiStick};
+use rust_molkky::{Stick, Throw, cui::models::CuiStick};
+
+mod throwing {
+    use super::*;
+
+    #[test]
+    fn 確率を更新した同じ個体の棒を返し元の確率を保つ() {
+        let original = CuiStick::new(Stick::new(), 0.5);
+        for probability in [0.0, 0.25, 0.5, 1.0] {
+            let updated = original.throw(probability);
+            assert_eq!(updated.probability(), probability);
+            assert_eq!(updated.as_ref(), original.as_ref());
+            assert_eq!(original.probability(), 0.5);
+        }
+    }
+}
 
 mod construction {
     use super::*;
@@ -26,6 +41,7 @@ mod construction {
         }
         for probability in [-0.1, 1.1, f64::NAN, f64::INFINITY] {
             assert!(std::panic::catch_unwind(|| CuiStick::new(Stick::new(), probability)).is_err());
+            assert!(std::panic::catch_unwind(|| CuiStick::default().throw(probability)).is_err());
         }
     }
 }

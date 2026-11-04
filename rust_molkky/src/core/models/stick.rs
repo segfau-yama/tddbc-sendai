@@ -20,3 +20,8 @@ impl AsRef<Stick> for Stick {
         self
     }
 }
+
+/// 投擲条件を更新した棒を返す。入力の意味と型は具象モデルが定める。
+pub trait Throw<Input>: AsRef<Stick> + Sized {
+    fn throw(&self, value: Input) -> Self;
+}

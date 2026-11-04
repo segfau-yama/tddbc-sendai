@@ -1,4 +1,4 @@
-use crate::core::Stick;
+use crate::core::{Stick, Throw};
 
 #[derive(Clone, Copy)]
 pub struct GuiStick {
@@ -44,5 +44,11 @@ impl GuiStick {
 impl AsRef<Stick> for GuiStick {
     fn as_ref(&self) -> &Stick {
         &self.stick
+    }
+}
+
+impl Throw<f32> for GuiStick {
+    fn throw(&self, speed: f32) -> Self {
+        Self { speed, ..*self }
     }
 }

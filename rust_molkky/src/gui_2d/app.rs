@@ -4,7 +4,7 @@ use super::{
     services::{GuiMolkky, field::create_field, teams::from_names},
     view,
 };
-use crate::core::{Molkky, Skittle, SkittleState, Team};
+use crate::core::{Molkky, Skittle, SkittleState, Team, Throw};
 use dioxus::{html::input_data::MouseButton, prelude::*};
 use std::time::Duration;
 
@@ -107,9 +107,10 @@ impl AppState {
                     Some(MouseButton::from_web_code(sample.button)),
                     now,
                 ) {
-                    let stick = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
-                    self.stick = stick;
-                    if self.rules.throw(&stick) {
+                    let aimed =
+                        GuiStick::new(*self.stick.as_ref(), Some(target), self.stick.speed());
+                    self.stick = aimed.throw(speed);
+                    if target != GuiField::THROW_POSITION && speed > 0.0 {
                         self.phase = Phase::Simulating;
                         self.last_frame = now;
                         self.accumulator = Duration::ZERO;
@@ -146,27 +147,32 @@ impl AppState {
                             .min(Self::MAX_FRAME_TIME);
                         self.last_frame = now.max(self.last_frame);
                         let step = Duration::from_secs_f32(GuiMolkky::TIME_STEP);
-                        while self.accumulator >= step && !self.rules.is_settled() {
-                            self.rules.step();
+                        while self.accumulator >= step {
+                            if !self.rules.step(&self.stick) {
+                                self.reset_input();
+                                self.phase = Phase::Ready;
+                                break;
+                            }
                             self.accumulator -= step;
-                        }
-                        // 接触はstepが蓄積する。既にFallの個体も保持し、描画はこの状態だけを読む。
-                        let updated = self
-                            .field
-                            .skittles()
-                            .iter()
-                            .map(|skittle| self.rules.hit(&self.stick, skittle))
-                            .collect();
-                        self.field = GuiField::new(*self.field.as_ref(), updated);
-                        if self.rules.is_settled() {
-                            let fallen: Vec<_> = self
+                            // 接触はstepが蓄積する。既にFallの個体も保持し、描画はこの状態だけを読む。
+                            let updated = self
                                 .field
                                 .skittles()
                                 .iter()
-                                .filter(|skittle| skittle.state() == SkittleState::Fall)
-                                .copied()
+                                .map(|skittle| self.rules.hit(&self.stick, skittle))
                                 .collect();
-                            self.finish_throw(&fallen);
+                            self.field = GuiField::new(*self.field.as_ref(), updated);
+                            if self.rules.is_settled() {
+                                let fallen: Vec<_> = self
+                                    .field
+                                    .skittles()
+                                    .iter()
+                                    .filter(|skittle| skittle.state() == SkittleState::Fall)
+                                    .copied()
+                                    .collect();
+                                self.finish_throw(&fallen);
+                                break;
+                            }
                         }
                     }
                 }

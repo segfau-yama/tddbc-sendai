@@ -1,4 +1,4 @@
-use crate::Stick;
+use crate::{Stick, Throw};
 
 pub struct CuiStick {
     stick: Stick,
@@ -29,5 +29,11 @@ impl Default for CuiStick {
 impl AsRef<Stick> for CuiStick {
     fn as_ref(&self) -> &Stick {
         &self.stick
+    }
+}
+
+impl Throw<f64> for CuiStick {
+    fn throw(&self, probability: f64) -> Self {
+        Self::new(self.stick, probability)
     }
 }
