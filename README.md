@@ -22,8 +22,9 @@ cargo test --locked --test application
 | --- | --- |
 | src/core/models/ | Team・Skittle・ScoreBoardなどのドメインモデル |
 | src/core/services/molkky.rs | aim・throw・hitの抽象宣言、採点・勝者・次のチームの判定 |
-| src/cui/models/teams.rs | Vec<Team>の保持、CUI用の名前検証・Team生成 |
-| src/cui/models/field.rs | 1〜12番のVec<Skittle>の保持 |
+| src/cui/models/ | coreモデルを内包するCuiXxxxの委譲型（AsRefで参照） |
+| src/cui/services/teams.rs | 名前の検証・Vec<Team>の生成と追加 |
+| src/cui/models/field.rs | CuiField：core::Fieldと1〜12番のVec<Skittle>の保持 |
 | src/cui/models/stick.rs | CuiStick：既存のStickと転倒確率の保持 |
 | src/cui/services/molkky.rs | CuiMolkky：入力番号による個体の選択、棒の確率の取得と転倒判定 |
 | src/cui/io/input.rs | Input：入力元の保持、読み取り・変換・検証・再入力 |
@@ -38,7 +39,7 @@ cargo test --locked --test application
 | src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
 
 InputとOutputはプレゼンテーション層の入出力処理なので、ドメインサービスの実装とは別の`io/`へ配置します。
-`Teams`・`Field`・`CuiStick`は`cui::models`、`CuiMolkky`は`cui::services`、`Input`と`Output`は`cui::io`から公開します。
+`cui::models`はcoreの各公開モデルに対応する`CuiXxxx`を公開します。単純な委譲型は`From<Core>`で生成して`AsRef<Core>`で参照し、状態enumもcoreの値をそのまま内包します。`CuiField`と`CuiStick`はCUI固有の情報を合成します。チーム一覧には`Vec<Team>`を使い、`cui::services::teams::{from_names, add_name}`が名前の検証・生成を担当します。`CuiMolkky`は`cui::services`、`Input`と`Output`は`cui::io`から公開します。
 
 ### CUIの操作
 
@@ -56,9 +57,9 @@ InputとOutputはプレゼンテーション層の入出力処理なので、ド
 
 ```rust
 use rust_molkky::{Molkky, Stick};
-use rust_molkky::cui::{models::{CuiStick, Field}, services::CuiMolkky};
+use rust_molkky::cui::{models::{CuiField, CuiStick}, services::CuiMolkky};
 
-let field = Field::default();
+let field = CuiField::default();
 let stick = CuiStick::new(Stick::new(), 0.5);
 let rules = CuiMolkky::new(vec![5, 8]);
 let targets = rules.aim(&stick, &field.skittles);
@@ -69,7 +70,7 @@ assert_eq!(field.skittles.len(), 12);
 
 `CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選び、throwはCuiStickの確率（f64、0〜1）を返します。hitはその確率で各個体を判定し、倒れた本だけをFall状態で返します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
 
-`Molkky`を実装する型は関連型Stick・ThrowOutputとaim・throw・hitを定義します。throwは可変参照を受け取り、実装ごとの結果を返します。CuiMolkkyのStickはCuiStick、ThrowOutputはf64の確率です。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
+`Molkky`を実装する型は関連型Stick・Skittle・ThrowOutputとaim・throw・hitを定義します。throwは可変参照を受け取り、実装ごとの結果を返します。CuiMolkkyのStickはCuiStick、ThrowOutputはf64の確率です。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
 
 ### テストと残課題
 

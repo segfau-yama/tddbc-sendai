@@ -134,9 +134,7 @@ fn read_teams(
     writer: &mut impl Write,
     names: &[String],
 ) -> io::Result<Option<Vec<Team>>> {
-    Input::new(reader)
-        .teams(&mut Output::new(writer), names)
-        .map(|result| result.map(|teams| teams.teams))
+    Input::new(reader).teams(&mut Output::new(writer), names)
 }
 
 fn read_throw(

@@ -2,7 +2,7 @@ use std::io::{self, BufRead, Write};
 
 use super::Output;
 use crate::Team;
-use crate::cui::models::Teams;
+use crate::cui::services::teams::{add_name, from_names};
 
 pub struct Input<R> {
     reader: R,
@@ -17,9 +17,9 @@ impl<R: BufRead> Input<R> {
         &mut self,
         output: &mut Output<impl Write>,
         names: &[String],
-    ) -> io::Result<Option<Teams>> {
+    ) -> io::Result<Option<Vec<Team>>> {
         if !names.is_empty() {
-            return Teams::from_names(names)
+            return from_names(names)
                 .map(Some)
                 .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message));
         }
@@ -33,14 +33,14 @@ impl<R: BufRead> Input<R> {
                 _ => output.error("チーム数は1以上の整数で入力してください")?,
             }
         };
-        let mut teams = Teams::default();
+        let mut teams = Vec::new();
         for number in 1..=count {
             loop {
                 output.team_name_prompt(number)?;
                 let Some(line) = self.read_line()? else {
                     return Ok(None);
                 };
-                match teams.add_name(&line) {
+                match add_name(&mut teams, &line) {
                     Ok(()) => break,
                     Err(message) => output.error(message)?,
                 }

@@ -12,5 +12,5 @@ mod output;
 mod run;
 #[path = "cui/models/stick.rs"]
 mod stick;
-#[path = "cui/models/teams.rs"]
+#[path = "cui/services/teams.rs"]
 mod teams;

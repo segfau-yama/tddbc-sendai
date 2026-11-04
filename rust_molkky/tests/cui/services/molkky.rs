@@ -1,7 +1,7 @@
 use rust_molkky::cui::models::CuiStick;
 use rust_molkky::{
     Molkky, Skittle, SkittleState, Stick,
-    cui::{models::Field, services::CuiMolkky},
+    cui::{models::CuiField, services::CuiMolkky},
 };
 
 mod aiming {
@@ -9,7 +9,7 @@ mod aiming {
 
     #[test]
     fn 指定番号の既存個体を入力順に選んで返す() {
-        let field = Field::default();
+        let field = CuiField::default();
         let rules = CuiMolkky::new(vec![12, 5]);
         let rules: &dyn Molkky<Stick = CuiStick, Skittle = Skittle, ThrowOutput = f64> = &rules;
         assert_eq!(
@@ -22,7 +22,7 @@ mod aiming {
     fn 零本の選択は投てきミスとして零点になる() {
         let rules = CuiMolkky::new(Vec::new());
         let stick = CuiStick::new(Stick::new(), 1.0);
-        let targets = rules.aim(&stick, &Field::default().skittles);
+        let targets = rules.aim(&stick, &CuiField::default().skittles);
         let fallen = rules.hit(&stick, &targets);
         assert!(fallen.is_empty());
         assert_eq!(rules.calc_score(&fallen).value(), 0);
@@ -34,7 +34,7 @@ mod throwing {
 
     #[test]
     fn 選んだ個体だけを転倒結果として返し元の十二本と個体idを維持する() {
-        let field = Field::default();
+        let field = CuiField::default();
         let original = field.skittles.clone();
         let rules = CuiMolkky::new(vec![5]);
         let stick = CuiStick::new(Stick::new(), 1.0);
@@ -48,7 +48,7 @@ mod throwing {
 
     #[test]
     fn 次の投てきも同じフィールドから選び前回の転倒を持ち越さない() {
-        let field = Field::default();
+        let field = CuiField::default();
         let stick = CuiStick::new(Stick::new(), 1.0);
         let first = CuiMolkky::new(vec![5]);
         let second = CuiMolkky::new(vec![8, 12]);
@@ -114,7 +114,7 @@ mod probability {
 
     #[test]
     fn 確率零なら狙った個体は一本も倒れない() {
-        let field = Field::default();
+        let field = CuiField::default();
         let original = field.skittles.clone();
         let rules = CuiMolkky::new((1..=12).collect());
         let stick = CuiStick::new(Stick::new(), 0.0);

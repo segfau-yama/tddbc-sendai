@@ -1,5 +1,18 @@
 # 開発支援方針の記録
 
+## CUIモデルをcoreへの委譲型へ統一（2026-11-04）
+
+- 範囲：独自のTeamsモデルを削除し、名前の検証・チーム一覧生成をservices/teams.rsのfrom_names/add_nameへ移す。入出力とrunはVec<Team>を受け渡し、一覧を包む別モデルは設けない。
+- core/modelsの公開型すべてに対応するCuiXxxxをcui/modelsへ用意する。単純な委譲型はFrom<Core>とAsRef<Core>だけを実装し、coreのルールやgetterを複製しない。状態enumも再定義せずcoreの値を内包する。
+- 既存Fieldはcore::Fieldを内包するCuiFieldへ改名する。標準12本の保持と確率付きCuiStickの動作を維持する。委譲型をcoreサービスへ渡すためだけの変換列や関連型追加は行わず、core APIとGUIは変更しない。
+- [x] 変更前のGUI/CUIテストを確認する（178件成功）。
+- [x] チーム検証テストをservicesへ移し、CuiFieldが元のFieldと個体を保持するテストを追加してRedを確認する（CuiFieldとservices::teamsが未実装のためコンパイル失敗）。
+- [x] Teams削除、services移動、全委譲型、呼び出し側とREADMEの移行を実装しGreenを確認する。
+- [x] GUI/CUIテスト、feature分離、fmt、Clippy、差分を確認する。
+- 委譲型：CuiField/CuiId/CuiName/CuiPoint/CuiScoreBoard/CuiScoreState/CuiSkittle/CuiSkittleState/CuiStick/CuiTeam。新規の単純なFrom/AsRefにはcoreの処理を再実装するメソッドを加えていない。チーム集合とMolkkyへの受け渡しは既存のVec<Team>/Skittleを維持し、一覧の複製やcore側のAPI変更を避けた。
+- 検証：cargo test --features gui_2d（179件）、cargo test、cargo check --no-default-features、cargo check --no-default-features --features gui_2d、cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、git diff --checkが成功。チーム名の1〜30文字・制御文字不可・trim・同名の別Id生成、標準12本、既存のゲーム進行テストは維持した。
+- レビュー：modelsは全て対応するcore型を内包し、Teamsモデルと旧Field公開名は撤去した。core/GUI/依存関係は変更していない。ブラウザー・デスクトップ実機での操作確認は未実施。
+
 ## MolkkyのAsRef制約を実装（2026-11-04）
 
 - 範囲：Stick/Skittleの関連型へAsRef制約を追加し、CUI/GUIの既存型で実装する。GuiSkittleの新設やField・物理処理の再構成は別段階とする。

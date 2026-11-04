@@ -2,7 +2,7 @@ use std::io::{self, BufRead, Write};
 
 use super::{
     io::{Input, Output},
-    models::{CuiStick, Field},
+    models::{CuiField, CuiStick},
     services::CuiMolkky,
 };
 use crate::{Molkky, Team};
@@ -15,14 +15,13 @@ pub fn run(
 ) -> io::Result<()> {
     let mut input = Input::new(reader);
     let mut output = Output::new(writer);
-    let Some(mut participants) = input.teams(&mut output, names)? else {
+    let Some(mut teams) = input.teams(&mut output, names)? else {
         return output.quit();
     };
-    let teams = &mut participants.teams;
     teams[0] = teams[0].with_turn(true);
-    let field = Field::default();
+    let field = CuiField::default();
     loop {
-        output.scoreboard(teams)?;
+        output.scoreboard(&teams)?;
         let current = teams
             .iter()
             .position(Team::turn)
@@ -38,8 +37,8 @@ pub fn run(
         teams[current] = teams[current].with_score_board(board);
         output.throw_result(&teams[current], point)?;
 
-        let next = rules.next_team(teams).map(Team::id);
-        let winner = rules.judge_game(teams).map(Team::id);
+        let next = rules.next_team(&teams).map(Team::id);
+        let winner = rules.judge_game(&teams).map(Team::id);
         for team in teams.iter_mut() {
             *team = team.with_turn(next == Some(team.id()));
             if winner == Some(team.id()) {
@@ -47,8 +46,8 @@ pub fn run(
             }
         }
         if next.is_none() {
-            output.scoreboard(teams)?;
-            return output.finish(rules.judge_game(teams));
+            output.scoreboard(&teams)?;
+            return output.finish(rules.judge_game(&teams));
         }
     }
 }

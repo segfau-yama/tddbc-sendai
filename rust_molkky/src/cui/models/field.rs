@@ -1,13 +1,24 @@
-use crate::Skittle;
+use crate::{Field, Skittle};
 
-pub struct Field {
+pub struct CuiField {
+    field: Field,
     pub skittles: Vec<Skittle>,
 }
 
-impl Default for Field {
+impl CuiField {
+    pub fn new(field: Field, skittles: Vec<Skittle>) -> Self {
+        Self { field, skittles }
+    }
+}
+
+impl Default for CuiField {
     fn default() -> Self {
-        Self {
-            skittles: (1..=12).map(Skittle::new).collect(),
-        }
+        Self::new(Field::new(), (1..=12).map(Skittle::new).collect())
+    }
+}
+
+impl AsRef<Field> for CuiField {
+    fn as_ref(&self) -> &Field {
+        &self.field
     }
 }
