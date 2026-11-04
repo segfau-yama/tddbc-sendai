@@ -1,5 +1,53 @@
 # 開発支援方針の記録
 
+## GUI機能の責務分割と単体hitの設計レビュー（2026-11-04）
+
+- 対象：d0b82b8のcore/services/molkky.rs、core/models/score.rs・team.rs、GUIのapp/controller/services/models/viewと既存テスト。今回は設計レビューのみで、Rust/JSやトレイトの契約は変更しない。
+- 最新の指示を採用する。physics.rsへの分離を必須とせず、GuiMolkkyがRapierのワールドを所有し、coreのaim/throw/hitの具象実装で物理処理を担う。coreの採点・勝者・次手番のデフォルト実装を再実装しない。前回の「採点・手番をappへ移した」という説明は不正確で、現状もcoreを呼んで結果を反映している。
+
+| 機能 | 担当・API案 | 境界・結果 |
+| --- | --- | --- |
+| Web/desktop起動 | bin/gui_2d.rs、app::App | レンダラー起動とDioxusの寿命管理。 |
+| チーム生成 | gui_2d/services/teams.rs | 名前からcore::Teamを生成。入力順・個体Idを保つ。 |
+| 個体・共通Field・Stickの準備 | gui_2d/services/field.rs | 初期個体と標準配置を決め、GuiMolkkyへ渡して組み立てる。 |
+| 物理ワールド初期化 | GuiMolkky::new | ボディ・壁・形状・質量・減衰・CCD、Id対応を生成。採点しない。 |
+| マウス押下・移動・解放・取消 | controller::Controller | pointer所有と入力の解釈だけ。ゲームの継続可否は決めない。 |
+| 画面座標からフィールド座標への変換 | controller::screen_to_world | SVGの拡縮・余白・Y方向を扱う。物理位置を変更しない。 |
+| 蓄力と解放時の速度 | Controller::preview/release | 経過時間から目標と速度を返す。棒のモデルへ反映するのはapp。 |
+| DOM capture・実寸・時刻通知 | app.js/アプリ接続部 | ブラウザーAPIとの橋渡しのみ。coreのルールを持たせない。 |
+| 入力の受付とGUI操作段階 | app | coreの終了判定とReady/Charging/Simulatingから受付を制御。 |
+| 照準候補 | GuiMolkky::aim | 物理位置から候補を返す。候補外の個体もワールドに残し連鎖衝突を可能にする。 |
+| 投擲開始 | GuiMolkky::throw | 棒の方向・初速を設定し開始の成否を返す。全シミュレーションを同期的に回さない。 |
+| 物理更新を呼ぶ時刻 | app | 経過時間を蓄積し固定刻みのstepを必要回数呼ぶ。 |
+| ワールドを1刻み更新 | GuiMolkky::step（具象API） | 全ボディを一緒に進めて衝突を解く。個体ごとのhitの中でstepしない。 |
+| 衝突・反射・減速・転倒材料の蓄積 | GuiMolkky/ワールド | 接触力積、連鎖衝突、今回の個体別最大値を保持する。単位・転倒閾値はここへ閉じ込める。 |
+| 1本の状態と転倒結果の取得 | GuiMolkky::hit（変更案） | Stickと1本のSkittleを受け、更新後のcore::Skittleと必要なら新規転倒boolを返す。 |
+| 個体一覧への状態反映 | app | 各hitの返却値をモデルへ反映し、描画に転倒判定を再実行させない。 |
+| 停止の判定 | GuiMolkky::is_settled（具象API） | ワールド全体のsleep等を見る。採点や手番変更はしない。 |
+| 1投分の得点計算 | core::Molkky::calc_score | 今回倒れた個体をまとめて渡す。1本なら番号、複数なら本数。 |
+| 履歴・合計・超過補正・失格・50点到達 | core::ScoreBoard::add/new/state | coreモデルの規則を使う。GUIでルールを再計算しない。 |
+| 勝者の決定 | core::Molkky::judge_game | Wonと最後の生存者の既存ルールを使う。 |
+| 次の手番の決定 | core::Molkky::next_team | coreが次のTeamまたはNoneを返す。 |
+| 得点・勝者・手番の更新結果の保持 | app + coreのwith_score_board/with_turn/with_win | coreが返したPoint・Teamの結果を反映する。決定規則を複製しない。 |
+| 次投の準備・立て直し | GuiMolkkyとappの接続 | 個体Idと移動後の位置を保ち、速度・回転・今回の接触記録と個体のFallを戻す。次の照準開始前に整合させる。 |
+| 位置・回転の読み取り | GuiMolkky::pose（具象API） | 位置の正本はRapierだけ。modelsへ同じ位置を別保存しない。 |
+| Field・Skittle・Stick・照準の描画 | view/field.rs・skittle.rs・stick.rs | 渡されたモデル状態と位置を表示。物理更新・hitを呼ばない。 |
+| 速度メーター・得点表・結果の描画 | view/speedometer.rs・score.rs・result.rs | 入力計算値・coreの履歴/状態・判定済み勝者を表示。 |
+| 終了後の入力無効化・接続終了時の取消・後始末 | app | coreのnext_team/judge_gameの結果とDioxusの寿命へ従う。勝者フラグを別保存しない。 |
+
+- 単体hitの契約案は `fn hit(&self, stick: &Self::Stick, skittle: &Self::Skittle) -> (Skittle, bool);`。coreモデルのイミュータブルな方針を保ち、新しいSkittleを返す。boolは「今回の更新でStandからFallへ変わったか」と定義すれば、既にFallの個体へ再度問い合わせたときfalseになり、現在の状態とは意味が異なる。単に「更新後にFallか」ならstateから取得できるためboolは不要。独自のHitResult型は先に作らない。
+- StickとSkittleのcoreデータだけでは接触の判定材料が足りない。GuiMolkkyのselfにあるワールドと今回の接触記録を参照する。Stick引数は投擲の文脈を指定し、棒との直接衝突だけに限定しない。ピン同士の連鎖も今回の転倒に含める。
+- 物理はワールド単位、状態反映は1本単位、採点は1投単位。stepは毎tick全体を進め、hitはその結果を読む。appは投擲中にFallを保持して停止後にその一覧を一度だけcalc_scoreへ渡す。5番と8番が倒れた例で、単体hitの結果を個別採点して13点にせず2点とする。新規転倒boolがその更新でfalseでも、既にFallの個体を今回の採点一覧から落とさない。
+- step/is_settled/poseは現行coreトレイトにないGUI固有の具象APIとして残す。非同期に進む物理をaim/throw/hitの3メソッドだけへ押し込めず、1本ずつhitするたびに時間を進める設計にしない。必要性のないPhysics traitや各APIの単独転送ラッパーは追加しない。将来physics.rsへ実装を移す場合も内部の整理として扱い、今の提案の必須条件にはしない。
+- 所有はappがTeam一覧・GuiField・GuiStick・GuiMolkkyを一つずつ持ち、GuiMolkkyがワールドを一つ所有する。GuiSkittle/GuiTeam/GuiScoreBoardはcoreへの委譲型であり、採点状態や物理ワールドの別の正本を持たせない。coreへDioxus/Rapier/座標を追加しない。
+- 指摘（中）gui_2d/app.rs:L184: shrink: update_game_stateのwinnerによるnextの分岐はcore::next_teamの終了判定と重複する。next_teamを直接呼ぶ1行へ短縮可能（現行5行→1行）。coreはWonと最後の生存者の場合にNoneを返すため、同じ規則をGUIへ再記述しない。
+- 指摘（中）gui_2d/app.rs:L222 / services/molkky.rs:L222: shrink: 新しいhit契約を採用する場合、描画中に再判定する処理を削除し、appで更新した個体状態を描画へ渡す。インターフェース変更を伴うため今回は適用しない。
+- [x] 現行コードとcoreの契約・呼び出しを静的に照合した。
+- [x] 最新の指示に合わせた機能表、単体hitの意味、既存APIとの変更点を記録した。
+- [ ] 実装する場合：1本の不転倒/転倒/再問い合わせでId・番号と新規転倒boolが整合することを確認する。
+- [ ] 実装する場合：連鎖・同じ番号の別Id・複数本の採点・二重加点防止・次投のStand復帰・物理の更新回数を確認する。
+- 実装/動作テストは行っていない。文書だけをgit diff --checkで確認する。上記の4行短縮は静的な差分比較であり、物理API再構成全体の削減行数は未算定。
+
 ## GUIの入力・初期化・進行の責務を分離（2026-11-04）
 
 - 指示：Controllerはマウス入力だけを担当し、チーム生成とField/Skittle/Stickを使う初期化はservicesへ移す。一度だけ使う取次ヘルパーは撤去する。レビュー指定に加えて削除・変更が明示されているため、今回は修正まで実施する。
