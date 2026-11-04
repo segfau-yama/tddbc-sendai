@@ -2,7 +2,7 @@ use dioxus::html::input_data::MouseButton;
 use std::time::Duration;
 
 #[cfg(test)]
-#[path = "../../tests/gui_2d/controller.rs"]
+#[path = "../../../tests/gui_2d/controllers/mouse.rs"]
 mod tests;
 
 #[derive(serde::Deserialize)]
@@ -61,11 +61,11 @@ struct Charge {
 
 /// マウスの照準・蓄力・解放・取消だけを管理する。
 #[derive(Default)]
-pub struct Controller {
+pub(super) struct MouseInput {
     charge: Option<Charge>,
 }
 
-impl Controller {
+impl MouseInput {
     pub const MAX_SPEED: f32 = 10.0;
     pub const CHARGE_PERIOD: Duration = Duration::from_secs(2);
 

@@ -1,9 +1,11 @@
 use super::*;
 use crate::Name;
+use crate::gui_2d::controllers::pose;
+use crate::gui_2d::services::field::create_world;
 
 fn team(name: &str, points: &[i32]) -> Team {
     let stick = GuiStick::default();
-    let rules = GuiMolkky::new(&stick, GuiField::THROW_POSITION, &[]);
+    let rules = create_world(&stick, GuiField::THROW_POSITION, &[]);
     let history = points
         .iter()
         .map(|&value| {
@@ -29,7 +31,7 @@ fn pointer(target: [f64; 2], time: f64) -> PointerSample {
     }
 }
 
-fn result(state: &mut AppState, numbers: &[i32]) {
+fn result(state: &mut Controller, numbers: &[i32]) {
     let fallen: Vec<_> = numbers
         .iter()
         .map(|number| {
@@ -52,7 +54,7 @@ mod input_gating {
     #[test]
     fn 蓄力中と物理計算中は新しい入力を開始しない() {
         for phase in [Phase::Charging, Phase::Simulating] {
-            let mut state = AppState::new(vec![team("赤", &[])]);
+            let mut state = Controller::new(vec![team("赤", &[])]);
             state.phase = phase;
             state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
             assert_eq!(state.input.pointer_id(), None);
@@ -65,7 +67,7 @@ mod composition {
 
     #[test]
     fn 描画は物理のhitを呼ばずモデルに反映された転倒状態を使う() {
-        let mut state = AppState::new(vec![team("赤", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[])]);
         let mut pins = state.field.skittles().to_vec();
         pins[0] = pins[0].with_state(SkittleState::Fall);
         state.field = GuiField::new(*state.field.as_ref(), pins);
@@ -76,7 +78,7 @@ mod composition {
 
     #[test]
     fn 最初の手番と十二本と得点表を描画する() {
-        let state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         assert!(state.teams[0].turn());
         assert!(!state.teams[1].turn());
         let html = dioxus_ssr::render_element(render(&state));
@@ -89,7 +91,7 @@ mod composition {
 
     #[test]
     fn 蓄力中は照準候補と速度を表示する() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         state.handle(DomEvent::Frame { time: 500.0 });
         let html = dioxus_ssr::render_element(render(&state));
@@ -105,7 +107,7 @@ mod composition {
             (vec![team("赤", &[0; 3])], "勝者なし"),
             (vec![], "勝者なし"),
         ] {
-            let state = AppState::new(teams);
+            let state = Controller::new(teams);
             let html = dioxus_ssr::render_element(render(&state));
             assert!(html.contains(expected), "{html}");
             assert!(html.contains("data-phase=\"finished\""));
@@ -118,7 +120,7 @@ mod fixed_field {
 
     #[test]
     fn 高速で投げても投擲中と停止後の表示範囲は変わらない() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         let initial = dioxus_ssr::render_element(render(&state));
         let bounds = initial
             .split("viewBox=\"")
@@ -159,7 +161,7 @@ mod initialization {
             Team::new(Name::new("青")),
         ];
         let ids: Vec<_> = teams.iter().map(Team::id).collect();
-        let state = AppState::new(teams);
+        let state = Controller::new(teams);
 
         assert_eq!(state.teams.iter().map(Team::id).collect::<Vec<_>>(), ids);
         assert!(state.teams[0].turn());
@@ -172,7 +174,7 @@ mod initialization {
 
     #[test]
     fn 参加者がいないときは終了して入力を受け付けない() {
-        let mut state = AppState::new(vec![]);
+        let mut state = Controller::new(vec![]);
         assert!(state.is_finished());
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         assert!(state.is_finished());
@@ -185,27 +187,27 @@ mod input {
 
     #[test]
     fn 解放後の固定刻み未満のフレームでは採点せず次の刻みで移動を始める() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         state.handle(DomEvent::Release(pointer([0.0, 1.0], 600.0)));
-        let origin = state.rules.pose(state.stick.as_ref().id());
+        let origin = pose(&state.rules, state.stick.as_ref().id());
         state.handle(DomEvent::Frame { time: 601.0 });
         assert_eq!(state.phase, Phase::Simulating);
         assert!(state.teams[0].score_board().history().is_empty());
         assert!(state.teams[0].turn());
-        assert_eq!(state.rules.pose(state.stick.as_ref().id()), origin);
+        assert_eq!(pose(&state.rules, state.stick.as_ref().id()), origin);
         state.handle(DomEvent::Frame { time: 620.0 });
-        assert_ne!(state.rules.pose(state.stick.as_ref().id()), origin);
+        assert_ne!(pose(&state.rules, state.stick.as_ref().id()), origin);
         assert!(state.teams[0].score_board().history().is_empty());
     }
 
     #[test]
     fn 早期転倒を保持して連鎖した二本を一投で採点し次の照準前に立て直す() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         let field_id = state.field.as_ref().id();
         let pins = vec![Skittle::new(5), Skittle::new(8)];
         let ids: Vec<_> = pins.iter().map(Skittle::id).collect();
-        state.rules = GuiMolkky::new(
+        state.rules = create_world(
             &state.stick,
             GuiField::THROW_POSITION,
             &[(ids[0], [0.02, 0.7]), (ids[1], [0.06, 0.85])],
@@ -261,13 +263,13 @@ mod input {
         );
         let positions: Vec<_> = ids
             .iter()
-            .map(|&id| state.rules.pose(id).unwrap())
+            .map(|&id| pose(&state.rules, id).unwrap())
             .collect();
         state.handle(DomEvent::Frame { time: 50000.0 });
         assert_eq!(state.teams[0].score_board().history().len(), 1);
         assert_eq!(
             ids.iter()
-                .map(|&id| state.rules.pose(id).unwrap())
+                .map(|&id| pose(&state.rules, id).unwrap())
                 .collect::<Vec<_>>(),
             positions
         );
@@ -283,7 +285,7 @@ mod input {
 
     #[test]
     fn 所有pointerの取消で照準と速度と入力状態を一緒に解除する() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         let stick_id = state.stick.stick().id();
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         state.handle(DomEvent::Frame { time: 500.0 });
@@ -301,7 +303,7 @@ mod input {
 
     #[test]
     fn 不正な時刻のイベントで照準や入力状態を変更しない() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         state.handle(DomEvent::Move(pointer([0.2, 0.2], f64::NAN)));
         state.handle(DomEvent::Frame {
@@ -315,7 +317,7 @@ mod input {
 
     #[test]
     fn 蓄力と取消を接続し無効な方向では手番を進めない() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         assert_eq!(state.phase, Phase::Charging);
 
@@ -335,7 +337,7 @@ mod input {
 
     #[test]
     fn 実際の物理停止後だけ一度採点し交代する() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         let field_id = state.field.as_ref().id();
         let stick_id = state.stick.stick().id();
         state.handle(DomEvent::Press(pointer([0.2, 0.2], 0.0)));
@@ -372,7 +374,7 @@ mod scoring {
 
     #[test]
     fn 複数本の番号を合計せずcoreで採点する() {
-        let mut state = AppState::new(vec![team("赤", &[]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         result(&mut state, &[5, 8]);
         assert_eq!(state.teams[0].score_board().total(), 2);
         state.finish_throw(&[]);
@@ -382,7 +384,7 @@ mod scoring {
 
     #[test]
     fn 超過は二十五点へ戻して次チームへ進む() {
-        let mut state = AppState::new(vec![team("赤", &[12, 12, 12, 12, 1]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[12, 12, 12, 12, 1]), team("青", &[])]);
         result(&mut state, &[2]);
         assert_eq!(state.teams[0].score_board().total(), 25);
         assert_eq!(state.phase, Phase::Ready);
@@ -391,7 +393,7 @@ mod scoring {
 
     #[test]
     fn 五十点なら終了して以降の入力を無効にする() {
-        let mut state = AppState::new(vec![team("赤", &[12, 12, 12, 12, 1]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[12, 12, 12, 12, 1]), team("青", &[])]);
         result(&mut state, &[1]);
         assert!(state.is_finished());
         assert!(state.teams.iter().all(|t| !t.turn()));
@@ -403,7 +405,7 @@ mod scoring {
 
     #[test]
     fn 三連続ミスで失格し最後の生存者が履歴を増やさず勝つ() {
-        let mut state = AppState::new(vec![team("赤", &[0, 0]), team("青", &[])]);
+        let mut state = Controller::new(vec![team("赤", &[0, 0]), team("青", &[])]);
         result(&mut state, &[]);
         assert!(state.is_finished());
         assert_eq!(
@@ -416,7 +418,7 @@ mod scoring {
 
     #[test]
     fn 単独の失格は勝者なしで終了する() {
-        let mut state = AppState::new(vec![team("赤", &[0, 0])]);
+        let mut state = Controller::new(vec![team("赤", &[0, 0])]);
         result(&mut state, &[]);
         assert!(state.is_finished());
     }

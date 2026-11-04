@@ -1,10 +1,10 @@
 use rust_molkky::{
     Molkky, Name, ScoreBoard, Skittle, Team,
-    gui_2d::{models::GuiStick, services::GuiMolkky, view::scores},
+    gui_2d::{models::GuiStick, services::field::create_world, view::scores},
 };
 
 fn team(name: &str, points: &[i32]) -> Team {
-    let rules = GuiMolkky::new(&GuiStick::default(), [0.0, 0.0], &[]);
+    let rules = create_world(&GuiStick::default(), [0.0, 0.0], &[]);
     let history = points
         .iter()
         .map(|&value| {

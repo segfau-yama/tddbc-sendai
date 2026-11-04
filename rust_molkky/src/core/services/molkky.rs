@@ -4,6 +4,20 @@ use itertools::Itertools;
 pub trait Molkky {
     type Stick: AsRef<Stick>;
     type Skittle: AsRef<Skittle> + From<Skittle>;
+
+    /// 1刻み進める。投擲条件が無効ならfalse。即時判定では更新不要。
+    fn step(&mut self, _stick: &Self::Stick) -> bool {
+        true
+    }
+
+    /// 即時判定は待機不要。物理計算を使う実装は停止を確認する。
+    fn is_settled(&self) -> bool {
+        true
+    }
+
+    /// 次投へ備える。即時判定は投擲中の状態を持たない。
+    fn reset_throw(&mut self) {}
+
     fn aim(&self, stick: &Self::Stick, skittles: &[Self::Skittle]) -> Vec<Self::Skittle>;
 
     fn hit(&self, stick: &Self::Stick, skittle: &Self::Skittle) -> Self::Skittle;

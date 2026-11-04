@@ -1,5 +1,20 @@
 # 開発支援方針の記録
 
+## GUIサービスの固有implを撤去し制御をcontrollerへ集約（2026-11-04）
+
+- 対象：GuiMolkkyの固有impl、GUIのapp/controller、fieldサービスと呼び出し元。`impl Molkky for GuiMolkky`は残し、当たり判定と物理処理をここへ集約する。ワールド生成はfieldサービス、表示位置の取り出しとviewの合成・イベント制御はcontrollers/各ファイル.rsへ移す。appはDioxusの起動・寿命管理だけを担う。
+- coreのMolkkyにはstep/is_settled/reset_throwの既存GUI動作を抽象として追加する。即時判定のCUIは更新不要・停止済みをデフォルトとする。Rapier型・座標・表示情報はcoreへ入れず、新たなPhysicsトレイトや開始関数は作らない。Stickのthrowと採点・失格・勝敗・手番の規則は変更しない。
+- 既存AppStateをcontrollers/app.rsのControllerへ移し、入力状態だけを持つ既存Controllerはcontrollers/mouse.rsのMouseInputへ改名する。controllers/field.rsは描画位置の取得とフィールド内の合成、stick.rsは投擲中/待機中の位置の選択、skittle.rsは位置・照準候補・モデル状態の描画への受け渡しを担う。メーター・得点表・結果の制御はapp controllerに置き、単にviewへ転送するだけの専用ファイルは作らない。新たな状態の複製は作らず、テスト本体も責務と同じcontrollers/各ファイル.rs・services/field.rsへ移し、既存の期待値を保つ。
+- [x] 変更前の既存テストを確認する（GUI featureあり197件成功）。
+- [x] trait経由で物理更新・停止・リセットを呼ぶテストを先に変更し、契約未定義のRedを確認する。
+- [x] 固有implを削除し、生成・物理・表示制御・appの責務を移行する。
+- [x] 既存の入力・転倒・連鎖・採点・二重加点防止・位置保持・再投擲のテストを維持する。
+- [x] fmt/Clippy・feature分離・Web/desktopコンパイル・Web実操作・差分を確認する。
+- Red：Molkky::step/is_settled/reset_throwを呼ぶよう先に既存テストを変更し、coreの契約にメソッドが未定義でコンパイルできないことを確認した（/tmp/molkky-controller-red.log）。
+- Green/Refactor：cargo test --features gui_2dは197件、cargo testは144件成功。既存の進行処理は命名・配置以外の差分がないことを比較した。元のテストはcontrollers/app.rs・mouse.rs、ワールド生成の拒否条件はservices/field.rsへ移し、期待値を維持した。各描画controllerはモデルと物理状態を参照し、個体を重複所有しない。位置の取得も物理更新・再判定は行わない。
+- 物理用の定数はGUIサービスのモジュールへ移した。coreのMolkkyへRapier用の定数や描画用のposeを追加せず、object安全性も維持する。directionとresolve_hitはそれぞれ2箇所から使う非公開の共通計算として残した。ワールド生成はfield::create_worldに移し、標準配置の生成元・任意配置の利用元が同じ構築処理を使う。
+- 検証：cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、coreのみ/GUIのみのcargo check、Web向けcargo check/build、desktop向けcargo check、git diff --checkが成功した。desktopは既存の/workspace/.cloud-tools/desktopをPKG_CONFIG_SYSROOT_DIR/PKG_CONFIG_PATHで参照した。Chromiumのtests/gui_2d/app.jsでDOM入力・capture・取消・領域外解放・採点・失格・結果・固定範囲・反射を確認した（/tmp/molkky-controllers-browser.log）。デスクトップ実機の操作は今回は未確認。
+
 ## Stick側のThrowトレイトを実装（2026-11-04）
 
 - Throw<Input>をcore/models/stick.rsに定義し、確率f64を受けるCuiStickと速度f32を受けるGuiStickへ実装する。throwはIdと他の属性を保って新しいSelfを返す。更新値は呼び出し側が指定し、確率や速度をランダムに生成する処理は追加しない。

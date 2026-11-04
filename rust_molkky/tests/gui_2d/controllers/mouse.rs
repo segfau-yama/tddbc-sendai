@@ -72,7 +72,7 @@ mod charging {
 
     #[test]
     fn 待機中の左ボタンだけ開始し再押下で上書きしない() {
-        let mut input = Controller::default();
+        let mut input = MouseInput::default();
         let now = Duration::from_secs(10);
         for button in [
             None,
@@ -94,7 +94,7 @@ mod charging {
 
     #[test]
     fn 経過時間で速度が上下し開始前の時刻は零とする() {
-        let mut input = Controller::default();
+        let mut input = MouseInput::default();
         let start = Duration::from_secs(10);
         assert!(input.press(1, Some(MouseButton::Primary), Some([0.0, 3.0]), start));
         for (millis, speed) in [
@@ -115,7 +115,7 @@ mod charging {
 
     #[test]
     fn 同じpointerの有効な移動だけ照準に反映する() {
-        let mut input = Controller::default();
+        let mut input = MouseInput::default();
         let now = Duration::ZERO;
         input.move_to(1, Some([1.0, 1.0]));
         assert!(input.preview(now).is_none());
@@ -130,7 +130,7 @@ mod charging {
 
     #[test]
     fn 領域外でも所有pointerの左解放で表示と同じ初速を一度だけ返す() {
-        let mut input = Controller::default();
+        let mut input = MouseInput::default();
         assert!(input.press(
             1,
             Some(MouseButton::Primary),
@@ -160,7 +160,7 @@ mod cancellation {
 
     #[test]
     fn 該当pointerの取消とfocus喪失では投擲しない() {
-        let mut input = Controller::default();
+        let mut input = MouseInput::default();
         let now = Duration::ZERO;
         assert!(input.press(1, Some(MouseButton::Primary), Some([0.0, 3.0]), now));
         input.cancel(Some(2));

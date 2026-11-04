@@ -4,7 +4,7 @@ pub mod models;
 pub mod app;
 
 #[cfg(feature = "gui_2d")]
-pub mod controller;
+pub mod controllers;
 
 #[cfg(feature = "gui_2d")]
 pub mod view;
