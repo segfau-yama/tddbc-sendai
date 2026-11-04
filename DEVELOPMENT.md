@@ -1,5 +1,19 @@
 # 開発支援方針の記録
 
+## GUIモデルをCUIと揃えGameの入れ物を撤去（2026-11-04）
+
+- 範囲：GuiField/GuiStick/GuiSkittle/GuiTeam/GuiScoreBoardをcoreへの委譲型としてmodelsへ配置する。値オブジェクト・状態enumのGUI用ラッパーは作らない。GuiFieldへAsRef<Field>を追加し、新規の単純な型はFrom/AsRefだけを持つ。物理エンジンやcore APIは変更しない。
+- game.rsはチーム・場・棒・GUI進行のデータを束ねるために作られ、勝利判定は元からcore::Molkkyが行っていた。現在Controllerだけがこの入れ物を所有するためGameを削除し、データはControllerへ直接置く。読み取り用の参照を公開し、モデルを重複所有しない。
+- Controllerに残すInputPhaseはReady/Charging/Simulatingの操作段階だけ。Finishedは保存せず、is_finishedがcoreのnext_team結果から判定する（ScoreBoardのWon、失格、最後の生存者、参加者なしを既存ルールへ委譲）。採点ルールや勝者の独自フラグを新設しない。
+- [x] 変更前のGUI/CUIテストを確認する（179件成功）。
+- [x] GuiFieldのAsRef契約を既存の同一性テストで確認しRedを記録する（AsRef未実装のためコンパイル失敗）。
+- [x] 委譲型追加、Game削除、Controller/app/既存テストの移行を行う。Game初期化のテストはControllerへ移し、検証内容を保つ。
+- [x] 採点の一回性、終了後の入力拒否、空参加者、結果描画、CUI回帰、fmt/Clippy/feature分離/Webコンパイルを確認する。
+- Green/Refactor：cargo test --features gui_2dは移行後も179件成功。Gameのテスト1件をcontrollerへ移したため内訳は変更したが、確認内容は削除していない。終了後にpointerを取得しないことも既存の勝利後入力テストへ明示した。
+- 検証：cargo test、cargo test --features gui_2d --lib scoring、cargo fmt --check、cargo clippy --all-targets --features gui_2d -- -D warnings、cargo check --no-default-features、cargo check --no-default-features --features gui_2d、cargo check --no-default-features --features gui_2d_web --target wasm32-unknown-unknown、git diff --checkが成功。
+- レビュー：Game/GamePhase/保存するFinishedを撤去し、入力の3段階だけをcontrollerに置いた。得点・失格・最後の生存者の規則はcoreへ委譲し続ける。物理ワールドの所有や転倒近似、CUI/coreのソース、依存関係は変更していない。GUIモデルの値をcoreへ渡すためだけの複製処理は加えていない。
+- 未実施：ブラウザー/デスクトップの実操作。デスクトップのネイティブビルドに必要なgtk+-3.0/webkit2gtk-4.1がこの環境ではpkg-configで揃わないため、今回はデスクトップ向けビルドは実行していない。
+
 ## CUIの値オブジェクト用ラッパーを削除（2026-11-04）
 
 - 前回の「全公開モデルを委譲型にする」方針を修正する。Id/Name/Pointと状態enumはcoreの型を直接利用し、CUI側へ重複した型を設けない。

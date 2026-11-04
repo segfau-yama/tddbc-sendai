@@ -1,6 +1,6 @@
 use super::{
-    controller::{Controller, DomEvent},
-    models::{GamePhase, GuiField},
+    controller::{Controller, DomEvent, InputPhase},
+    models::GuiField,
     services::GuiMolkky,
     view,
 };
@@ -12,34 +12,35 @@ use dioxus::prelude::*;
 mod tests;
 
 fn render(controller: &Controller) -> Element {
-    let game = controller.game();
+    let teams = controller.teams();
+    let field = controller.field();
+    let stick = controller.stick();
+    let finished = controller.is_finished();
+    let input_phase = controller.phase();
     let rules = controller.rules();
-    let phase = match game.phase {
-        GamePhase::Ready => "ready",
-        GamePhase::Charging => "charging",
-        GamePhase::Simulating => "simulating",
-        GamePhase::Finished => "finished",
+    let (phase, status) = if finished {
+        ("finished", "試合終了")
+    } else {
+        match input_phase {
+            InputPhase::Ready => ("ready", "左ボタンを押して照準・蓄力を開始します。"),
+            InputPhase::Charging => ("charging", "マウスで狙い、左ボタンを離すと投擲します。"),
+            InputPhase::Simulating => ("simulating", "投擲中…"),
+        }
     };
-    let status = match game.phase {
-        GamePhase::Ready => "左ボタンを押して照準・蓄力を開始します。",
-        GamePhase::Charging => "マウスで狙い、左ボタンを離すと投擲します。",
-        GamePhase::Simulating => "投擲中…",
-        GamePhase::Finished => "試合終了",
-    };
-    let (position, angle) = if game.phase == GamePhase::Simulating {
-        rules.pose(game.stick.stick().id()).unwrap()
+    let (position, angle) = if input_phase == InputPhase::Simulating {
+        rules.pose(stick.stick().id()).unwrap()
     } else {
         (GuiField::THROW_POSITION, 0.0)
     };
-    let fallen = rules.hit(&game.stick, game.field.skittles());
-    let targets = if game.phase == GamePhase::Charging {
-        rules.aim(&game.stick, game.field.skittles())
+    let fallen = rules.hit(stick, field.skittles());
+    let targets = if input_phase == InputPhase::Charging {
+        rules.aim(stick, field.skittles())
     } else {
         Vec::new()
     };
-    let skittles = game.field.skittles().iter().map(|skittle| {
+    let skittles = field.skittles().iter().map(|skittle| {
         let pos = rules.pose(skittle.id()).unwrap().0;
-        let skittle = if matches!(game.phase, GamePhase::Simulating | GamePhase::Finished)
+        let skittle = if (input_phase == InputPhase::Simulating || finished)
             && fallen
                 .iter()
                 .any(|fallen_skittle| fallen_skittle.id() == skittle.id())
@@ -58,8 +59,8 @@ fn render(controller: &Controller) -> Element {
     });
     let scene = rsx! {
         {skittles}
-        {view::aim(GuiField::THROW_POSITION, game.stick.target())}
-        {view::stick(game.stick.stick().id(), position, angle, GuiMolkky::STICK_LENGTH, 2.0 * GuiMolkky::STICK_RADIUS)}
+        {view::aim(GuiField::THROW_POSITION, stick.target())}
+        {view::stick(stick.stick().id(), position, angle, GuiMolkky::STICK_LENGTH, 2.0 * GuiMolkky::STICK_RADIUS)}
     };
     rsx! {
         style { {include_str!("view/style.css")} }
@@ -68,11 +69,11 @@ fn render(controller: &Controller) -> Element {
         div { class: "game-layout",
             div { id: "molkky-input", "data-phase": phase,
                 {view::field(GuiField::BOUNDS, scene)}
-                {view::speedometer(game.stick.speed(), Controller::MAX_SPEED)}
+                {view::speedometer(stick.speed(), Controller::MAX_SPEED)}
             }
             div { class: "scores",
-                {view::scores(&game.teams)}
-                if game.phase == GamePhase::Finished { {view::result(rules.judge_game(&game.teams))} }
+                {view::scores(teams)}
+                if finished { {view::result(rules.judge_game(teams))} }
             }
         }
     }

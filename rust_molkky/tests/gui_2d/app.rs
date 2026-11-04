@@ -38,8 +38,8 @@ mod composition {
     #[test]
     fn 最初の手番と十二本と得点表を描画する() {
         let state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
-        assert!(state.game().teams[0].turn());
-        assert!(!state.game().teams[1].turn());
+        assert!(state.teams()[0].turn());
+        assert!(!state.teams()[1].turn());
         let html = dioxus_ssr::render_element(render(&state));
         assert_eq!(html.matches("data-state=\"stand\"").count(), 12);
         assert!(html.contains("data-phase=\"ready\""));
@@ -100,12 +100,12 @@ mod fixed_field {
                 html.contains(&format!("viewBox=\"{bounds}\"")),
                 "表示範囲が変わりました"
             );
-            if state.game().phase != GamePhase::Simulating {
+            if state.phase() != InputPhase::Simulating {
                 break;
             }
         }
-        assert_eq!(state.game().phase, GamePhase::Ready);
-        assert_eq!(state.game().teams[0].score_board().history().len(), 1);
-        assert!(state.game().teams[1].turn());
+        assert_eq!(state.phase(), InputPhase::Ready);
+        assert_eq!(state.teams()[0].score_board().history().len(), 1);
+        assert!(state.teams()[1].turn());
     }
 }

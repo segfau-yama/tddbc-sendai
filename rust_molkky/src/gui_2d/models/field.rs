@@ -51,3 +51,9 @@ impl GuiField {
             .collect()
     }
 }
+
+impl AsRef<Field> for GuiField {
+    fn as_ref(&self) -> &Field {
+        &self.field
+    }
+}

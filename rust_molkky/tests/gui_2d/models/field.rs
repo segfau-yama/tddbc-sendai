@@ -42,6 +42,7 @@ mod identity {
         let skittles = vec![Skittle::new(12), Skittle::new(12)];
         let field = GuiField::new(core_field, skittles.clone());
         assert_eq!(field.field().id(), core_field.id());
+        assert_eq!(field.as_ref().id(), core_field.id());
         assert_eq!(field.skittles(), skittles);
         assert_ne!(field.skittles()[0].id(), field.skittles()[1].id());
     }

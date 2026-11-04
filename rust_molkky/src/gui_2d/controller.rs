@@ -1,5 +1,5 @@
 use super::{
-    models::{Game, GamePhase, GuiField, GuiStick},
+    models::{GuiField, GuiStick},
     services::GuiMolkky,
 };
 use crate::core::{Molkky, Skittle, Team};
@@ -69,6 +69,13 @@ pub fn screen_to_world(cursor: [f64; 2], rect: [f64; 4], bounds: [f32; 4]) -> Op
     point.iter().all(|v| v.is_finite()).then_some(point)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputPhase {
+    Ready,
+    Charging,
+    Simulating,
+}
+
 struct Charge {
     pointer_id: i32,
     started_at: Duration,
@@ -77,7 +84,10 @@ struct Charge {
 
 /// 入力とゲーム進行を管理する。DOM接続と描画はappが担当する。
 pub struct Controller {
-    game: Game,
+    teams: Vec<Team>,
+    field: GuiField,
+    stick: GuiStick,
+    phase: InputPhase,
     rules: GuiMolkky,
     charge: Option<Charge>,
     last_frame: Duration,
@@ -85,15 +95,19 @@ pub struct Controller {
 }
 
 impl Controller {
-    pub fn new(teams: Vec<Team>) -> Self {
-        let mut game = Game::new(teams);
-        for team in &mut game.teams {
+    pub fn new(mut teams: Vec<Team>) -> Self {
+        for team in &mut teams {
             *team = team.with_turn(false);
         }
-        let placements = game.field.initial_positions(GuiMolkky::SKITTLE_RADIUS);
-        let rules = GuiMolkky::new(&game.stick, GuiField::THROW_POSITION, &placements);
+        let field = GuiField::default();
+        let stick = GuiStick::default();
+        let placements = field.initial_positions(GuiMolkky::SKITTLE_RADIUS);
+        let rules = GuiMolkky::new(&stick, GuiField::THROW_POSITION, &placements);
         let mut controller = Self {
-            game,
+            teams,
+            field,
+            stick,
+            phase: InputPhase::Ready,
             rules,
             charge: None,
             last_frame: Duration::ZERO,
@@ -103,8 +117,24 @@ impl Controller {
         controller
     }
 
-    pub fn game(&self) -> &Game {
-        &self.game
+    pub fn teams(&self) -> &[Team] {
+        &self.teams
+    }
+
+    pub fn field(&self) -> &GuiField {
+        &self.field
+    }
+
+    pub fn stick(&self) -> &GuiStick {
+        &self.stick
+    }
+
+    pub fn phase(&self) -> InputPhase {
+        self.phase
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.rules.next_team(&self.teams).is_none()
     }
 
     pub(crate) fn rules(&self) -> &GuiMolkky {
@@ -127,8 +157,8 @@ impl Controller {
                     sample.target(),
                     now,
                 ) {
-                    self.game.stick = self.preview(now).unwrap();
-                    self.game.phase = GamePhase::Charging;
+                    self.stick = self.preview(now).unwrap();
+                    self.phase = InputPhase::Charging;
                 }
             }
             DomEvent::Move(sample) => {
@@ -137,7 +167,7 @@ impl Controller {
                 };
                 self.move_to(sample.pointer_id, sample.target());
                 if let Some(stick) = self.preview(now) {
-                    self.game.stick = stick;
+                    self.stick = stick;
                 }
             }
             DomEvent::Release(sample) => {
@@ -150,14 +180,14 @@ impl Controller {
                     Some(MouseButton::from_web_code(sample.button)),
                     now,
                 ) {
-                    self.game.stick = stick;
+                    self.stick = stick;
                     if self.rules.throw(&stick) {
-                        self.game.phase = GamePhase::Simulating;
+                        self.phase = InputPhase::Simulating;
                         self.last_frame = now;
                         self.accumulator = Duration::ZERO;
                     } else {
                         self.reset_input();
-                        self.game.phase = GamePhase::Ready;
+                        self.phase = InputPhase::Ready;
                     }
                 }
             }
@@ -173,15 +203,15 @@ impl Controller {
 
     fn reset_input(&mut self) {
         self.charge = None;
-        self.game.stick = GuiStick::new(*self.game.stick.stick(), None, 0.0);
+        self.stick = GuiStick::new(*self.stick.stick(), None, 0.0);
     }
 
     fn update(&mut self, now: Duration) {
-        if self.game.phase == GamePhase::Charging {
+        if self.phase == InputPhase::Charging {
             if let Some(stick) = self.preview(now) {
-                self.game.stick = stick;
+                self.stick = stick;
             }
-        } else if self.game.phase == GamePhase::Simulating {
+        } else if self.phase == InputPhase::Simulating {
             // タブ復帰時に大量の物理更新で描画を止めない。
             self.accumulator += now
                 .saturating_sub(self.last_frame)
@@ -193,47 +223,42 @@ impl Controller {
                 self.accumulator -= step;
             }
             if self.rules.is_settled() {
-                let fallen = self.rules.hit(&self.game.stick, self.game.field.skittles());
+                let fallen = self.rules.hit(&self.stick, self.field.skittles());
                 self.finish_throw(&fallen);
             }
         }
     }
 
     fn finish_throw(&mut self, fallen: &[Skittle]) {
-        if self.game.phase != GamePhase::Simulating {
+        if self.phase != InputPhase::Simulating {
             return;
         }
         let current = self
-            .game
             .teams
             .iter()
             .position(Team::turn)
             .expect("投擲中は手番があります");
-        let team = &self.game.teams[current];
-        self.game.teams[current] =
+        let team = &self.teams[current];
+        self.teams[current] =
             team.with_score_board(team.score_board().add(self.rules.calc_score(fallen)));
         self.reset_input();
         self.update_game_state();
     }
 
     fn update_game_state(&mut self) {
-        let winner = self.rules.judge_game(&self.game.teams).map(Team::id);
+        let winner = self.rules.judge_game(&self.teams).map(Team::id);
         let next = if winner.is_some() {
             None
         } else {
-            self.rules.next_team(&self.game.teams).map(Team::id)
+            self.rules.next_team(&self.teams).map(Team::id)
         };
-        for team in &mut self.game.teams {
+        for team in &mut self.teams {
             *team = team.with_turn(next == Some(team.id()));
             if winner == Some(team.id()) {
                 *team = team.with_score_board(team.score_board().with_win());
             }
         }
-        self.game.phase = if next.is_some() {
-            GamePhase::Ready
-        } else {
-            GamePhase::Finished
-        };
+        self.phase = InputPhase::Ready;
     }
 
     fn pointer_id(&self) -> Option<i32> {
@@ -247,7 +272,8 @@ impl Controller {
         target: Option<[f32; 2]>,
         now: Duration,
     ) -> bool {
-        if self.game.phase != GamePhase::Ready
+        if self.is_finished()
+            || self.phase != InputPhase::Ready
             || button != Some(MouseButton::Primary)
             || self.charge.is_some()
         {
@@ -282,7 +308,7 @@ impl Controller {
             (elapsed % Self::CHARGE_PERIOD.as_secs_f64()) / Self::CHARGE_PERIOD.as_secs_f64();
         let speed = (1.0 - (phase * 2.0 - 1.0).abs()) as f32 * Self::MAX_SPEED;
         Some(GuiStick::new(
-            *self.game.stick.stick(),
+            *self.stick.stick(),
             Some(charge.target),
             speed,
         ))
@@ -312,9 +338,9 @@ impl Controller {
 
     /// focus喪失など、入力全体を破棄する場合に使う。
     fn cancel(&mut self) {
-        if self.game.phase == GamePhase::Charging {
+        if self.phase == InputPhase::Charging {
             self.reset_input();
-            self.game.phase = GamePhase::Ready;
+            self.phase = InputPhase::Ready;
         } else {
             self.charge = None;
         }

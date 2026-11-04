@@ -34,7 +34,6 @@ fn result(state: &mut Controller, numbers: &[i32]) {
         .iter()
         .map(|number| {
             state
-                .game
                 .field
                 .skittles()
                 .iter()
@@ -43,7 +42,7 @@ fn result(state: &mut Controller, numbers: &[i32]) {
                 .with_state(SkittleState::Fall)
         })
         .collect();
-    state.game.phase = GamePhase::Simulating;
+    state.phase = InputPhase::Simulating;
     state.finish_throw(&fallen);
 }
 
@@ -121,15 +120,11 @@ mod charging {
     fn 待機中の左ボタンだけ開始し再押下で上書きしない() {
         let mut input = Controller::new(vec![team("赤", &[])]);
         let now = Duration::from_secs(10);
-        for phase in [
-            GamePhase::Charging,
-            GamePhase::Simulating,
-            GamePhase::Finished,
-        ] {
-            input.game.phase = phase;
+        for phase in [InputPhase::Charging, InputPhase::Simulating] {
+            input.phase = phase;
             assert!(!input.press(1, Some(MouseButton::Primary), Some([0.0, 3.0]), now));
         }
-        input.game.phase = GamePhase::Ready;
+        input.phase = InputPhase::Ready;
         for button in [
             None,
             Some(MouseButton::Secondary),
@@ -151,7 +146,7 @@ mod charging {
     #[test]
     fn 経過時間で速度が上下し開始前の時刻は零とする() {
         let mut input = Controller::new(vec![team("赤", &[])]);
-        let stick = input.game.stick;
+        let stick = input.stick;
         let start = Duration::from_secs(10);
         assert!(input.press(1, Some(MouseButton::Primary), Some([0.0, 3.0]), start));
         for (millis, speed) in [
@@ -190,7 +185,7 @@ mod charging {
     #[test]
     fn 領域外でも所有pointerの左解放で表示と同じ初速を一度だけ返す() {
         let mut input = Controller::new(vec![team("赤", &[])]);
-        let stick = input.game.stick;
+        let stick = input.stick;
         assert!(input.press(
             1,
             Some(MouseButton::Primary),
@@ -242,11 +237,29 @@ mod initialization {
     use super::*;
 
     #[test]
+    fn チームを保持して共通フィールドと棒を用意し待機から始める() {
+        let teams = vec![
+            Team::new(Name::new("赤")).with_turn(true),
+            Team::new(Name::new("青")),
+        ];
+        let ids: Vec<_> = teams.iter().map(Team::id).collect();
+        let state = Controller::new(teams);
+
+        assert_eq!(state.teams.iter().map(Team::id).collect::<Vec<_>>(), ids);
+        assert!(state.teams[0].turn());
+        assert!(!state.teams[1].turn());
+        assert_eq!(state.field.skittles().len(), 12);
+        assert_eq!(state.stick.target(), None);
+        assert_eq!(state.stick.speed(), 0.0);
+        assert_eq!(state.phase, InputPhase::Ready);
+    }
+
+    #[test]
     fn 参加者がいないときは終了して入力を受け付けない() {
         let mut state = Controller::new(vec![]);
-        assert_eq!(state.game.phase, GamePhase::Finished);
+        assert!(state.is_finished());
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
-        assert_eq!(state.game.phase, GamePhase::Finished);
+        assert!(state.is_finished());
         assert_eq!(state.pointer_id(), None);
     }
 }
@@ -257,19 +270,19 @@ mod input {
     #[test]
     fn 所有pointerの取消で照準と速度と入力状態を一緒に解除する() {
         let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
-        let stick_id = state.game.stick.stick().id();
+        let stick_id = state.stick.stick().id();
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
         state.handle(DomEvent::Frame { time: 500.0 });
-        assert_eq!(state.game.stick.speed(), 5.0);
+        assert_eq!(state.stick.speed(), 5.0);
         state.handle(DomEvent::Cancel { pointer_id: 1 });
-        assert_eq!(state.game.phase, GamePhase::Ready);
+        assert_eq!(state.phase, InputPhase::Ready);
         assert_eq!(state.pointer_id(), None);
-        assert_eq!(state.game.stick.target(), None);
-        assert_eq!(state.game.stick.speed(), 0.0);
-        assert_eq!(state.game.stick.stick().id(), stick_id);
+        assert_eq!(state.stick.target(), None);
+        assert_eq!(state.stick.speed(), 0.0);
+        assert_eq!(state.stick.stick().id(), stick_id);
         state.handle(DomEvent::Release(pointer([0.0, 1.0], 600.0)));
-        assert!(state.game.teams[0].score_board().history().is_empty());
-        assert!(state.game.teams[0].turn());
+        assert!(state.teams[0].score_board().history().is_empty());
+        assert!(state.teams[0].turn());
     }
 
     #[test]
@@ -281,62 +294,62 @@ mod input {
             time: f64::INFINITY,
         });
         state.handle(DomEvent::Release(pointer([0.0, 1.0], -1.0)));
-        assert_eq!(state.game.stick.target(), Some([0.0, 1.0]));
-        assert_eq!(state.game.stick.speed(), 0.0);
-        assert_eq!(state.game.phase, GamePhase::Charging);
+        assert_eq!(state.stick.target(), Some([0.0, 1.0]));
+        assert_eq!(state.stick.speed(), 0.0);
+        assert_eq!(state.phase, InputPhase::Charging);
     }
 
     #[test]
     fn 蓄力と取消を接続し無効な方向では手番を進めない() {
         let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
-        assert_eq!(state.game.phase, GamePhase::Charging);
+        assert_eq!(state.phase, InputPhase::Charging);
 
         state.handle(DomEvent::Frame { time: 500.0 });
-        assert_eq!(state.game.stick.speed(), 5.0);
+        assert_eq!(state.stick.speed(), 5.0);
         state.handle(DomEvent::Cancel { pointer_id: 2 });
-        assert_eq!(state.game.phase, GamePhase::Charging);
+        assert_eq!(state.phase, InputPhase::Charging);
         state.handle(DomEvent::Blur);
-        assert_eq!(state.game.phase, GamePhase::Ready);
-        assert_eq!(state.game.stick.target(), None);
+        assert_eq!(state.phase, InputPhase::Ready);
+        assert_eq!(state.stick.target(), None);
         state.handle(DomEvent::Press(pointer([0.0, 0.0], 1000.0)));
         state.handle(DomEvent::Release(pointer([0.0, 0.0], 1500.0)));
-        assert_eq!(state.game.phase, GamePhase::Ready);
-        assert!(state.game.teams[0].turn());
-        assert!(state.game.teams[0].score_board().history().is_empty());
+        assert_eq!(state.phase, InputPhase::Ready);
+        assert!(state.teams[0].turn());
+        assert!(state.teams[0].score_board().history().is_empty());
     }
 
     #[test]
     fn 実際の物理停止後だけ一度採点し交代する() {
         let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
-        let field_id = state.game.field.field().id();
-        let stick_id = state.game.stick.stick().id();
+        let field_id = state.field.field().id();
+        let stick_id = state.stick.stick().id();
         state.handle(DomEvent::Press(pointer([0.2, 0.2], 0.0)));
         // 壁で反射してもスキットルへ届かない強さでミスを作る。
         state.handle(DomEvent::Release(pointer([0.2, 0.2], 100.0)));
-        assert_eq!(state.game.phase, GamePhase::Simulating);
+        assert_eq!(state.phase, InputPhase::Simulating);
         state.handle(DomEvent::Blur);
-        assert_eq!(state.game.phase, GamePhase::Simulating);
-        assert!(state.game.teams[0].score_board().history().is_empty());
+        assert_eq!(state.phase, InputPhase::Simulating);
+        assert!(state.teams[0].score_board().history().is_empty());
         // タブ復帰の大きな時間差でも、1フレームで採点まで進めない。
         state.handle(DomEvent::Frame { time: 30000.0 });
-        assert_eq!(state.game.phase, GamePhase::Simulating);
+        assert_eq!(state.phase, InputPhase::Simulating);
         for tick in 1..1200 {
             state.handle(DomEvent::Frame {
                 time: 30000.0 + f64::from(tick) * 20.0,
             });
-            if state.game.phase != GamePhase::Simulating {
+            if state.phase != InputPhase::Simulating {
                 break;
             }
         }
-        assert_eq!(state.game.phase, GamePhase::Ready);
-        assert_eq!(state.game.teams[0].score_board().history().len(), 1);
-        assert_eq!(state.game.teams[0].score_board().total(), 0);
-        assert!(state.game.teams[1].turn());
+        assert_eq!(state.phase, InputPhase::Ready);
+        assert_eq!(state.teams[0].score_board().history().len(), 1);
+        assert_eq!(state.teams[0].score_board().total(), 0);
+        assert!(state.teams[1].turn());
         state.handle(DomEvent::Frame { time: 100000.0 });
-        assert_eq!(state.game.teams[0].score_board().history().len(), 1);
-        assert_eq!(state.game.field.field().id(), field_id);
-        assert_eq!(state.game.stick.stick().id(), stick_id);
+        assert_eq!(state.teams[0].score_board().history().len(), 1);
+        assert_eq!(state.field.field().id(), field_id);
+        assert_eq!(state.stick.stick().id(), stick_id);
     }
 }
 
@@ -347,49 +360,50 @@ mod scoring {
     fn 複数本の番号を合計せずcoreで採点する() {
         let mut state = Controller::new(vec![team("赤", &[]), team("青", &[])]);
         result(&mut state, &[5, 8]);
-        assert_eq!(state.game.teams[0].score_board().total(), 2);
+        assert_eq!(state.teams[0].score_board().total(), 2);
         state.finish_throw(&[]);
-        assert_eq!(state.game.teams[0].score_board().history().len(), 1);
-        assert!(state.game.teams[1].score_board().history().is_empty());
+        assert_eq!(state.teams[0].score_board().history().len(), 1);
+        assert!(state.teams[1].score_board().history().is_empty());
     }
 
     #[test]
     fn 超過は二十五点へ戻して次チームへ進む() {
         let mut state = Controller::new(vec![team("赤", &[12, 12, 12, 12, 1]), team("青", &[])]);
         result(&mut state, &[2]);
-        assert_eq!(state.game.teams[0].score_board().total(), 25);
-        assert_eq!(state.game.phase, GamePhase::Ready);
-        assert!(state.game.teams[1].turn());
+        assert_eq!(state.teams[0].score_board().total(), 25);
+        assert_eq!(state.phase, InputPhase::Ready);
+        assert!(state.teams[1].turn());
     }
 
     #[test]
     fn 五十点なら終了して以降の入力を無効にする() {
         let mut state = Controller::new(vec![team("赤", &[12, 12, 12, 12, 1]), team("青", &[])]);
         result(&mut state, &[1]);
-        assert_eq!(state.game.phase, GamePhase::Finished);
-        assert!(state.game.teams.iter().all(|t| !t.turn()));
+        assert!(state.is_finished());
+        assert!(state.teams.iter().all(|t| !t.turn()));
         state.handle(DomEvent::Press(pointer([0.0, 1.0], 0.0)));
+        assert_eq!(state.pointer_id(), None);
         state.handle(DomEvent::Release(pointer([0.0, 1.0], 500.0)));
-        assert_eq!(state.game.teams[0].score_board().history().len(), 6);
+        assert_eq!(state.teams[0].score_board().history().len(), 6);
     }
 
     #[test]
     fn 三連続ミスで失格し最後の生存者が履歴を増やさず勝つ() {
         let mut state = Controller::new(vec![team("赤", &[0, 0]), team("青", &[])]);
         result(&mut state, &[]);
-        assert_eq!(state.game.phase, GamePhase::Finished);
+        assert!(state.is_finished());
         assert_eq!(
-            state.game.teams[0].score_board().state(),
+            state.teams[0].score_board().state(),
             crate::ScoreState::Disqualified
         );
-        assert_eq!(state.game.teams[1].score_board().total(), 50);
-        assert!(state.game.teams[1].score_board().history().is_empty());
+        assert_eq!(state.teams[1].score_board().total(), 50);
+        assert!(state.teams[1].score_board().history().is_empty());
     }
 
     #[test]
     fn 単独の失格は勝者なしで終了する() {
         let mut state = Controller::new(vec![team("赤", &[0, 0])]);
         result(&mut state, &[]);
-        assert_eq!(state.game.phase, GamePhase::Finished);
+        assert!(state.is_finished());
     }
 }
