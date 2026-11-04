@@ -1,5 +1,16 @@
 # 開発支援方針の記録
 
+## Molkkyの関連型をcoreモデルへ委譲できる型に制限する設計（2026-11-04）
+
+- 対象：core/services/molkky.rsとGUIモデル。設計相談のみで、ソースは変更しない。Ponytailの方針に従い、新しい独自traitより標準のAsRefを優先する。
+- 推奨API案：`type Stick: AsRef<Stick>; type Skittle: AsRef<Skittle>;`とし、aim/hitの引数を`&[Self::Skittle]`へ変更する。GuiMolkkyではGuiStick/GuiSkittle、CUIでは既存の具象型を指定する。具象実装ではGUIのbodyハンドル等もそのまま読める。
+- AsRefはcoreモデルへの共有参照を提供する契約であり、フィールドの内包や全メソッドの自動委譲をコンパイラが検査するものではない。Rustには任意のフィールドを持つ型を構造的に指定する制約はない。core自身を関連型に使う場合もAsRef<Self>の明示実装が必要。
+- hitの戻り値は当面`Vec<Skittle>`を維持できる。転倒した個体のcore情報を返すことで、GuiSkittleやボディハンドルを採点用に複製する必要がない。具象モデルへFallを反映する処理は別途必要であり、AsRefだけで状態更新まで解決するわけではない。
+- 内側を置き換える契約が実際に必要ならAsMutを追加する。AsRefは既存のwith_stateによる更新やGUI状態の同期を代行しない。Derefによる暗黙のメソッド解決は必要なく、委譲用macroや新しいStrategy traitも追加しない。
+- 既存の採点・勝敗・次手番のデフォルト実装は維持可能。この案なら前回検討した物理メソッドのcore外への移動は必須ではない。ただし関連型追加と全実装の署名変更は必要。
+- [x] 現行トレイトの関連型とGuiStickの合成を静的に確認した。
+- [x] 文書差分をgit diff --checkで確認した。ソース変更・動作テストは行っていない。
+
 ## GuiSkittle追加と空のGuiFieldを前提にした設計レビュー（2026-11-04）
 
 - 対象：126d12f時点のgui_2d/models、services/molkky.rs、app.rs、controller.rs、view。今回は設計案だけを整理し、ソースや既存APIを変更しない。レビュー記録はAGENTS.mdに従い保存する。
