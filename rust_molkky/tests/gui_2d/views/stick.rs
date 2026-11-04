@@ -1,9 +1,9 @@
 use rust_molkky::{
-    Field, Stick, StickState, Throw,
+    Stick, StickState, Throw,
     gui_2d::{
         models::{GuiField, GuiStick},
         services::field::create_world,
-        view::stick,
+        views::stick,
     },
 };
 
@@ -25,10 +25,10 @@ mod next_throw {
     #[test]
     fn 初期化した次投のモデルは物理更新前も投擲位置で表示される() {
         let mut model = GuiStick::throw(GuiStick::new(Stick::new(), Some([0.0, 1.0]), 6.0));
-        let mut field = GuiField::new(Field::new(), vec![]);
-        let mut rules = create_world(&model, field.skittles());
+        let mut skittles = vec![];
+        let mut rules = create_world(&model, &skittles);
         for _ in 0..1200 {
-            (field, model) = rules.update(&field, model);
+            (skittles, model) = rules.update(&skittles, model);
             if model.as_ref().state() == StickState::Stop {
                 break;
             }
@@ -41,7 +41,7 @@ mod next_throw {
         let thrown = GuiStick::throw(held);
         assert_eq!(thrown.position(), GuiField::THROW_POSITION);
         assert_eq!(dioxus_ssr::render_element(stick(&thrown)), html);
-        let (_, moved) = rules.update(&field, thrown);
+        let (_, moved) = rules.update(&skittles, thrown);
         assert_ne!(dioxus_ssr::render_element(stick(&moved)), html);
     }
 }

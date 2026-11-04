@@ -1,7 +1,35 @@
 # 開発支援方針の記録
 
+## controllersを撤去しviewsのコンポーネントとservicesへ移行（2026-11-04）
+
+- 対象：gui_2dのcontrollers・view・app、GUIモデルとサービス、対応するテスト・起動元・README。最新の指示を優先し、前節のcontrollerを残す案は置き換える。
+- 設計：views/Appが入力・フレーム時刻・リアクティブな描画とDOM接続の破棄を所有する。services/Gameが投擲・採点・終了・交代、GuiMolkkyが共有ワールドと衝突を担当する。GuiFieldは個体一覧を持たず、GameがGuiSkittleの一覧を保持する。既存coreの得点・勝敗ルールを再利用する。
+- API：GuiStick::updateは位置・角度・速度・角速度から同じIdの更新値を返し、既存Moveの判定を使う。GuiSkittle::updateは位置・角度・判定済み状態・照準状態から同じId/番号の更新値を返す。共有ワールドは固定刻みごとに1回だけ進める。modelsの非公開フィールドを保ち、core/CUIや依存関係は変更しない。
+- 完了条件：controllersを削除し、views内で描画・入力・更新・破棄を扱えること。現在の固定フィールド・反射・連鎖・入力取消・採点・勝敗を保つこと。作業開始時の既存コンパイル不整合はTDDのRedとは数えない。
+- [x] モデルのupdateがId・投擲情報・元の値を保ち、位置・速度・停止状態を更新するテストを先に実行した。
+- [x] GuiSkittleのupdateと標準配置、独立したGuiFieldをテストした。
+- [x] 物理サービスをモデルのupdate経由に変更し、一刻み・衝突・壁・連鎖の既存検証を維持した。
+- [x] ゲームサービスに採点・勝敗・立て直し・交代を移し、Hitが残る間の採点防止と二重加点防止を確認した。
+- [x] viewsコンポーネントへ入力・フレーム・描画・破棄を移し、controllersを削除した。
+- [x] テストの配置と登録・公開API・READMEを更新し、GUI/CUI・feature分離・fmt/Clippy・Web実操作・差分を確認した。
+
+### 実装と検証の記録
+
+- Red：GuiStickの物理結果反映と停止条件の2件は、同じupdate APIの契約としてまとめて選び、update未定義によるE0599を確認した（/tmp/molkky-components-model-red.log）。実装後は2件成功。次にGuiSkittleのupdateを1件選び、未定義で失敗させてから実装し成功した（/tmp/molkky-components-skittle-red.log）。モデルのみの6件が成功した。これはAPIのRedであり、物理の振る舞いを実行して失敗した記録とは区別する。
+- Red→Green：JSの破棄テストを先に追加した。通常終了は成功したが、接続失敗時はcaptureが残るため失敗した（/tmp/molkky-components-dispose-red.log）。views/app.jsの後始末をfinallyに置き、イベントリスナー・requestAnimationFrame・pointer captureを必ず解除して2件とも成功した（/tmp/molkky-components-dispose-green.log）。追加のテスト依存は不要で、Node.js標準ライブラリを使う。
+- Refactor：controllersを撤去し、views/Appコンポーネントにuse_signal・入力・フレーム時刻・描画合成・use_dropを集約した。既存のElementを返す描画部品はviewsへ移して再利用する。Phaseは入力の所有と棒の状態から求め、重複して保存しない。サービスやモデルはDioxusに依存しない。
+- services/Gameは注入したチーム・フィールド・棒・個体一覧を保持し、照準・投擲・完了時の採点・勝敗・立て直し・交代を接続する。coreのルールを複製しない。GuiMolkkyは共有ワールドを進め、物理結果をGuiStick::updateとGuiSkittle::updateで反映する。個体数0本と12本で棒の一刻みの移動量が同じになる退行テストも成功した。このテストは追加時から成功しており、Redとは扱わない。
+- API移行：create_fieldはGuiField・GuiStick・Vec<GuiSkittle>を返し、create_worldは既存モデルから物理を構築する。GuiMolkky::updateは個体一覧と棒を受け、更新後の一覧と棒を返す。gui_2d::views::Appを起動元とし、旧app/controllers/viewへの公開経路を更新した。GuiFieldの個体保持を復活させず、モデルのフィールドも非公開のまま保つ。
+- テスト移行：controllersの採点・初期化・Hit継続時の完了判定はtests/gui_2d/services/game.rsへ、入力・表示・固定範囲はtests/gui_2d/views/app.rsへ移した。Fieldの識別子はGameでも、同番号の別個体と位置保持は物理テストでも検証を維持する。旧APIのため成立しなくなったテストを無視したり、期待値を実装に合わせて弱めたりしていない。
+- 最終検証：`cd rust_molkky && cargo test --locked`は149件、`cargo test --locked --features gui_2d`は205件、`cargo test --locked --no-default-features --features gui_2d`は112件成功し、失敗・無視0件。ログは/tmp/molkky-components-default.log、/tmp/molkky-components-green.log、/tmp/molkky-components-gui-only.log。`node tests/gui_2d/views/app.js`も2件成功した。
+- 品質・ビルド：`cargo fmt --check`、`cargo clippy --locked --all-targets --features gui_2d -- -D warnings`、`cargo build --locked --no-default-features --features gui_2d_web --bin gui_2d --target wasm32-unknown-unknown`、git diff --checkが成功した。core/CUI・Cargo.toml/Cargo.lockは変更していない。
+- Web実操作：検証専用のdxサーバーを127.0.0.1:8081で起動し、既存のChromiumテストtests/gui_2d/app.jsで入力・capture・取消・連続投擲・採点・失格・結果・固定範囲・反射が成功した（/tmp/molkky-components-browser.log）。Playwrightは検証用に/tmpへ配置し、製品の依存には加えていない。
+- 検証後、実行引数で特定した8081番サーバーだけを停止した。文書差分を確認し、今回の関連ソース・テスト・READMEと実装記録をコミットする。作業開始前からの過去の開発記録の削除は作業ツリーに保つ。
+- 未確認：デスクトップ版のコンパイルと実機操作。現在の環境ではxdoとayatana-appindicatorの開発情報が見つからず、Webを検証対象とした。実装したゲームの範囲に未完了の項目はない。今回は新しいSTEPのルールを追加していない。
+
 ## モデルの物理状態更新とcontrollerの画面更新を分ける案（2026-11-04）
 
+- 状態：最新の依頼によりcontrollerを残す案を置き換え、個体のupdateを実装し、画面更新をviewsのコンポーネントへ移行した。上の実装記録を参照する。
 - 対象・入力：前節P1に対するユーザー案。skittle/stickモデルに物理計算のupdate、controllerに画面のupdateを置く案を、現在のRapier共有ワールド・入力処理・既存テストと照合する。今回は設計の検討であり、実装の指示とは扱わない。
 - [x] 個体の状態更新と共有物理ワールドの時間進行を区別した。
 - [x] controllerのフレーム更新とviewの描画を区別した。
@@ -23,6 +51,7 @@
 
 ## gui_2dの新しい設計指針との整合レビュー（2026-11-04）
 
+- 状態：当時の作業ツリーに対するレビュー。最新の依頼でcontrollersの撤去とモデル更新・サービス構築の移行を実装した。コンパイル失敗の記録は当時の結果として残し、現在の検証結果は冒頭へ記録する。
 - 対象：作業ツリーの `rust_molkky/src/gui_2d` と対応テスト・呼び出し元。提示されたviews/controllers/models/servicesの責務と、修正済みmodelsを前提に確認する。
 - 完了条件：依存関係と実行経路を追い、指針との不一致を根拠・具体例・優先度付きで記録する。今回はレビューのみで、ソースとテストは変更しない。
 - 前提：1画面で1試合を動かす現在のGUIを対象とする。viewの条件分岐・座標変換など描画に必要な処理と、勝敗・採点・衝突などの判断を区別する。`views` は描画層の指定として読み、`view->view` の表記だけから改名先を断定しない。

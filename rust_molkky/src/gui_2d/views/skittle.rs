@@ -5,10 +5,10 @@ use dioxus::prelude::*;
 pub fn skittle(skittle: &GuiSkittle) -> Element {
     let [x, y] = skittle.position();
     let radius = GuiSkittle::RADIUS;
-    let pin = skittle.as_ref();
-    let id = pin.id();
-    let number = pin.number();
-    let (state, fill) = match pin.state() {
+    let skittle = skittle.as_ref();
+    let id = skittle.id();
+    let number = skittle.number();
+    let (state, fill) = match skittle.state() {
         SkittleState::Stand => ("stand", "#e5bd79"),
         SkittleState::Hit => ("hit", "#eaa63c"),
         SkittleState::Fall => ("fall", "#a5a5a5"),

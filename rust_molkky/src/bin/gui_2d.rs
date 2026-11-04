@@ -1,3 +1,3 @@
 fn main() {
-    dioxus::launch(rust_molkky::gui_2d::app::App);
+    dioxus::launch(rust_molkky::gui_2d::views::App);
 }

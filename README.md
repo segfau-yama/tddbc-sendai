@@ -31,17 +31,16 @@ cargo test --locked --test application
 | src/cui/io/input.rs | Input：入力元の保持、読み取り・変換・検証・再入力 |
 | src/cui/io/output.rs | Output：出力先の保持、プロンプト・得点表・結果の表示 |
 | src/cui/run.rs | チーム設定、投てき・採点・交代・終了のゲームループ |
-| src/gui_2d/app.rs | Dioxusの起動・状態とDOM接続の寿命管理 |
+| src/gui_2d/views/app.rs | Dioxusコンポーネントの入力・フレーム・描画更新と接続の破棄 |
 | src/gui_2d/models/ | GuiField・GuiStick・GuiSkittle・GuiTeam・GuiScoreBoardのcore委譲型 |
-| src/gui_2d/models/field.rs | 渡されたcore::Fieldと個体集合・固定範囲の保持 |
-| src/gui_2d/services/field.rs | 標準12本・配置・棒・物理ワールドの組み立て |
+| src/gui_2d/models/field.rs | 渡されたcore::Fieldの識別子と固定範囲の保持 |
+| src/gui_2d/services/field.rs | フィールド・棒・標準12本の生成と、モデルからの物理ワールド構築 |
 | src/gui_2d/services/teams.rs | 名前からチームを生成 |
-| src/gui_2d/controllers/mouse.rs | マウス入力の解釈・座標変換・蓄力・解放・取消 |
-| src/gui_2d/controllers/app.rs | 進行・入力と物理の接続、状態に応じた画面・得点表・結果の合成 |
-| src/gui_2d/controllers/field.rs | モデルをviewへ渡し、照準・フィールド内の描画部品を合成 |
-| src/gui_2d/app.js | DOMのpointer capture・イベントと時刻の通知 |
+| src/gui_2d/views/mouse.rs | コンポーネント内のマウス入力・座標変換・蓄力・解放・取消 |
+| src/gui_2d/services/game.rs | Game：モデルと物理を使う投擲・採点・勝敗・立て直し・交代 |
+| src/gui_2d/views/app.js | DOMのpointer capture・時刻通知と破棄時のイベント・フレーム解除 |
 | src/gui_2d/services/molkky.rs | Rapierによる投擲・物理更新・転倒判定、coreルールの利用 |
-| src/gui_2d/view/ | SVG、速度メーター、得点表、結果表示 |
+| src/gui_2d/views/ | AppコンポーネントとSVG・速度メーター・得点表・結果の描画部品 |
 | src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
 
 InputとOutputはプレゼンテーション層の入出力処理なので、ドメインサービスの実装とは別の`io/`へ配置します。
@@ -131,7 +130,7 @@ cargo run --locked --no-default-features --features gui_2d_desktop --bin gui_2d
 
 CUIは既定のcui feature、GUIはgui_2d_webまたはgui_2d_desktopを選択します。Webの起動スクリプトはCUI依存を除外し、UUIDのjs機能を有効にします。単なるgui_2d featureはヘッドレスのテスト・ライブラリ利用向けで、起動時はレンダラーを選択してください。
 
-`services::field::create_field`が標準12本・共通フィールド・棒とGuiMolkkyを組み立てます。`controllers/app.rs`のControllerはサービスのupdateを固定刻みで呼び、返されたモデルの状態から採点・交代を接続します。controllerは物理ワールドを参照せず、GuiStick/GuiSkittleの位置・角度・coreの状態をviewへ渡します。`app.rs`はDioxusとDOM接続の寿命を管理します。全チームで同じフィールドと棒を共有します。操作用の初期投擲距離は1m、高さ方向の転倒は物理サービスの力積による近似です。
+`views::App`が入力・経過時間・描画更新とDOM接続の寿命を所有します。`services::field::create_field`はGuiField・GuiStick・標準12本のVec<GuiSkittle>を返し、`services::Game::new`がそれらとチームを受け取って物理ワールドと進行を用意します。Gameは個体一覧を保持し、GuiFieldはフィールドの識別子と範囲を表します。viewsから固定刻みでGame::updateを呼び、採点・交代はサービスに任せます。全チームで同じフィールドと棒を共有します。操作用の初期投擲距離は1m、高さ方向の転倒は物理サービスの力積による近似です。
 
 表示範囲はx=-0.3〜0.3m、y=-0.15〜1.35mで固定し、物体の移動による拡大縮小は行いません。`GuiField::BOUNDS`と`WALL_THICKNESS`を描画と物理で共用し、外周の厚さ2cmの壁で棒・スキットルが反射します。反発係数は0.5で、既存の減衰と合わせて停止します。壁と反射はこのGUIの取り決めです。
 
@@ -142,8 +141,11 @@ cd rust_molkky
 cargo test --locked --features gui_2d
 cargo test --locked --no-default-features --features gui_2d
 cargo clippy --locked --all-targets --features gui_2d -- -D warnings
-# Controllerの入力・進行を絞って確認する場合
-cargo test --locked --features gui_2d --lib gui_2d::controllers
+# 入力・描画、ゲーム進行を絞って確認する場合
+cargo test --locked --features gui_2d --lib gui_2d::views
+cargo test --locked --features gui_2d --lib gui_2d::services::game
+# DOM接続の破棄・接続失敗時の後始末（Node.jsのみ）
+node tests/gui_2d/views/app.js
 ```
 
 Webを起動した状態で、実DOMの入力確認も実行できます。次はLinux用の例です。Playwrightは検証時だけ使用し、ゲームの実行依存には含めません。
@@ -155,11 +157,11 @@ npm install --prefix /tmp/molkky-browser-tools --no-save playwright
 NODE_PATH=/tmp/molkky-browser-tools/node_modules node tests/gui_2d/app.js
 ```
 
-既存Chromiumを使う場合はCHROMIUM_PATH、別の起動URLを使う場合はGUI_URLを指定します。Chromiumでcapture・取消・リサイズ・領域外解放・採点・失格・勝利・終了後の入力無効化を確認しました。Linuxデスクトップは仮想画面で起動・投擲・交代を確認済みです。Windows/macOSの実機確認は行っていません。
+既存Chromiumを使う場合はCHROMIUM_PATH、別の起動URLを使う場合はGUI_URLを指定します。Chromiumでcapture・取消・リサイズ・領域外解放・採点・失格・勝利・終了後の入力無効化を確認しました。今回のコンポーネント移行ではデスクトップ版の実機確認は行っていません。Linuxでは前述の開発ライブラリが必要です。
 
 ### GUI 2Dの描画部品
 
-`src/gui_2d/view/`にDioxusのElementを返す関数を実装しています。`gui_2d` featureを有効にすると、`gui_2d::view`から`field`、`skittle`、`stick`、`speedometer`、`scores`、`result`、`aim`を利用できます。
+`src/gui_2d/views/`にDioxusのElementを返す関数を実装しています。`gui_2d` featureを有効にすると、`gui_2d::views`から`field`、`skittle`、`stick`、`speedometer`、`scores`、`result`、`aim`を利用できます。
 
 フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。棒・スキットルのviewはGuiStick/GuiSkittleを受け取り、モデルの位置と状態・型の寸法定数を読み取ります。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。aimは照準の線と目標を表示します。
 
@@ -169,7 +171,7 @@ cargo test --locked --features gui_2d --test gui_2d
 cargo build --locked --features gui_2d
 ```
 
-描画はdioxus-ssrによるHTML/SVG出力と、Chromium・LinuxのWebKitデスクトップで確認しています。既存CUIの起動方法は変わりません。
+描画はdioxus-ssrによるHTML/SVG出力とChromiumで確認しています。既存CUIの起動方法は変わりません。
 
 ### GUI 2Dの投擲サービス
 
@@ -177,27 +179,29 @@ cargo build --locked --features gui_2d
 
 | API | 動作 |
 | --- | --- |
-| update | GuiFieldとGuiStickから、1/60秒の物理更新を反映した新しいGuiField/GuiStickを返す。保持中は照準だけを更新する |
+| update | GuiSkittleの一覧とGuiStickから、1/60秒の物理更新を反映した新しい一覧とGuiStickを返す。保持中は照準だけを更新する |
 | aim | Rapierの形状問い合わせで候補を選び、位置・角度・照準状態を反映したGuiSkittleを返す |
 | hit | 指定したStickとSkittleの接触とボディ状態から、位置・角度・状態を更新したGuiSkittleを返す |
 | chain_hit | 指定した2個体の実際の接触ペアから、対象の物理状態を反映したGuiSkittleを返す |
 | stand_up | 位置・Id・番号を保ち、対象ボディの角度・速度・角速度・接触記録とStandを復元する |
 
-updateだけが時間を進めます。aim/hit/chain_hit/stand_upは既存Molkkyの具象実装で、updateはその操作を使って全個体へ結果を反映します。direction/resolve_hit、描画のためのpose、flyは削除しました。初速はthrowでモデルへ設定し、updateがボディへ反映します。停止したStickを繰り返しupdateしても新しい投擲を始めません。次投はGuiStick::newで保持状態を用意します。
+GuiMolkky::updateが共有ワールドを固定刻みごとに1回進め、aim/hit/chain_hit/stand_upとモデルのupdateを使って各個体へ結果を反映します。GuiStick::updateは位置・角度・速度・角速度、GuiSkittle::updateは位置・角度・判定済み状態・照準状態を反映し、Idと元の値を保ちます。モデルは物理ワールドを進めません。初速はGuiStick::throwで設定し、サービスがボディへ反映します。停止した棒のupdateで次投を始めず、次投は保持状態から用意します。
 
-Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。投擲完了は「StickがStop、かつHitが0本」です。controllerはその時点でFallだけをcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を一度だけ反映します。弱い衝突はHitになっても最終的にStandへ戻り、得点には含めません。継続時はstand_upで移動後の位置とIdを保って立て直します。
+Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。投擲完了は「StickがStop、かつHitが0本」です。Gameサービスはその時点でFallだけをcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を一度だけ反映します。弱い衝突はHitになっても最終的にStandへ戻り、得点には含めません。継続時はstand_upで移動後の位置とIdを保って立て直します。
 
 半径・質量はGuiSkittle、棒の半径・長さ・質量はGuiStickの関連定数です。時間刻み・共通減衰・転倒閾値はGUIサービスの定数で、時間刻みはservices::TIME_STEPから参照します。エンジン専用traitやphysics.rs、開始用のラッパーは追加していません。
 
 ### GUI 2Dの入力と進行
 
-`src/gui_2d/controllers/mouse.rs`に、`screen_to_world`と`MouseInput`を実装しています。座標変換はSVGの中央寄せ・アスペクト比維持・Y上向きに合わせ、余白や領域外を拒否します。入力の矩形はborderを除いたSVG描画領域のCSSピクセル値です。
+`src/gui_2d/views/mouse.rs`に、`screen_to_world`と`MouseInput`を実装しています。座標変換はSVGの中央寄せ・アスペクト比維持・Y上向きに合わせ、余白や領域外を拒否します。入力の矩形はborderを除いたSVG描画領域のCSSピクセル値です。
 
 MouseInput::default()はマウスの入力状態だけを用意します。press・move_to・preview・release・cancelで、左ボタンの所有・照準・時間ベースの速度（0〜10m/s、往復2秒）・解放・取消を扱います。previewとreleaseは目標座標と速度を返し、coreの棒・チーム・採点・物理ワールドには依存しません。領域外では最後の有効な照準を保持します。
 
-services::teams::from_namesが初期チームを生成します。controllers/app.rsのControllerはservices::field::create_fieldの生成物を受け取り、最初の手番を設定します。進行状態のPhaseはこのcontrollerに置き、Ready・Charging・Simulatingを表します。Finishedや勝者のフラグは保存せず、is_finished()はcoreのnext_teamの結果を参照します。勝者はjudge_gameで求め、最後の生存者、全失格、参加者なしも既存ルールに従います。
+services::teams::from_namesが初期チームを生成します。views/Appの状態はGameサービス、MouseInput、フレーム時刻と蓄積時間を保持します。Ready・Charging・Simulatingは入力の所有と棒の状態から求めます。Gameはcoreのnext_teamとjudge_gameを使い、最後の生存者、全失格、参加者なしも既存ルールに従います。投擲・採点・立て直し・交代と終了後の記録防止はservices/game.rsに置きます。
 
-app.jsはDOMのpointer captureと時刻通知を行う接続コードです。appが受信イベントをControllerへ渡し、マウス処理はMouseInputが担当します。待機中・未終了の場合だけ押下を受け付け、解放時の目標と強さをGuiStickへ設定し、GuiStick::throw(stick)で投擲した棒を受け取ります。Frameイベントではupdateからモデルを受け取り、StickのStopとHitの解消を確認して、今回のFall個体だけを一度採点します。update_game_stateは初期化と投擲完了時に既存のjudge_game・next_teamの判定を反映します。取消は入力状態と表示用の照準・速度を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Webとdesktopで同じdocument::evalの接続を使います。
+views/app.jsはDOMのpointer captureと時刻通知を行う接続コードです。Appが受信イベントを扱い、マウス処理はMouseInputが担当します。待機中・未終了の場合だけ押下を受け付け、蓄力結果でGame::aimとthrowを呼びます。Frameイベントは固定刻みでGame::updateを呼び、更新後のモデルから再描画します。取消は照準・速度・入力状態を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。
+
+Appの破棄時はuse_dropでJSへ終了を通知します。JSは通常終了でも接続失敗でもfinallyでイベントリスナー、requestAnimationFrame、pointer captureを解除します。ゲームのルールや物理計算はviewに持たせません。Webとdesktopで同じコンポーネントを使います。
 
 ## Java演習環境
 

@@ -13,41 +13,38 @@ mod initialization {
     #[test]
     fn 不正な配置を物理ワールドへ渡さない() {
         let stick = GuiStick::default();
-        let pin = Skittle::new(12);
-        for pins in [
+        let skittle = Skittle::new(12);
+        for skittles in [
             vec![
-                GuiSkittle::new(pin, [0.0, 1.0]),
-                GuiSkittle::new(pin, [0.1, 1.0]),
+                GuiSkittle::new(skittle, [0.0, 1.0]),
+                GuiSkittle::new(skittle, [0.1, 1.0]),
             ],
-            vec![GuiSkittle::new(pin, [f32::INFINITY, 1.0])],
+            vec![GuiSkittle::new(skittle, [f32::INFINITY, 1.0])],
         ] {
-            assert!(std::panic::catch_unwind(|| create_world(&stick, &pins)).is_err());
+            assert!(std::panic::catch_unwind(|| create_world(&stick, &skittles)).is_err());
         }
     }
 
     #[test]
     fn 通常フィールドには一から十二の別個体が立っている() {
-        let (field, stick, _) = create_field();
+        let (_, stick, skittles) = create_field();
         assert_eq!(
-            field
-                .skittles()
+            skittles
                 .iter()
-                .map(|pin| pin.as_ref().number())
+                .map(|skittle| skittle.as_ref().number())
                 .collect::<Vec<_>>(),
             (1..=12).collect::<Vec<_>>()
         );
         assert_eq!(
-            field
-                .skittles()
+            skittles
                 .iter()
-                .map(|pin| pin.as_ref().id())
+                .map(|skittle| skittle.as_ref().id())
                 .collect::<HashSet<_>>()
                 .len(),
             12
         );
         assert!(
-            field
-                .skittles()
+            skittles
                 .iter()
                 .all(|s| s.as_ref().state() == SkittleState::Stand)
         );
@@ -59,7 +56,7 @@ mod initialization {
 
     #[test]
     fn 同じ個体を標準の四列へ配置し投擲位置から一メートル離す() {
-        let (field, _, _) = create_field();
+        let (_, _, skittles) = create_field();
         for (number, expected) in [
             (1, [-0.0275, 1.0]),
             (2, [0.0275, 1.0]),
@@ -74,8 +71,7 @@ mod initialization {
             (9, [0.0, 1.1428941]),
             (8, [0.055, 1.1428941]),
         ] {
-            let skittle = field
-                .skittles()
+            let skittle = skittles
                 .iter()
                 .find(|s| s.as_ref().number() == number)
                 .unwrap();

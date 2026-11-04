@@ -79,7 +79,10 @@ function tick(time) {
     frame = requestAnimationFrame(tick);
 }
 frame = requestAnimationFrame(tick);
-await dioxus.recv();
-listeners.abort();
-cancelAnimationFrame(frame);
-clearCapture();
+try {
+    await dioxus.recv();
+} finally {
+    listeners.abort();
+    cancelAnimationFrame(frame);
+    clearCapture();
+}

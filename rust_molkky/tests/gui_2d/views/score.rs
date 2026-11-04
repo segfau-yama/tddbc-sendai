@@ -1,6 +1,6 @@
 use rust_molkky::{
     Molkky, Name, ScoreBoard, Skittle, Team,
-    gui_2d::{models::GuiStick, services::field::create_world, view::scores},
+    gui_2d::{models::GuiStick, services::field::create_world, views::scores},
 };
 
 fn team(name: &str, points: &[i32]) -> Team {
@@ -8,12 +8,12 @@ fn team(name: &str, points: &[i32]) -> Team {
     let history = points
         .iter()
         .map(|&value| {
-            let pins = if value == 0 {
+            let skittles = if value == 0 {
                 vec![]
             } else {
                 vec![Skittle::new(value)]
             };
-            rules.calc_score(&pins)
+            rules.calc_score(&skittles)
         })
         .collect();
     Team::new(Name::new(name)).with_score_board(ScoreBoard::new(history))

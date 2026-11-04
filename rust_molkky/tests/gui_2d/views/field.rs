@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use rust_molkky::gui_2d::view::field;
+use rust_molkky::gui_2d::views::field;
 
 mod composition {
     use super::*;

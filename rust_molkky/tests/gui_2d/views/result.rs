@@ -1,4 +1,4 @@
-use rust_molkky::{Name, Team, gui_2d::view::result};
+use rust_molkky::{Name, Team, gui_2d::views::result};
 
 mod display {
     use super::*;

@@ -1,31 +1,29 @@
 use rust_molkky::{
-    Field, Molkky, Name, Skittle, SkittleState, StickState, Team, Throw,
+    Molkky, Name, Skittle, SkittleState, StickState, Team, Throw,
     gui_2d::{
-        models::{GuiField, GuiSkittle, GuiStick},
+        models::{GuiSkittle, GuiStick},
         services::{GuiMolkky, TIME_STEP, field::create_world},
     },
 };
 
-fn scene(positions: &[[f32; 2]]) -> (GuiMolkky, GuiField, GuiStick) {
+fn scene(positions: &[[f32; 2]]) -> (GuiMolkky, Vec<GuiSkittle>, GuiStick) {
     let stick = GuiStick::default();
-    let pins = positions
+    let skittles: Vec<_> = positions
         .iter()
         .map(|&pos| GuiSkittle::new(Skittle::new(12), pos))
         .collect();
-    let field = GuiField::new(Field::new(), pins);
-    (create_world(&stick, field.skittles()), field, stick)
+    (create_world(&stick, &skittles), skittles, stick)
 }
 
 fn shot(stick: &GuiStick, target: [f32; 2], speed: f32) -> GuiStick {
     GuiStick::throw(GuiStick::new(*stick.as_ref(), Some(target), speed))
 }
 
-fn settle(rules: &mut GuiMolkky, field: &mut GuiField, stick: &mut GuiStick) {
+fn settle(rules: &mut GuiMolkky, skittles: &mut Vec<GuiSkittle>, stick: &mut GuiStick) {
     for _ in 0..(20.0 / TIME_STEP) as usize {
-        (*field, *stick) = rules.update(field, *stick);
+        (*skittles, *stick) = rules.update(skittles, *stick);
         if stick.as_ref().state() == StickState::Stop
-            && field
-                .skittles()
+            && skittles
                 .iter()
                 .all(|p| p.as_ref().state() != SkittleState::Hit)
         {
@@ -35,9 +33,8 @@ fn settle(rules: &mut GuiMolkky, field: &mut GuiField, stick: &mut GuiStick) {
     panic!("20秒相当の更新で停止しませんでした");
 }
 
-fn fallen_skittles(field: &GuiField) -> Vec<Skittle> {
-    field
-        .skittles()
+fn fallen_skittles(skittles: &[GuiSkittle]) -> Vec<Skittle> {
+    skittles
         .iter()
         .map(|p| *p.as_ref())
         .filter(|p| p.state() == SkittleState::Fall)
@@ -48,28 +45,41 @@ mod movement {
     use super::*;
 
     #[test]
+    fn 個体数によらず共有ワールドを一刻みだけ進める() {
+        let (mut empty, empty_skittles, empty_stick) = scene(&[]);
+        let positions: Vec<_> = (0..12)
+            .map(|index| [0.0, 0.6 + index as f32 * 0.0551])
+            .collect();
+        let (mut full, full_skittles, full_stick) = scene(&positions);
+        let (_, empty_moved) = empty.update(&empty_skittles, shot(&empty_stick, [0.0, 1.0], 1.0));
+        let (_, full_moved) = full.update(&full_skittles, shot(&full_stick, [0.0, 1.0], 1.0));
+        assert_eq!(empty_moved.position(), full_moved.position());
+        assert_eq!(empty_moved.velocity(), full_moved.velocity());
+        assert!(full_moved.position()[1] > 0.0 && full_moved.position()[1] < 0.017);
+    }
+
+    #[test]
     fn 狙う候補をエンジンで選び一刻みだけ移動したモデルを返す() {
-        let (mut rules, field, held) = scene(&[[0.0, 1.0], [0.2, 1.0], [-0.1, -0.1]]);
+        let (mut rules, skittles, held) = scene(&[[0.0, 1.0], [0.2, 1.0], [-0.1, -0.1]]);
         let stick = shot(&held, [0.0, 1.0], 6.0);
-        let targets = rules.aim(&stick, field.skittles());
+        let targets = rules.aim(&stick, &skittles);
         assert_eq!(
             targets.iter().map(|p| p.as_ref().id()).collect::<Vec<_>>(),
-            [field.skittles()[0].as_ref().id()]
+            [skittles[0].as_ref().id()]
         );
         assert!(targets[0].aimed());
-        let (updated, moved) = rules.update(&field, stick);
-        assert_eq!(field.as_ref().id(), updated.as_ref().id());
+        let (updated, moved) = rules.update(&skittles, stick);
         assert_eq!(stick.position(), [0.0; 2]);
         assert!(moved.position()[1] > 0.0 && moved.position()[1] < 0.11);
         assert!(moved.position()[0].abs() < 0.001);
         assert!(moved.angle().abs() < 0.001);
         assert_eq!(moved.as_ref().state(), StickState::Move);
-        assert_eq!(updated.skittles(), field.skittles());
+        assert_eq!(updated, skittles);
     }
 
     #[test]
     fn 無効な投擲は進まず更新した棒を渡すと初速を再適用せず減速する() {
-        let (mut rules, mut field, held) = scene(&[]);
+        let (mut rules, mut skittles, held) = scene(&[]);
         for invalid in [
             held,
             shot(&held, [0.0; 2], 6.0),
@@ -79,23 +89,23 @@ mod movement {
             shot(&held, [0.0, 1.0], f32::NAN),
             shot(&held, [0.0, 1.0], f32::INFINITY),
         ] {
-            let (_, result) = rules.update(&field, invalid);
+            let (_, result) = rules.update(&skittles, invalid);
             assert_eq!(result.as_ref().state(), StickState::Held);
             assert_eq!(result.position(), [0.0; 2]);
         }
         let stick = shot(&held, [0.0, 1.0], 6.0);
-        let (_, moved) = rules.update(&field, stick);
-        let (_, next) = rules.update(&field, moved);
+        let (_, moved) = rules.update(&skittles, stick);
+        let (_, next) = rules.update(&skittles, moved);
         assert!(next.position()[1] > moved.position()[1]);
         assert!(next.position()[1] - moved.position()[1] < moved.position()[1]);
         assert!(next.speed() < moved.speed());
         let mut stopped = next;
-        settle(&mut rules, &mut field, &mut stopped);
-        let (_, again) = rules.update(&field, stopped);
+        settle(&mut rules, &mut skittles, &mut stopped);
+        let (_, again) = rules.update(&skittles, stopped);
         assert_eq!(again, stopped);
         let new_throw = shot(&stopped, [0.0, 1.0], 6.0);
         assert_eq!(new_throw.position(), [0.0; 2]);
-        let (_, next_throw) = rules.update(&field, new_throw);
+        let (_, next_throw) = rules.update(&skittles, new_throw);
         assert!(next_throw.position()[1] > 0.0 && next_throw.position()[1] < 0.11);
         assert_eq!(next_throw.as_ref().id(), stopped.as_ref().id());
     }
@@ -106,8 +116,8 @@ mod collisions {
 
     #[test]
     fn hitは更新済みの物理状態を返し物理時間を進めない() {
-        let (mut rules, mut field, held) = scene(&[[0.0, 0.7]]);
-        let original = field.skittles()[0];
+        let (mut rules, mut skittles, held) = scene(&[[0.0, 0.7]]);
+        let original = skittles[0];
         let mut stick = shot(&held, [0.0, 1.0], 6.0);
         assert_eq!(rules.hit(&stick, &original), original);
         let confirmed = GuiSkittle::new(
@@ -115,13 +125,13 @@ mod collisions {
             original.position(),
         );
         assert_eq!(rules.hit(&stick, &confirmed), confirmed);
-        settle(&mut rules, &mut field, &mut stick);
+        settle(&mut rules, &mut skittles, &mut stick);
         let updated = rules.hit(&stick, &original);
         assert_eq!(
             *updated.as_ref(),
             original.as_ref().with_state(SkittleState::Fall)
         );
-        assert_eq!(updated.position(), field.skittles()[0].position());
+        assert_eq!(updated.position(), skittles[0].position());
         assert_eq!(rules.hit(&stick, &updated), updated);
         assert_eq!(rules.hit(&GuiStick::default(), &original), original);
         assert_eq!(original.as_ref().state(), SkittleState::Stand);
@@ -129,10 +139,10 @@ mod collisions {
 
     #[test]
     fn 立て直しは指定個体の位置と識別子を保ち記録と角度を戻す() {
-        let (mut rules, mut field, held) = scene(&[[0.0, 0.7]]);
+        let (mut rules, mut skittles, held) = scene(&[[0.0, 0.7]]);
         let mut stick = shot(&held, [0.0, 1.0], 6.0);
-        settle(&mut rules, &mut field, &mut stick);
-        let fallen = field.skittles()[0];
+        settle(&mut rules, &mut skittles, &mut stick);
+        let fallen = skittles[0];
         assert_eq!(fallen.as_ref().state(), SkittleState::Fall);
         let standing = rules.stand_up(&fallen);
         assert_eq!(standing.as_ref().id(), fallen.as_ref().id());
@@ -145,13 +155,12 @@ mod collisions {
 
     #[test]
     fn 高速投擲でもすり抜けず同番号の個体を区別して命中状態にする() {
-        let (mut rules, mut field, held) = scene(&[[0.0, 1.0], [0.2, 1.0]]);
-        let original = field.skittles().to_vec();
+        let (mut rules, mut skittles, held) = scene(&[[0.0, 1.0], [0.2, 1.0]]);
+        let original = skittles.to_vec();
         let mut stick = shot(&held, [0.0, 1.0], 120.0);
         for _ in 0..1200 {
-            (field, stick) = rules.update(&field, stick);
-            if field
-                .skittles()
+            (skittles, stick) = rules.update(&skittles, stick);
+            if skittles
                 .iter()
                 .any(|p| p.as_ref().state() == SkittleState::Hit)
             {
@@ -159,60 +168,57 @@ mod collisions {
             }
             assert_eq!(stick.as_ref().state(), StickState::Move);
         }
-        assert_eq!(field.skittles()[0].as_ref().state(), SkittleState::Hit);
-        assert_eq!(field.skittles()[1].as_ref().state(), SkittleState::Stand);
-        assert_eq!(field.skittles()[0].as_ref().id(), original[0].as_ref().id());
+        assert_eq!(skittles[0].as_ref().state(), SkittleState::Hit);
+        assert_eq!(skittles[1].as_ref().state(), SkittleState::Stand);
+        assert_eq!(skittles[0].as_ref().id(), original[0].as_ref().id());
         assert_ne!(original[0].as_ref().id(), original[1].as_ref().id());
         assert!(
             original
                 .iter()
                 .all(|p| p.as_ref().state() == SkittleState::Stand)
         );
-        settle(&mut rules, &mut field, &mut stick);
-        assert_eq!(field.skittles()[0].as_ref().state(), SkittleState::Fall);
+        settle(&mut rules, &mut skittles, &mut stick);
+        assert_eq!(skittles[0].as_ref().state(), SkittleState::Fall);
     }
 
     #[test]
     fn 弱い衝突で動いた個体は停止後に立位へ戻り得点にならない() {
-        let (mut rules, mut field, held) = scene(&[[0.0, 0.16]]);
+        let (mut rules, mut skittles, held) = scene(&[[0.0, 0.16]]);
         let mut stick = shot(&held, [0.0, 1.0], 0.1);
         let mut touched = false;
         for _ in 0..1200 {
-            (field, stick) = rules.update(&field, stick);
-            touched |= field.skittles()[0].as_ref().state() == SkittleState::Hit;
+            (skittles, stick) = rules.update(&skittles, stick);
+            touched |= skittles[0].as_ref().state() == SkittleState::Hit;
             if stick.as_ref().state() == StickState::Stop
-                && field.skittles()[0].as_ref().state() != SkittleState::Hit
+                && skittles[0].as_ref().state() != SkittleState::Hit
             {
                 break;
             }
         }
         assert!(touched);
-        assert_eq!(field.skittles()[0].as_ref().state(), SkittleState::Stand);
-        assert!(fallen_skittles(&field).is_empty());
-        assert!(field.skittles()[0].position()[1] > 0.16);
+        assert_eq!(skittles[0].as_ref().state(), SkittleState::Stand);
+        assert!(fallen_skittles(&skittles).is_empty());
+        assert!(skittles[0].position()[1] > 0.16);
     }
 
     #[test]
     fn 物理の連鎖は直接の照準外にも届き二本を転倒に数える() {
-        let (mut rules, mut field, held) = scene(&[[0.02, 0.7], [0.06, 0.85]]);
+        let (mut rules, mut skittles, held) = scene(&[[0.02, 0.7], [0.06, 0.85]]);
         let mut stick = shot(&held, [0.0, 1.0], 6.0);
-        assert_eq!(rules.aim(&stick, field.skittles()).len(), 1);
-        settle(&mut rules, &mut field, &mut stick);
-        assert_eq!(fallen_skittles(&field).len(), 2);
-        assert_ne!(
-            field.skittles()[0].as_ref().id(),
-            field.skittles()[1].as_ref().id()
-        );
+        assert_eq!(rules.aim(&stick, &skittles).len(), 1);
+        settle(&mut rules, &mut skittles, &mut stick);
+        assert_eq!(fallen_skittles(&skittles).len(), 2);
+        assert_ne!(skittles[0].as_ref().id(), skittles[1].as_ref().id());
     }
 
     #[test]
     fn chain_hitは接触した相手を判定し立て直しは他の個体と棒を変えない() {
-        let (mut rules, mut field, held) = scene(&[[0.02, 0.7], [0.06, 0.85]]);
-        let original = field.skittles().to_vec();
+        let (mut rules, mut skittles, held) = scene(&[[0.02, 0.7], [0.06, 0.85]]);
+        let original = skittles.to_vec();
         let mut stick = shot(&held, [0.0, 1.0], 6.0);
         assert_eq!(rules.chain_hit(&original[0], &original[1]), original[1]);
-        settle(&mut rules, &mut field, &mut stick);
-        let first = field.skittles()[0];
+        settle(&mut rules, &mut skittles, &mut stick);
+        let first = skittles[0];
         let second = rules.chain_hit(&first, &original[1]);
         assert_eq!(second.as_ref().state(), SkittleState::Fall);
         let unrelated = GuiSkittle::new(Skittle::new(12), [0.0; 2]);
@@ -229,35 +235,25 @@ mod collisions {
 
     #[test]
     fn 次投でフィールドと個体の位置を保ち前回の転倒を持ち越さない() {
-        let (mut rules, mut field, held) = scene(&[[0.0, 0.7], [0.04, 0.9]]);
-        let field_id = field.as_ref().id();
+        let (mut rules, mut skittles, held) = scene(&[[0.0, 0.7], [0.04, 0.9]]);
         let mut stick = shot(&held, [0.0, 1.0], 6.0);
-        settle(&mut rules, &mut field, &mut stick);
-        assert!(!fallen_skittles(&field).is_empty());
-        let positions: Vec<_> = field.skittles().iter().map(|p| p.position()).collect();
-        let ids: Vec<_> = field.skittles().iter().map(|p| p.as_ref().id()).collect();
-        field = GuiField::new(
-            *field.as_ref(),
-            field.skittles().iter().map(|p| rules.stand_up(p)).collect(),
-        );
+        settle(&mut rules, &mut skittles, &mut stick);
+        assert!(!fallen_skittles(&skittles).is_empty());
+        let positions: Vec<_> = skittles.iter().map(|p| p.position()).collect();
+        let ids: Vec<_> = skittles.iter().map(|p| p.as_ref().id()).collect();
+        skittles = skittles
+            .iter()
+            .map(|skittle| rules.stand_up(skittle))
+            .collect();
         assert_eq!(
-            field
-                .skittles()
-                .iter()
-                .map(|p| p.position())
-                .collect::<Vec<_>>(),
+            skittles.iter().map(|p| p.position()).collect::<Vec<_>>(),
             positions
         );
         stick = shot(&stick, [1.0, 0.0], 0.1);
-        settle(&mut rules, &mut field, &mut stick);
-        assert!(fallen_skittles(&field).is_empty());
-        assert_eq!(field.as_ref().id(), field_id);
+        settle(&mut rules, &mut skittles, &mut stick);
+        assert!(fallen_skittles(&skittles).is_empty());
         assert_eq!(
-            field
-                .skittles()
-                .iter()
-                .map(|p| p.as_ref().id())
-                .collect::<Vec<_>>(),
+            skittles.iter().map(|p| p.as_ref().id()).collect::<Vec<_>>(),
             ids
         );
     }
@@ -267,12 +263,12 @@ mod field_boundaries {
     use super::*;
 
     fn assert_bounces(target: [f32; 2], speed: f32) {
-        let (mut rules, mut field, held) = scene(&[]);
+        let (mut rules, mut skittles, held) = scene(&[]);
         let mut stick = shot(&held, target, speed);
         let mut previous = [0.0; 2];
         let mut reflected = [false; 2];
         for _ in 0..1200 {
-            (field, stick) = rules.update(&field, stick);
+            (skittles, stick) = rules.update(&skittles, stick);
             let position = stick.position();
             let angle = stick.angle();
             let half_segment = GuiStick::LENGTH / 2.0 - GuiStick::RADIUS;
@@ -321,11 +317,11 @@ mod field_boundaries {
     }
     #[test]
     fn 強く打たれたスキットルも外周の内側に残る() {
-        let (mut rules, mut field, held) = scene(&[[0.0, 0.7]]);
+        let (mut rules, mut skittles, held) = scene(&[[0.0, 0.7]]);
         let mut stick = shot(&held, [0.0, 1.0], 120.0);
         for _ in 0..1200 {
-            (field, stick) = rules.update(&field, stick);
-            let [x, y] = field.skittles()[0].position();
+            (skittles, stick) = rules.update(&skittles, stick);
+            let [x, y] = skittles[0].position();
             let radius = GuiSkittle::RADIUS;
             assert!(
                 x - radius >= -0.305
@@ -334,13 +330,13 @@ mod field_boundaries {
                     && y + radius <= 1.355
             );
             if stick.as_ref().state() == StickState::Stop
-                && field.skittles()[0].as_ref().state() != SkittleState::Hit
+                && skittles[0].as_ref().state() != SkittleState::Hit
             {
                 break;
             }
         }
         assert_eq!(stick.as_ref().state(), StickState::Stop);
-        assert_eq!(fallen_skittles(&field).len(), 1);
+        assert_eq!(fallen_skittles(&skittles).len(), 1);
     }
 }
 

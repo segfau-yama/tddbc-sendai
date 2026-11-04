@@ -2,7 +2,7 @@ use dioxus::html::input_data::MouseButton;
 use std::time::Duration;
 
 #[cfg(test)]
-#[path = "../../../tests/gui_2d/controllers/mouse.rs"]
+#[path = "../../../tests/gui_2d/views/mouse.rs"]
 mod tests;
 
 #[derive(serde::Deserialize)]

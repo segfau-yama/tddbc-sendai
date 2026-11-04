@@ -1,4 +1,4 @@
-use rust_molkky::gui_2d::view::speedometer;
+use rust_molkky::gui_2d::views::speedometer;
 
 mod display {
     use super::*;

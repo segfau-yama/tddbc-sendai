@@ -6,10 +6,10 @@ use crate::{
 use rapier2d::prelude::*;
 use std::collections::{HashMap, HashSet};
 
-/// 全チーム共通の標準配置、棒、対応する物理ワールドを組み立てる。
-pub fn create_field() -> (GuiField, GuiStick, GuiMolkky) {
+/// 全チーム共通のフィールド、棒、標準配置のスキットルを用意する。
+pub fn create_field() -> (GuiField, GuiStick, Vec<GuiSkittle>) {
     let rows: &[&[i32]] = &[&[1, 2], &[3, 10, 4], &[5, 11, 12, 6], &[7, 9, 8]];
-    let mut pins: Vec<_> = rows
+    let mut skittles: Vec<_> = rows
         .iter()
         .enumerate()
         .flat_map(|(row, numbers)| {
@@ -23,11 +23,10 @@ pub fn create_field() -> (GuiField, GuiStick, GuiMolkky) {
             })
         })
         .collect();
-    pins.sort_by_key(|pin| pin.as_ref().number());
-    let field = GuiField::new(Field::new(), pins);
+    skittles.sort_by_key(|skittle| skittle.as_ref().number());
+    let field = GuiField::new(Field::new());
     let stick = GuiStick::default();
-    let rules = create_world(&stick, field.skittles());
-    (field, stick, rules)
+    (field, stick, skittles)
 }
 
 /// 各モデルの位置(m)と姿勢から、全チーム共通の物理ワールドを構築する。
@@ -82,9 +81,9 @@ pub fn create_world(stick: &GuiStick, skittles: &[GuiSkittle]) -> GuiMolkky {
     );
     let mut ids = HashSet::from([stick.stick().id()]);
     let mut skittle_ids = HashMap::new();
-    for pin in skittles {
-        let id = pin.as_ref().id();
-        let position = pin.position();
+    for skittle in skittles {
+        let id = skittle.as_ref().id();
+        let position = skittle.position();
         assert!(ids.insert(id), "個体Idは一意です");
         assert!(position.iter().all(|v| v.is_finite()), "配置は有限値です");
         let (_, collider) = world.insert(
@@ -93,7 +92,7 @@ pub fn create_world(stick: &GuiStick, skittles: &[GuiSkittle]) -> GuiMolkky {
                 .linear_damping(DAMPING)
                 .angular_damping(DAMPING)
                 .ccd_enabled(true)
-                .sleeping(pin.as_ref().state() != SkittleState::Hit),
+                .sleeping(skittle.as_ref().state() != SkittleState::Hit),
             ColliderBuilder::ball(GuiSkittle::RADIUS).mass(GuiSkittle::MASS),
         );
         skittle_ids.insert(collider, id);

@@ -1,4 +1,4 @@
-use crate::core::{Id, Molkky, Move, SkittleState, StickState};
+use crate::core::{Id, Molkky, SkittleState, StickState};
 use crate::gui_2d::models::{GuiField, GuiSkittle, GuiStick};
 use rapier2d::prelude::*;
 use std::collections::HashMap;
@@ -18,49 +18,57 @@ pub struct GuiMolkky {
 }
 
 impl GuiMolkky {
-    /// 保持中は照準だけ、投擲中は共有ワールドを1刻み更新してモデルを返す。
-    pub fn update(&mut self, field: &GuiField, stick: GuiStick) -> (GuiField, GuiStick) {
+    pub fn update(
+        &mut self,
+        skittles: &[GuiSkittle],
+        stick: GuiStick,
+    ) -> (Vec<GuiSkittle>, GuiStick) {
         if stick.as_ref().id() != self.stick_id {
-            return (field.clone(), stick);
+            return (skittles.to_vec(), stick);
         }
         let body = &mut self.world.bodies[self.stick_body];
         if stick.as_ref().state() == StickState::Held {
-            body.set_translation(Vector::from_array(stick.position), false);
-            body.set_rotation(Rotation::from_angle(stick.angle), false);
+            body.set_translation(Vector::from_array(stick.position()), false);
+            body.set_rotation(Rotation::from_angle(stick.angle()), false);
             body.set_linvel(Vector::ZERO, false);
             body.set_angvel(0.0, false);
             body.sleep();
-            let targets = self.aim(&stick, field.skittles());
-            let pins = field
-                .skittles()
+            let targets = self.aim(&stick, skittles);
+            let updated = skittles
                 .iter()
-                .map(|pin| GuiSkittle {
-                    aimed: targets
+                .map(|skittle| {
+                    let aimed = targets
                         .iter()
-                        .any(|target| target.as_ref().id() == pin.as_ref().id()),
-                    ..*pin
+                        .any(|target| target.as_ref().id() == skittle.as_ref().id());
+                    skittle.update(
+                        skittle.position(),
+                        skittle.angle(),
+                        skittle.as_ref().state(),
+                        aimed,
+                    )
                 })
                 .collect();
-            return (GuiField::new(*field.as_ref(), pins), stick);
+            return (updated, stick);
         }
-        // throwが作った初速だけを反映する。更新済みモデルはボディと一致している。
+        // throwが用意した初速を一度反映し、以降は物理計算の結果を使う。
         if stick.as_ref().state() == StickState::Move
-            && (body.translation().to_array() != stick.position
-                || body.linvel().to_array() != stick.velocity
-                || body.rotation().angle() != stick.angle
-                || body.angvel() != stick.angular_velocity)
+            && (body.translation().to_array() != stick.position()
+                || body.linvel().to_array() != stick.velocity()
+                || body.rotation().angle() != stick.angle()
+                || body.angvel() != stick.angular_velocity())
         {
-            body.set_translation(Vector::from_array(stick.position), false);
-            body.set_rotation(Rotation::from_angle(stick.angle), false);
-            body.set_linvel(Vector::from_array(stick.velocity), false);
-            body.set_angvel(stick.angular_velocity, false);
+            body.set_translation(Vector::from_array(stick.position()), false);
+            body.set_rotation(Rotation::from_angle(stick.angle()), false);
+            body.set_linvel(Vector::from_array(stick.velocity()), false);
+            body.set_angvel(stick.angular_velocity(), false);
             body.wake_up(true);
         }
+        // 棒と全スキットルが同じ時刻の衝突結果を使う。
         self.world.step();
         for pair in self.world.narrow_phase.contact_pairs() {
             let handles = [pair.collider1, pair.collider2];
-            if handles.iter().all(|h| {
-                self.world.colliders[*h]
+            if handles.iter().all(|handle| {
+                self.world.colliders[*handle]
                     .parent()
                     .is_none_or(|body| self.world.bodies[body].is_sleeping())
             }) {
@@ -73,38 +81,38 @@ impl GuiMolkky {
             }
         }
         let body = &self.world.bodies[self.stick_body];
-        let velocity = if body.is_sleeping() {
-            [0.0; 2]
-        } else {
-            body.linvel().to_array()
-        };
-        let updated = GuiStick::r#move(GuiStick {
-            position: body.translation().to_array(),
-            angle: body.rotation().angle(),
-            velocity,
-            angular_velocity: if body.is_sleeping() {
+        let updated = stick.update(
+            body.translation().to_array(),
+            body.rotation().angle(),
+            if body.is_sleeping() {
+                [0.0; 2]
+            } else {
+                body.linvel().to_array()
+            },
+            if body.is_sleeping() {
                 0.0
             } else {
                 body.angvel()
             },
-            speed: velocity[0].hypot(velocity[1]),
-            ..stick
-        });
-        let pins = field
-            .skittles()
+        );
+        let skittles = skittles
             .iter()
-            .map(|pin| {
-                let mut result = self.hit(&updated, pin);
-                for source in field.skittles() {
-                    if source.as_ref().id() != pin.as_ref().id() {
+            .map(|skittle| {
+                let mut result = self.hit(&updated, skittle);
+                for source in skittles {
+                    if source.as_ref().id() != skittle.as_ref().id() {
                         result = self.chain_hit(source, &result);
                     }
                 }
-                result.aimed = false;
-                result
+                result.update(
+                    result.position(),
+                    result.angle(),
+                    result.as_ref().state(),
+                    false,
+                )
             })
             .collect();
-        (GuiField::new(*field.as_ref(), pins), updated)
+        (skittles, updated)
     }
 }
 
@@ -132,14 +140,14 @@ impl Molkky for GuiMolkky {
         );
         skittles
             .iter()
-            .filter_map(|pin| {
-                if pin.as_ref().state() != SkittleState::Stand {
+            .filter_map(|skittle| {
+                if skittle.as_ref().state() != SkittleState::Stand {
                     return None;
                 }
                 let (&collider, _) = self
                     .skittle_ids
                     .iter()
-                    .find(|(_, id)| **id == pin.as_ref().id())?;
+                    .find(|(_, id)| **id == skittle.as_ref().id())?;
                 let body = &self.world.bodies[self.world.colliders[collider].parent()?];
                 let relative = pose.inv_mul(body.position());
                 if !self
@@ -151,12 +159,12 @@ impl Molkky for GuiMolkky {
                 {
                     return None;
                 }
-                Some(GuiSkittle {
-                    position: body.translation().to_array(),
-                    angle: body.rotation().angle(),
-                    aimed: true,
-                    ..*pin
-                })
+                Some(skittle.update(
+                    body.translation().to_array(),
+                    body.rotation().angle(),
+                    skittle.as_ref().state(),
+                    true,
+                ))
             })
             .collect()
     }
@@ -198,12 +206,12 @@ impl Molkky for GuiMolkky {
         } else {
             skittle.as_ref().state()
         };
-        GuiSkittle {
-            skittle: skittle.as_ref().with_state(state),
-            position: body.translation().to_array(),
-            angle: body.rotation().angle(),
-            ..*skittle
-        }
+        skittle.update(
+            body.translation().to_array(),
+            body.rotation().angle(),
+            state,
+            skittle.aimed(),
+        )
     }
 
     fn chain_hit(&self, source: &GuiSkittle, target: &GuiSkittle) -> GuiSkittle {
@@ -243,12 +251,12 @@ impl Molkky for GuiMolkky {
         } else {
             SkittleState::Stand
         };
-        GuiSkittle {
-            skittle: target.as_ref().with_state(state),
-            position: body.translation().to_array(),
-            angle: body.rotation().angle(),
-            ..*target
-        }
+        target.update(
+            body.translation().to_array(),
+            body.rotation().angle(),
+            state,
+            target.aimed(),
+        )
     }
 
     fn stand_up(&mut self, skittle: &GuiSkittle) -> GuiSkittle {
@@ -265,11 +273,6 @@ impl Molkky for GuiMolkky {
             self.impacts
                 .retain(|&(source, target), _| source != collider && target != collider);
         }
-        GuiSkittle {
-            skittle: skittle.as_ref().with_state(SkittleState::Stand),
-            angle: 0.0,
-            aimed: false,
-            ..*skittle
-        }
+        skittle.update(skittle.position(), 0.0, SkittleState::Stand, false)
     }
 }

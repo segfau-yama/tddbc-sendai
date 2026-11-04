@@ -1,11 +1,11 @@
-use crate::Skittle;
+use crate::{Skittle, SkittleState};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GuiSkittle {
-    pub(in crate::gui_2d) skittle: Skittle,
-    pub(in crate::gui_2d) position: [f32; 2],
-    pub(in crate::gui_2d) angle: f32,
-    pub(in crate::gui_2d) aimed: bool,
+    skittle: Skittle,
+    position: [f32; 2],
+    angle: f32,
+    aimed: bool,
 }
 
 impl GuiSkittle {
@@ -29,6 +29,15 @@ impl GuiSkittle {
     }
     pub fn aimed(&self) -> bool {
         self.aimed
+    }
+
+    pub fn update(self, position: [f32; 2], angle: f32, state: SkittleState, aimed: bool) -> Self {
+        Self {
+            skittle: self.skittle.with_state(state),
+            position,
+            angle,
+            aimed,
+        }
     }
 }
 

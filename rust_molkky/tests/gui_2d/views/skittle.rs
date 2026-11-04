@@ -1,22 +1,22 @@
 use rust_molkky::{
     Skittle, SkittleState,
-    gui_2d::{models::GuiSkittle, view::skittle},
+    gui_2d::{models::GuiSkittle, views::skittle as render_skittle},
 };
 
 mod appearance {
     use super::*;
     #[test]
     fn モデルの番号と配置を保ち立位と命中中と転倒を描き分ける() {
-        let pin = Skittle::new(12);
+        let skittle = Skittle::new(12);
         let mut htmls = Vec::new();
         for (state, tag) in [
             (SkittleState::Stand, "stand"),
             (SkittleState::Hit, "hit"),
             (SkittleState::Fall, "fall"),
         ] {
-            let model = GuiSkittle::new(pin.with_state(state), [1.0, 2.0]);
-            let html = dioxus_ssr::render_element(skittle(&model));
-            assert!(html.contains(&format!("skittle-{}", pin.id())));
+            let model = GuiSkittle::new(skittle.with_state(state), [1.0, 2.0]);
+            let html = dioxus_ssr::render_element(render_skittle(&model));
+            assert!(html.contains(&format!("skittle-{}", skittle.id())));
             assert!(html.contains("translate(1 2)"));
             assert!(html.contains(">12</text>"));
             assert!(html.contains(&format!("data-state=\"{tag}\"")));

@@ -3,13 +3,13 @@ use crate::core::{Move, Stick, StickState, Throw};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GuiStick {
-    pub(in crate::gui_2d) stick: Stick,
-    pub(in crate::gui_2d) target: Option<[f32; 2]>,
-    pub(in crate::gui_2d) speed: f32,
-    pub(in crate::gui_2d) position: [f32; 2],
-    pub(in crate::gui_2d) angle: f32,
-    pub(in crate::gui_2d) velocity: [f32; 2],
-    pub(in crate::gui_2d) angular_velocity: f32,
+    stick: Stick,
+    target: Option<[f32; 2]>,
+    speed: f32,
+    position: [f32; 2],
+    angle: f32,
+    velocity: [f32; 2],
+    angular_velocity: f32,
 }
 
 impl Default for GuiStick {
@@ -54,6 +54,26 @@ impl GuiStick {
     }
     pub fn velocity(&self) -> [f32; 2] {
         self.velocity
+    }
+    pub fn angular_velocity(&self) -> f32 {
+        self.angular_velocity
+    }
+
+    pub fn update(
+        self,
+        position: [f32; 2],
+        angle: f32,
+        velocity: [f32; 2],
+        angular_velocity: f32,
+    ) -> Self {
+        Self::r#move(Self {
+            position,
+            angle,
+            velocity,
+            angular_velocity,
+            speed: velocity[0].hypot(velocity[1]),
+            ..self
+        })
     }
 }
 

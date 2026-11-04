@@ -35,3 +35,39 @@ mod initialization {
         assert_eq!(initial.target(), None);
     }
 }
+
+mod updating {
+    use super::*;
+
+    #[test]
+    fn 物理結果から同じ個体を更新し元の棒と目標を保つ() {
+        let original = GuiStick::throw(GuiStick::new(Stick::new(), Some([0.0, 1.0]), 6.0));
+        let updated = original.update([0.1, 0.5], 0.25, [3.0, 4.0], 0.5);
+        assert_eq!(updated.as_ref().id(), original.as_ref().id());
+        assert_eq!(updated.target(), original.target());
+        assert_eq!(updated.position(), [0.1, 0.5]);
+        assert_eq!(updated.angle(), 0.25);
+        assert_eq!(updated.velocity(), [3.0, 4.0]);
+        assert_eq!(updated.angular_velocity(), 0.5);
+        assert_eq!(updated.speed(), 5.0);
+        assert_eq!(updated.as_ref().state(), StickState::Move);
+        assert_eq!(original.position(), [0.0; 2]);
+        assert_eq!(original.speed(), 6.0);
+    }
+
+    #[test]
+    fn 並進と回転が両方止まったときだけ停止状態になる() {
+        let original = GuiStick::throw(GuiStick::new(Stick::new(), Some([0.0, 1.0]), 6.0));
+        let rotating = original.update([0.0, 0.5], 0.25, [0.0; 2], 0.5);
+        assert_eq!(rotating.as_ref().state(), StickState::Move);
+        let stopped = rotating.update([0.0, 0.5], 0.5, [0.0; 2], 0.0);
+        assert_eq!(stopped.as_ref().state(), StickState::Stop);
+        assert_eq!(stopped.speed(), 0.0);
+        assert_eq!(stopped.position(), [0.0, 0.5]);
+        assert_eq!(rotating.as_ref().state(), StickState::Move);
+        assert_eq!(
+            stopped.update(stopped.position(), stopped.angle(), [0.0; 2], 0.0),
+            stopped
+        );
+    }
+}
