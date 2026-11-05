@@ -173,7 +173,7 @@ cargo build --locked --features gui_2d
 | hit | 指定したStickとSkittleの接触とボディ状態から、位置・角度・状態を更新したGuiSkittleを返す |
 | chain_hit | 指定した2個体の実際の接触ペアから、対象の物理状態を反映したGuiSkittleを返す |
 
-FieldがRapierの共有ワールドを固定刻みで一度ずつ進めます。独自のstep APIとphysics.rsはありません。実際の接触履歴から、棒とピンにはhit、ピン同士には双方へchain_hitを適用します。接触履歴のないHitで再開したモデルもhitで停止まで追跡します。状態の判定はMolkkyの具象実装へ集約します。モデルのupdateはIdを保ち、元の値を変更せず新しいモデルを返します。
+FieldがRapierの共有ワールドを固定刻みで一度ずつ進めます。独自のstep APIとphysics.rsはありません。実際の接触履歴から、棒とピンにはhit、ピン同士には双方へchain_hitを適用します。接触履歴のないHitで再開したモデルもhitで停止まで追跡します。状態の判定と姿勢の反映は、hitとchain_hitから呼ぶ共通の非公開関数hit_resultへ集約します。モデルのupdateはIdを保ち、元の値を変更せず新しいモデルを返します。
 
 Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。FieldはMoveまたはHitがある間更新を続け、「StickがStop、かつHitが0本」でAppへ完了を通知します。AppはFallだけをcalc_scoreへ渡し、ScoreBoard.addとTeam.with_score_boardを反映します。弱い衝突はStandへ戻り、得点には含めません。継続時は各GuiSkittleのstand_upで立て直し、create_worldで同じ配置とIdのボディを作り直します。
 
@@ -181,7 +181,7 @@ Stick自身が止まるとStopになります。スキットルは移動中Hit�
 
 ### GUI 2Dの入力と進行
 
-StickはDioxusのonpointerdown/move/up/cancelを受け取り、一つのuse_coroutineで順番に処理します。内部のStickInputは所有ポインター・蓄力開始時刻・最後の有効目標だけを保持します。SVGの領域はイベントごとにMountedDataで取得します。縦横比がフィールドと一致するため、入力座標は領域内の割合とY反転だけで物理座標へ変換します。領域外では最後の有効目標を使います。
+StickはDioxusのonpointerdown/move/up/cancelを受け取り、一つのuse_coroutineで順番に処理します。内部のStickInputは所有ポインター・蓄力開始時刻だけを保持し、目標はGuiStick.targetに揃えます。蓄力と解放も同じモデルから目標を読み取ります。SVGの領域はイベントごとにMountedDataで取得します。縦横比がフィールドと一致するため、入力座標は領域内の割合とY反転だけで物理座標へ変換します。領域外では最後の有効目標を使います。
 
 左押下で同じIdのHeldのGuiStickへ目標を設定します。FieldがMolkky::aimの結果を各Skittleへ反映します。押下中は時間ベースのspeed（0〜10m/s、往復2秒）を更新し、実速度は0、位置も保持します。解放時はその瞬間の目標とspeedでmoveを一度呼び、Moveへ進めます。領域外では最後の有効目標を使い、0速度・方向なしでは投擲しません。
 

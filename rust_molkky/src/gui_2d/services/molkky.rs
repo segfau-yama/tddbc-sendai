@@ -76,38 +76,11 @@ impl Molkky for GuiMolkky {
         else {
             return *skittle;
         };
-        let body = &self.world.bodies[self.world.colliders[collider].parent().unwrap()];
         let direct = self
             .impacts
             .get(&(self.stick_collider, collider))
             .is_some_and(|&impulse| impulse > 0.0);
-        let state = if direct
-            || matches!(
-                skittle.as_ref().state(),
-                SkittleState::Hit | SkittleState::Fall
-            ) {
-            if !body.is_sleeping() {
-                SkittleState::Hit
-            } else if skittle.as_ref().state() == SkittleState::Fall
-                || self
-                    .impacts
-                    .iter()
-                    .filter(|((_, target), _)| *target == collider)
-                    .any(|(_, &peak)| peak >= FALL_IMPULSE)
-            {
-                SkittleState::Fall
-            } else {
-                SkittleState::Stand
-            }
-        } else {
-            skittle.as_ref().state()
-        };
-        skittle.update(
-            body.translation().to_array(),
-            body.rotation().angle(),
-            state,
-            skittle.aimed(),
-        )
+        hit_result(self, collider, skittle, direct)
     }
 
     fn chain_hit(&self, source: &GuiSkittle, target: &GuiSkittle) -> GuiSkittle {
@@ -133,25 +106,35 @@ impl Molkky for GuiMolkky {
         {
             return *target;
         }
-        let body = &self.world.bodies[self.world.colliders[target_collider].parent().unwrap()];
-        let state = if !body.is_sleeping() {
-            SkittleState::Hit
-        } else if target.as_ref().state() == SkittleState::Fall
-            || self
-                .impacts
-                .iter()
-                .filter(|((_, target), _)| *target == target_collider)
-                .any(|(_, &peak)| peak >= FALL_IMPULSE)
-        {
-            SkittleState::Fall
-        } else {
-            SkittleState::Stand
-        };
-        target.update(
-            body.translation().to_array(),
-            body.rotation().angle(),
-            state,
-            target.aimed(),
-        )
+        hit_result(self, target_collider, target, true)
     }
+}
+
+fn hit_result(
+    rules: &GuiMolkky,
+    collider: ColliderHandle,
+    skittle: &GuiSkittle,
+    contacted: bool,
+) -> GuiSkittle {
+    let body = &rules.world.bodies[rules.world.colliders[collider].parent().unwrap()];
+    let state = if !contacted && skittle.as_ref().state() == SkittleState::Stand {
+        SkittleState::Stand
+    } else if !body.is_sleeping() {
+        SkittleState::Hit
+    } else if skittle.as_ref().state() == SkittleState::Fall
+        || rules
+            .impacts
+            .iter()
+            .any(|((_, target), &peak)| *target == collider && peak >= FALL_IMPULSE)
+    {
+        SkittleState::Fall
+    } else {
+        SkittleState::Stand
+    };
+    skittle.update(
+        body.translation().to_array(),
+        body.rotation().angle(),
+        state,
+        skittle.aimed(),
+    )
 }

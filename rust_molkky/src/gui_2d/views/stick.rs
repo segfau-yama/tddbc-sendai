@@ -30,7 +30,6 @@ pub fn screen_to_world(cursor: [f64; 2], rect: [f64; 4], bounds: [f32; 4]) -> Op
 struct Charge {
     pointer_id: i32,
     started_at: Duration,
-    target: [f32; 2],
 }
 
 #[derive(Default)]
@@ -48,37 +47,33 @@ impl StickInput {
 
     fn press(
         &mut self,
-        stick: &GuiStick,
+        stick: GuiStick,
         pointer_id: i32,
         button: Option<MouseButton>,
         target: Option<[f32; 2]>,
         now: Duration,
-    ) -> bool {
+    ) -> Option<GuiStick> {
         if stick.as_ref().state() != StickState::Held
             || button != Some(MouseButton::Primary)
             || self.charge.is_some()
         {
-            return false;
+            return None;
         }
-        let Some(target) = target.filter(|p| p.iter().all(|v| v.is_finite())) else {
-            return false;
-        };
+        let target = target.filter(|p| p.iter().all(|v| v.is_finite()))?;
         self.charge = Some(Charge {
             pointer_id,
             started_at: now,
-            target,
         });
-        true
+        Some(GuiStick::new(*stick.as_ref(), Some(target), 0.0))
     }
 
-    fn move_to(&mut self, pointer_id: i32, target: Option<[f32; 2]>) {
-        let Some(charge) = self.charge.as_mut() else {
-            return;
-        };
-        if charge.pointer_id == pointer_id
+    fn move_to(&self, stick: GuiStick, pointer_id: i32, target: Option<[f32; 2]>) -> GuiStick {
+        if self.pointer_id() == Some(pointer_id)
             && let Some(target) = target.filter(|p| p.iter().all(|v| v.is_finite()))
         {
-            charge.target = target;
+            GuiStick::new(*stick.as_ref(), Some(target), stick.speed())
+        } else {
+            stick
         }
     }
 
@@ -93,7 +88,7 @@ impl StickInput {
         let period = Self::CHARGE_PERIOD.as_secs_f64();
         let phase = (elapsed % period) / period;
         let speed = (1.0 - (phase * 2.0 - 1.0).abs()) as f32 * Self::MAX_SPEED;
-        GuiStick::new(*stick.as_ref(), Some(charge.target), speed)
+        GuiStick::new(*stick.as_ref(), stick.target(), speed)
     }
 
     /// 座標を引数に取らないため、領域外での解放でも最後の有効な目標を使える。
@@ -170,14 +165,14 @@ pub fn Stick(
                     }
                     let surface = surface.peek().clone();
                     let target = target(&event, surface).await;
-                    if input.press(
-                        &model.peek(),
+                    let stick = *model.peek();
+                    if let Some(held) = input.press(
+                        stick,
                         event.pointer_id(),
                         event.trigger_button(),
                         target,
                         now,
                     ) {
-                        let held = input.preview(*model.peek(), now);
                         model.set(held);
                     }
                 }
@@ -186,19 +181,17 @@ pub fn Stick(
                         continue;
                     }
                     let surface = surface.peek().clone();
-                    input.move_to(event.pointer_id(), target(&event, surface).await);
-                    let held = input.preview(*model.peek(), now);
+                    let target = target(&event, surface).await;
+                    let stick = input.move_to(*model.peek(), event.pointer_id(), target);
+                    let held = input.preview(stick, now);
                     model.set(held);
                 }
                 Input::Release(event, now) => {
                     let surface = surface.peek().clone();
-                    input.move_to(event.pointer_id(), target(&event, surface).await);
-                    let moved = input.release(
-                        *model.peek(),
-                        event.pointer_id(),
-                        event.trigger_button(),
-                        now,
-                    );
+                    let target = target(&event, surface).await;
+                    let stick = input.move_to(*model.peek(), event.pointer_id(), target);
+                    let moved =
+                        input.release(stick, event.pointer_id(), event.trigger_button(), now);
                     model.set(moved);
                 }
                 Input::Cancel(id) => {
