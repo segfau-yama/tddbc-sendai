@@ -1,5 +1,17 @@
 # 開発支援方針の記録
 
+## Fieldで一投を更新する提案フローのレビュー（2026-11-05）
+
+- 対象：07067ecのcore/models/stick.rs、gui_2d/models/stick.rs・views/field.rs・services/physics.rs・game.rsとDioxus 0.7.10のポインターイベント定義。最新のユーザー案は解放時にmoveで開始、Fieldで衝突/連鎖を反映、StopかつHitなしで次手番へ進めるもの。「既存削除可」は変更案の自由度として受け取り、今回は明示されたreviewとして評価し、実装修正は行わない。
+- 判断：Appがモデルを保持し、Stickコンポーネントが入力、Fieldコンポーネントが共有ワールドを一度ずつ進める構成で成立する。Game型や独自Observerは必須ではない。衝突・状態判定は既存Molkkyのhit/chain_hitを使い、物理結果はphysicsから取得してモデルへ反映する。
+- 入力：clickの解除イベントというAPIは使わず、onpointerdown/onpointerupで押下と解放を扱う。領域外の解放を扱うpointer captureと取消/focus喪失の動作は維持する。解放時の目標・speedで開始し、蓄力中の正speedだけで物理を開始しない。
+- moveの契約：現行GuiStick::moveはHeldを維持するため、解放時にそのまま呼んでもMoveへ進まない。提案どおりmoveを開始にも使うなら、現在throwが持つ初速生成・Held→Moveをmoveへ統合するAPI変更が必要。同じ開始処理をthrowとmoveの双方へ重複実装しない。この変更は今回未実装で、core/CUIへの影響を確定したものではない。
+- 継続処理：use_signalは状態保持であり、読み取るだけでは物理時間も衝突判定も進まない。Fieldにフレーム通知を待つ一つの非同期更新ループを置く。use_futureやFrameを受けるuse_coroutineのどちらでも成立し、監視専用オブジェクトは追加しない。Rapierの接触結果を使い、SVGの重なりを独自判定しない。
+- P1：更新条件をStickがMoveの間だけにすると、Stick停止後にHitが残っても連鎖/停止判定が進まず、最新の完了条件を満たせなくなる。Fieldの更新継続条件は「StickがMove、またはHitのSkittleが存在する」。物理を一度進めてからhit/chain_hitを反映し、完了は「StickがStop、かつHitが存在しない」とする。停止はRapierのsleep結果で実速度/角速度を0へ反映でき、減衰の小さな残差だけで待ち続けない。
+- 手番：完了時は今回のFallをcalc_scoreへ渡す→現在チームのScoreBoard.addを反映→judge_gameで終了確認→継続時だけnext_teamを呼ぶ→その返却先へturnを反映し、立て直してStickをHeldへ戻す。next_teamは現行APIでは選択結果を返し、呼ぶだけでteamsを書き換えない。採点を先に行い、失格/勝利を反映してから次を選ぶ。Heldへ戻すことで同じStopの繰り返し採点を防ぎ、別の完了フラグは増やさない。
+- [x] 既存のmoveのHeld分岐、physicsのsleep反映、停止後のHit継続、coreの採点/勝敗/手番APIを静的に確認した。onpointerdown/onpointerupは採用中Dioxusの定義で確認した。
+- [x] 最新の完了条件を採用して成立条件と必要なAPI変更を記録した。ソース・テストは未変更で、動作テストやRed/Greenは実行しない。git diff --checkで文書を検証し、レビュー記録のみcommit・通常pushする。削減量は未実装のため未算定。
+
 ## StickとSkittleのuse_coroutine監視案のレビュー（2026-11-05）
 
 - 対象：60eba34のviews/stick.rs:L106・L169・L260・L288、views/skittle.rs:L5、views/app.rs、physics/gameの実行経路。ユーザー指定どおり性能は評価軸に含めず、役割・状態の所有・処理順・必要なコードの量で評価する。今回はレビューのみで実装は変更しない。
