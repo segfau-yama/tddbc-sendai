@@ -24,9 +24,6 @@ mod skittle_view;
 #[cfg(feature = "gui_2d")]
 #[path = "gui_2d/views/speedometer.rs"]
 mod speedometer_view;
-#[cfg(feature = "gui_2d")]
-#[path = "gui_2d/views/stick.rs"]
-mod stick_view;
 
 #[cfg(feature = "gui_2d")]
 #[path = "gui_2d/services/field.rs"]

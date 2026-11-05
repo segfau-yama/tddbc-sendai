@@ -71,7 +71,6 @@ impl GuiStick {
             angle,
             velocity,
             angular_velocity,
-            speed: velocity[0].hypot(velocity[1]),
             ..self
         })
     }
@@ -119,6 +118,7 @@ impl Move for GuiStick {
         };
         Self {
             stick: stick.stick.with_state(state),
+            speed: stick.velocity[0].hypot(stick.velocity[1]),
             ..stick
         }
     }

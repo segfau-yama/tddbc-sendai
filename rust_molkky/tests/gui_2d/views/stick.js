@@ -4,7 +4,7 @@ const { join } = require("node:path");
 const { test } = require("node:test");
 const { runInNewContext } = require("node:vm");
 
-const script = readFileSync(join(__dirname, "../../../src/gui_2d/views/app.js"), "utf8");
+const script = readFileSync(join(__dirname, "../../../src/gui_2d/views/stick.js"), "utf8");
 
 for (const failed of [false, true]) {
     test(failed ? "接続失敗でもイベントとフレームとcaptureを解除する" : "破棄時にイベントとフレームとcaptureを解除する", async () => {

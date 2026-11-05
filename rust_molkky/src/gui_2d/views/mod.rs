@@ -1,6 +1,5 @@
 mod app;
 mod field;
-mod mouse;
 mod result;
 mod score;
 mod skittle;
@@ -12,7 +11,6 @@ pub use result::result;
 pub use score::scores;
 pub use skittle::skittle;
 pub use speedometer::speedometer;
-pub use stick::{aim, stick};
+pub use stick::{Stick, screen_to_world};
 
 pub use app::App;
-pub use mouse::screen_to_world;

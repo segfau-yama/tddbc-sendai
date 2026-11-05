@@ -1,5 +1,26 @@
 # 開発支援方針の記録
 
+## Stickコンポーネントの入力と投擲状態（2026-11-05）
+
+- 対象：views/stick.rs・mouse.rs・app.rs、GUIの入力接続と対応テスト。StickをDioxusコンポーネントにし、mouseの操作・DOM接続・経過時間の処理を同じファイルへ集約する。共有するSignal<Game>を受け取り、GameやGuiStickを重複所有しない。appは画面合成と共有Gameの用意を担当する。
+- 状態：有効な左押下でHeld、押下中は目標とspeedだけを変えてHeldを保ち実速度・位置を変えない。解放時の目標と表示速度で既存throwを一度呼びMoveへ進む。以降は固定刻みでサービスを更新し、GuiStick::update→moveから速度とMove/Stopを受け取る。物理時間を各部品で重複更新しない。
+- 受付：投擲中・終了後・他ポインター・右ボタンは開始しない。領域外解放は最後の有効目標を使い、取消・focus喪失は投げずにHeldへ戻す。無効な方向や0速度は従来どおり投げない。StopかつHitなしの採点条件、採点/手番/勝敗のcore利用を維持する。
+- [x] 変更前のGUIテストを確認する。
+- [x] Stickコンポーネントの描画APIと押下→蓄力→解放→減速の契約をテストしRedを確認する。
+- [x] mouseをStickへ統合し、コンポーネントが入力・DOM接続・破棄を持つよう移行する。
+- [x] Heldの正速度でも移動/採点しないこと、解放速度の一致、投擲中の減速を確認する。
+- [x] 座標変換・capture・取消・所有ポインター・二重加点防止・次投の既存検証を維持する。
+- [x] 全テスト・fmt/Clippy・feature分離・Web/desktopビルドとWeb実操作・差分を確認する。
+- [x] 検証結果を記録しConventional Commitで通常pushする。
+
+- Red：先に既存の描画テストをSignal<Game>を渡すStickコンポーネントへ変更し、views::Stickが未定義で失敗することを確認した（/tmp/molkky-stick-component-red.log）。APIのRedであり、既存の投擲ルール自体が失敗した記録とは区別する。
+- Green/Refactor：変更前の205件を確認後、マウス入力とappの入力接続をStickInputへ統合した。Stickコンポーネントがuse_signal・document::eval・use_dropを持ち、Appが作る一つのSignal<Game>を共有する。mouse.rsを削除し、JS接続と破棄テストはstick.jsへ移動した。Appは共有Gameの生成・画面合成・タイトルを保つ。採点・手番・物理サービスは変更していない。
+- moveの責務：GuiStick::updateは物理結果を渡し、既存moveが実速度ベクトルからspeedとMove/Stopを更新する。Heldのmoveは蓄力値をそのまま保つ。減衰や位置積分をコンポーネントへ重複実装していない。
+- テスト移行：旧mouseの座標・所有ポインター・解放・取消、旧appの入力/物理接続と棒の描画をtests/gui_2d/views/stick.rsへまとめ、レイアウトと表示範囲はapp.rsへ残した。SSRは実際のStickコンポーネントをVirtualDomで構築する。状態属性と照準の表示差だけを区別し、次投の位置・形状・識別子の検証を維持した。テスト用の共有fixtureは同ファイル内に置き、製品のラッパーや新たな依存は追加していない。
+- 追加確認：押下→0.5/1/1.5秒の蓄力でHeld・実速度0・保持位置・同じId・未採点を確認するテストが成功した。解放時に表示どおり5m/sでMoveへ進み、一刻み後には正の速度のまま減速し、後続のMove/Releaseイベントで投擲速度を再設定しない。このテストは既存契約の維持を確認するもので、追加時から成功したためRedとは扱わない。
+- 検証：cargo test --locked --features gui_2dは206件、cargo test --lockedは149件、GUIのみのcargo testは113件が成功し、失敗・無視0件。ログは/tmp/molkky-stick-component-green.log・default.log・gui-only.log。Stick対象18件も成功した（/tmp/molkky-stick-component-focused.log）。cargo fmt --check、cargo clippy --locked --all-targets --features gui_2d -- -D warnings、coreのみのcargo check、Webビルド、desktopのcargo check、git diff --checkが成功した。desktopは既存の/workspace/.cloud-tools/desktopをPKG_CONFIG_SYSROOT_DIR/PKG_CONFIG_PATHで参照した。
+- 実操作と寿命：node tests/gui_2d/views/stick.jsの通常終了/接続失敗時の破棄2件が成功した。Chromiumで押下中のHeld・正速度でも同じ位置・解放後のMoveを追加確認し、capture・取消・領域外解放・リサイズ・連続投擲・採点・失格・結果・反射も成功した（/tmp/molkky-stick-component-browser.log）。検証用8081番サーバーは終了した。デスクトップはコンパイルのみで、実機操作は未確認。
+
 ## mouseの責務をStickのviewへまとめる設計レビュー（2026-11-05）
 
 - 対象：a322222のgui_2d/views/mouse.rs・stick.rs・app.rs、models/stick.rs、services/game.rsと対応テスト。リモートの最新構成ではcontrollersが削除され、入力はviews、ゲーム進行はservices/Gameへ移っている。この構成を前提に評価し、controllersの再導入は提案しない。今回はレビューのみで、ソース・テストは変更しない。
