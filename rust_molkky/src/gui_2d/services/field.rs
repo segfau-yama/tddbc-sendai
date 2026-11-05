@@ -1,10 +1,13 @@
-use super::{GuiMolkky, TIME_STEP, physics::DAMPING};
+use super::GuiMolkky;
 use crate::{
     Field, Skittle, SkittleState,
     gui_2d::models::{GuiField, GuiSkittle, GuiStick},
 };
 use rapier2d::prelude::*;
 use std::collections::{HashMap, HashSet};
+
+pub const TIME_STEP: f32 = 1.0 / 60.0;
+const DAMPING: f32 = 2.0;
 
 /// 全チーム共通のフィールド、棒、標準配置のスキットルを用意する。
 pub fn create_field() -> (GuiField, GuiStick, Vec<GuiSkittle>) {

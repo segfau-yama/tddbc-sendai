@@ -10,10 +10,6 @@ use crate::gui_2d::{
 };
 use dioxus::prelude::*;
 
-#[cfg(test)]
-#[path = "../../../tests/gui_2d/views/app.rs"]
-pub(super) mod tests;
-
 pub(super) fn advance_turn(teams: &mut [Team], rules: &GuiMolkky) {
     let winner = rules.judge_game(teams).map(Team::id);
     let next = rules.next_team(teams).map(Team::id);

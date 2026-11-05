@@ -1,10 +1,76 @@
-use rust_molkky::{
+use crate::{
     Molkky, Move, Name, Skittle, SkittleState, StickState, Team,
     gui_2d::{
         models::{GuiSkittle, GuiStick},
-        services::{GuiMolkky, TIME_STEP, field::create_world, physics},
+        services::{GuiMolkky, TIME_STEP, field::create_world},
     },
 };
+use rapier2d::prelude::{Rotation, Vector};
+
+// サービスの契約を描画から独立して確認するための実エンジンfixture。
+// Fieldの接触振り分けを複製せず、各hit/chain_hitへ結果を渡す。
+fn advance(
+    rules: &mut GuiMolkky,
+    skittles: &[GuiSkittle],
+    stick: GuiStick,
+) -> (Vec<GuiSkittle>, GuiStick) {
+    if stick.as_ref().state() == StickState::Held {
+        return (skittles.to_vec(), stick);
+    }
+    let body = &mut rules.world.bodies[rules.stick_body];
+    if body.translation().to_array() != stick.position()
+        || body.linvel().to_array() != stick.velocity()
+        || body.rotation().angle() != stick.angle()
+        || body.angvel() != stick.angular_velocity()
+    {
+        body.set_translation(Vector::from_array(stick.position()), false);
+        body.set_rotation(Rotation::from_angle(stick.angle()), false);
+        body.set_linvel(Vector::from_array(stick.velocity()), false);
+        body.set_angvel(stick.angular_velocity(), false);
+        body.wake_up(true);
+    }
+    rules.world.step();
+    for pair in rules.world.narrow_phase.contact_pairs() {
+        let [a, b] = [pair.collider1, pair.collider2];
+        if [a, b].iter().all(|handle| {
+            rules.world.colliders[*handle]
+                .parent()
+                .is_none_or(|body| rules.world.bodies[body].is_sleeping())
+        }) {
+            continue;
+        }
+        for key in [(a, b), (b, a)] {
+            let peak = rules.impacts.entry(key).or_default();
+            *peak = peak.max(pair.total_impulse_magnitude());
+        }
+    }
+    let body = &rules.world.bodies[rules.stick_body];
+    let stick = stick.update(
+        body.translation().to_array(),
+        body.rotation().angle(),
+        if body.is_sleeping() {
+            [0.0; 2]
+        } else {
+            body.linvel().to_array()
+        },
+        if body.is_sleeping() {
+            0.0
+        } else {
+            body.angvel()
+        },
+    );
+    let updated = skittles
+        .iter()
+        .map(|target| {
+            let mut result = rules.hit(&stick, target);
+            for source in skittles {
+                result = rules.chain_hit(source, &result);
+            }
+            result
+        })
+        .collect();
+    (updated, stick)
+}
 
 fn scene(positions: &[[f32; 2]]) -> (GuiMolkky, Vec<GuiSkittle>, GuiStick) {
     let stick = GuiStick::default();
@@ -21,7 +87,7 @@ fn shot(stick: &GuiStick, target: [f32; 2], speed: f32) -> GuiStick {
 
 fn settle(rules: &mut GuiMolkky, skittles: &mut Vec<GuiSkittle>, stick: &mut GuiStick) {
     for _ in 0..(20.0 / TIME_STEP) as usize {
-        (*skittles, *stick) = physics::step(rules, skittles, *stick);
+        (*skittles, *stick) = advance(rules, skittles, *stick);
         if stick.as_ref().state() == StickState::Stop
             && skittles
                 .iter()
@@ -51,12 +117,12 @@ mod movement {
             .map(|index| [0.0, 0.6 + index as f32 * 0.0551])
             .collect();
         let (mut full, full_skittles, full_stick) = scene(&positions);
-        let (_, empty_moved) = physics::step(
+        let (_, empty_moved) = advance(
             &mut empty,
             &empty_skittles,
             shot(&empty_stick, [0.0, 1.0], 1.0),
         );
-        let (_, full_moved) = physics::step(
+        let (_, full_moved) = advance(
             &mut full,
             &full_skittles,
             shot(&full_stick, [0.0, 1.0], 1.0),
@@ -76,7 +142,7 @@ mod movement {
             [skittles[0].as_ref().id()]
         );
         assert!(targets[0].aimed());
-        let (updated, moved) = physics::step(&mut rules, &skittles, stick);
+        let (updated, moved) = advance(&mut rules, &skittles, stick);
         assert_eq!(stick.position(), [0.0; 2]);
         assert!(moved.position()[1] > 0.0 && moved.position()[1] < 0.11);
         assert!(moved.position()[0].abs() < 0.001);
@@ -97,23 +163,23 @@ mod movement {
             shot(&held, [0.0, 1.0], f32::NAN),
             shot(&held, [0.0, 1.0], f32::INFINITY),
         ] {
-            let (_, result) = physics::step(&mut rules, &skittles, invalid);
+            let (_, result) = advance(&mut rules, &skittles, invalid);
             assert_eq!(result.as_ref().state(), StickState::Held);
             assert_eq!(result.position(), [0.0; 2]);
         }
         let stick = shot(&held, [0.0, 1.0], 6.0);
-        let (_, moved) = physics::step(&mut rules, &skittles, stick);
-        let (_, next) = physics::step(&mut rules, &skittles, moved);
+        let (_, moved) = advance(&mut rules, &skittles, stick);
+        let (_, next) = advance(&mut rules, &skittles, moved);
         assert!(next.position()[1] > moved.position()[1]);
         assert!(next.position()[1] - moved.position()[1] < moved.position()[1]);
         assert!(next.speed() < moved.speed());
         let mut stopped = next;
         settle(&mut rules, &mut skittles, &mut stopped);
-        let (_, again) = physics::step(&mut rules, &skittles, stopped);
+        let (_, again) = advance(&mut rules, &skittles, stopped);
         assert_eq!(again, stopped);
         let new_throw = shot(&stopped, [0.0, 1.0], 6.0);
         assert_eq!(new_throw.position(), [0.0; 2]);
-        let (_, next_throw) = physics::step(&mut rules, &skittles, new_throw);
+        let (_, next_throw) = advance(&mut rules, &skittles, new_throw);
         assert!(next_throw.position()[1] > 0.0 && next_throw.position()[1] < 0.11);
         assert_eq!(next_throw.as_ref().id(), stopped.as_ref().id());
     }
@@ -167,7 +233,7 @@ mod collisions {
         let original = skittles.to_vec();
         let mut stick = shot(&held, [0.0, 1.0], 120.0);
         for _ in 0..1200 {
-            (skittles, stick) = physics::step(&mut rules, &skittles, stick);
+            (skittles, stick) = advance(&mut rules, &skittles, stick);
             if skittles
                 .iter()
                 .any(|p| p.as_ref().state() == SkittleState::Hit)
@@ -195,7 +261,7 @@ mod collisions {
         let mut stick = shot(&held, [0.0, 1.0], 0.1);
         let mut touched = false;
         for _ in 0..1200 {
-            (skittles, stick) = physics::step(&mut rules, &skittles, stick);
+            (skittles, stick) = advance(&mut rules, &skittles, stick);
             touched |= skittles[0].as_ref().state() == SkittleState::Hit;
             if stick.as_ref().state() == StickState::Stop
                 && skittles[0].as_ref().state() != SkittleState::Hit
@@ -276,7 +342,7 @@ mod field_boundaries {
         let mut previous = [0.0; 2];
         let mut reflected = [false; 2];
         for _ in 0..1200 {
-            (skittles, stick) = physics::step(&mut rules, &skittles, stick);
+            (skittles, stick) = advance(&mut rules, &skittles, stick);
             let position = stick.position();
             let angle = stick.angle();
             let half_segment = GuiStick::LENGTH / 2.0 - GuiStick::RADIUS;
@@ -328,7 +394,7 @@ mod field_boundaries {
         let (mut rules, mut skittles, held) = scene(&[[0.0, 0.7]]);
         let mut stick = shot(&held, [0.0, 1.0], 120.0);
         for _ in 0..1200 {
-            (skittles, stick) = physics::step(&mut rules, &skittles, stick);
+            (skittles, stick) = advance(&mut rules, &skittles, stick);
             let [x, y] = skittles[0].position();
             let radius = GuiSkittle::RADIUS;
             assert!(
@@ -360,8 +426,7 @@ mod core_rules {
                 .value(),
             2
         );
-        let disqualified =
-            rust_molkky::ScoreBoard::new((0..3).map(|_| rules.calc_score(&[])).collect());
+        let disqualified = crate::ScoreBoard::new((0..3).map(|_| rules.calc_score(&[])).collect());
         let teams = [
             Team::new(Name::new("赤")).with_turn(true),
             Team::new(Name::new("青")),

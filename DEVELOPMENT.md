@@ -1,5 +1,29 @@
 # 開発支援方針の記録
 
+## 入力イベント・等比拡縮・物理更新の整理（2026-11-05）
+
+- 対象：e48a5fcのgui_2d/views/{stick,field,app}.rs・field.js、services/{physics,molkky}.rs。最初のreview依頼の後、最新の指示でphysics.rsの削除が明示されたため実施した。独自step関数と固定刻みのエンジン更新は別の話であり、独自stepを残す必要はない。その他の設計指摘は提案として残す。
+- バージョン確認：crates.ioのDioxus情報では最新安定版は採用中の0.7.10、プレリリースは0.8.0-alpha.3だった。公式配布ソースのevents/generated.rsにonpointerdown・onpointerup・ongotpointercapture・onlostpointercaptureが存在する。Stickでは既にonpointerdown/upを使っている。on_pointer_down/upという綴りではない。イベントがあることと、captureの設定操作は区別する。
+- 参照：[ユーザー指定のイベント一覧](https://docs.rs/dioxus/latest/dioxus/events/index.html)、[公式0.7.10ソース](https://github.com/DioxusLabs/dioxus/blob/v0.7.10/packages/html/src/events/generated.rs)、[crates.ioのバージョン情報](https://crates.io/api/v1/crates/dioxus)。docs.rsは環境のネットワーク制限で取得できなかったため、公式GitHubの0.7.10ソースとcrates.io配布の0.8.0-alpha.3ソースで照合した。両版のPointerData/MountedDataに共通のset_pointer_capture操作は確認できず、JSの同期capture・取消・フレーム時刻通知は維持した。マウス入力の本体はRustのイベント処理である。
+- 物理：physics.rsとそのstep/contacts APIを削除し、Field::advanceの固定刻みループでRapierを直接進める。実接触をhit/chain_hitへ渡す経路は維持する。Skittleの位置反映はhit/chain_hitから受け取り、Field側で同じ物理姿勢を先に読み直す処理を除去した。GuiMolkkyのワールドは一つ、Fieldは進行、Molkkyは衝突後の状態判定、Stickは入力と自身の状態・運動結果を担当する。物理型はcoreへ追加しない。
+- 拡縮：共通SVGをフィールドと同じ2:5の縦横比にし、Field・Stick・Skittle全体を等比拡縮する。SVGの中央寄せ余白補正は削除した。マウスは描画領域内の割合とY反転だけで物理座標へ戻す。物理座標・寸法は画面サイズによって変更しない。
+- テスト：core・cui・gui_2dのmodels/・services/を対象にする。views/8ファイル、cui/io/2ファイル、cui/run.rs、GUIのDOM操作テストを削除した。削除したphysics API用のテストも除去した。これはユーザーによる対象範囲変更であり、失敗回避のための削除ではない。dioxus-ssr直接依存と、その専用依存askama_escapeもlockから消えた。
+- サービスの検証：既存GuiMolkkyテストを同名ファイルのままcfg(test)で登録し、テスト専用の実エンジンfixtureで結果を与える。製品Fieldをテストから呼ばず、各hit/chain_hitの契約と元の期待値を維持する。新しいテストケースは追加していない。テスト登録移行時のcrate名参照によるコンパイルエラーは修正した。今回の作業はRefactorと明示されたテスト削除であり、コンパイルエラーをRedとは記録しない。
+- [x] 変更前のGUI有効テスト198件の成功を確認した（/tmp/molkky-review-baseline.log）。
+- [x] 公式バージョン・入力イベントを確認し、独自physics APIと余白補正を削除した。
+- [x] 対象外のテスト・登録・不要な開発依存を削除した。
+- [x] 残したテスト136件、既定117件、GUIのみ77件が失敗・無視0件で成功した。fmt、Clippy、coreのみのcheck、Webビルド、desktopのcheckも成功した。ログは/tmp/molkky-review-{green,default,gui-only,clippy,core,web,desktop}.log。
+- [x] 削除前のDOM確認スクリプトをgit showから標準入力で一時実行し、リサイズ、照準、蓄力、取消、領域外解放、実衝突、採点、失格、交代、終了、反射が成功した（/tmp/molkky-review-browser.log）。対象外のテストファイルは保持せず、新しいものも作成していない。desktopの実操作は未確認。
+- [x] 差分を確認し、Conventional Commit・通常pushする。検証用8081番サーバーは終了した。
+
+残る複雑さ（今回の追加修正対象には含めない）：
+
+- services/molkky.rs:L96: shrink: hitとchain_hitでsleep・力積からHit/Fall/Standを判定する分岐が重複する。二か所で使う共通判定へ集約する（P2）。
+- views/stick.rs:L30: shrink: Charge.targetとGuiStick.targetに同じ目標を保持する。目標はGuiStickへ揃え、Chargeは所有ポインターと開始時刻だけを持つ（P2）。
+- views/app.rs:L57: shrink: テスト削除後のrenderはAppから一度呼ぶだけで6引数を渡している。Appのrsxへ直接書く（P3）。
+- views/field.rs:L255: shrink: field_shapeは固定boundsとmountedを一度受け渡す。Field内のSVGへ直接書く（P3）。
+- 残る削減候補は概算35行。関数の移動分と、今回依頼されたテスト削除量は削減見積もりへ含めない。
+
 ## App・Stick・Fieldによる一投の進行を実装（2026-11-05）
 
 - 採用する直近計画：Gameサービスを撤去し、Appがモデルと唯一の物理ワールドを保持する。StickはDioxusのpointerdown/move/up/cancelで入力し、解放時にmoveでHeld→Moveと初速を確定する。Fieldが一つのフレームループからphysicsとhit/chain_hitを実行し、MoveまたはHitがある間だけ進める。StopかつHitなしの完了をAppへ通知し、coreで採点・勝敗・手番を反映してHeldへ戻す。

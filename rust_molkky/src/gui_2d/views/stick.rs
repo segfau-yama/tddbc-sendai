@@ -3,11 +3,7 @@ use crate::gui_2d::models::{GuiField, GuiStick};
 use dioxus::{html::input_data::MouseButton, prelude::*};
 use std::{rc::Rc, time::Duration};
 
-#[cfg(test)]
-#[path = "../../../tests/gui_2d/views/stick.rs"]
-mod tests;
-
-/// cursor/rectはCSSピクセル。rectはborderを除くSVG領域、boundsはworldの[x,y,幅,高さ]。
+/// rectはboundsと同じ縦横比のSVG領域(CSSピクセル)、boundsはworldの[x,y,幅,高さ]。
 pub fn screen_to_world(cursor: [f64; 2], rect: [f64; 4], bounds: [f32; 4]) -> Option<[f32; 2]> {
     if !cursor.iter().chain(rect.iter()).all(|v| v.is_finite())
         || !bounds.iter().all(|v| v.is_finite())
@@ -19,19 +15,15 @@ pub fn screen_to_world(cursor: [f64; 2], rect: [f64; 4], bounds: [f32; 4]) -> Op
         return None;
     }
     let [x, y, width, height] = bounds.map(f64::from);
-    // SVG既定のxMidYMid meetと同じ拡縮・中央寄せ。余白をフィールドに含めない。
-    let scale = (rect[2] / width).min(rect[3] / height);
-    if !scale.is_finite() || scale <= 0.0 {
+    let local_x = (cursor[0] - rect[0]) / rect[2];
+    let local_y = (cursor[1] - rect[1]) / rect[3];
+    if !(0.0..=1.0).contains(&local_x) || !(0.0..=1.0).contains(&local_y) {
         return None;
     }
-    let left = rect[0] + (rect[2] - width * scale) / 2.0;
-    let top = rect[1] + (rect[3] - height * scale) / 2.0;
-    let local_x = (cursor[0] - left) / scale;
-    let local_y = (cursor[1] - top) / scale;
-    if !(0.0..=width).contains(&local_x) || !(0.0..=height).contains(&local_y) {
-        return None;
-    }
-    let point = [(x + local_x) as f32, (y + height - local_y) as f32];
+    let point = [
+        (x + local_x * width) as f32,
+        (y + (1.0 - local_y) * height) as f32,
+    ];
     point.iter().all(|v| v.is_finite()).then_some(point)
 }
 

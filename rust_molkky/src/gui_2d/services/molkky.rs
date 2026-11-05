@@ -3,16 +3,20 @@ use crate::gui_2d::models::{GuiField, GuiSkittle, GuiStick};
 use rapier2d::prelude::*;
 use std::collections::HashMap;
 
+#[cfg(test)]
+#[path = "../../../tests/gui_2d/services/molkky.rs"]
+mod tests;
+
 /// N·s。高さ方向の転倒を近似する調整値。
 const FALL_IMPULSE: f32 = 0.08;
 
 pub struct GuiMolkky {
-    pub(super) world: PhysicsWorld,
-    pub(super) stick_id: Id,
-    pub(super) stick_body: RigidBodyHandle,
-    pub(super) stick_collider: ColliderHandle,
-    pub(super) skittle_ids: HashMap<ColliderHandle, Id>,
-    pub(super) impacts: HashMap<(ColliderHandle, ColliderHandle), f32>,
+    pub(crate) world: PhysicsWorld,
+    pub(crate) stick_id: Id,
+    pub(crate) stick_body: RigidBodyHandle,
+    pub(crate) stick_collider: ColliderHandle,
+    pub(crate) skittle_ids: HashMap<ColliderHandle, Id>,
+    pub(crate) impacts: HashMap<(ColliderHandle, ColliderHandle), f32>,
 }
 
 impl Molkky for GuiMolkky {

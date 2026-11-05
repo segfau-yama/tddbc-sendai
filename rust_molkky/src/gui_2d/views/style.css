@@ -7,7 +7,7 @@ body {
 main { max-width: 1100px; margin: auto; padding: 16px; }
 .game-layout { display: flex; gap: 24px; flex-wrap: wrap; }
 #molkky-input { flex: 1 1 360px; min-width: 0; user-select: none; }
-#molkky-input svg { height: 65vh; min-height: 320px; }
+#molkky-input svg { width: min(100%, 26vh); aspect-ratio: 2 / 5; height: auto; }
 .scores { flex: 1 1 280px; overflow: auto; }
 table { border-collapse: collapse; width: 100%; }
 th, td { padding: 8px; border-bottom: 1px solid #ccc; text-align: left; }

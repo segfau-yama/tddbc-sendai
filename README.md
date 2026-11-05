@@ -37,10 +37,9 @@ cargo test --locked --test application
 | src/gui_2d/services/field.rs | フィールド・棒・標準12本の生成と、モデルからの物理ワールド構築 |
 | src/gui_2d/services/teams.rs | 名前からチームを生成 |
 | src/gui_2d/views/stick.rs | Stickコンポーネント：棒・照準の描画、マウス入力・蓄力・解放 |
-| src/gui_2d/views/field.rs | Fieldコンポーネント：固定刻みの更新、照準の反映、一投の完了通知 |
+| src/gui_2d/views/field.rs | Fieldコンポーネント：共有ワールドの固定刻み更新、hit/chain_hitの接続、照準の反映、一投の完了通知 |
 | src/gui_2d/views/field.js | 同期pointer capture・取消・フレーム時刻通知と、破棄時の後始末 |
 | src/gui_2d/services/molkky.rs | 接触・停止結果に対するaim/hit/chain_hit/stand_up、coreルールの利用 |
-| src/gui_2d/services/physics.rs | 共有物理更新・位置/速度の反映・接触履歴からhit/chain_hitの適用 |
 | src/gui_2d/views/ | AppコンポーネントとSVG・速度メーター・得点表・結果の描画部品 |
 | src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
 
@@ -92,12 +91,12 @@ stand_upはcoreの抽象メソッドです。CUIの実装はId・番号を保っ
 
 ### テストと残課題
 
-テスト本体は対象ファイルに合わせて`tests/core/models/`、`tests/core/services/`、`tests/cui/models/`、`tests/cui/services/`、`tests/cui/io/`、`tests/cui/run.rs`へ配置します。`tests/core_models.rs`と`tests/application.rs`がモジュールを登録します。CUIのMolkky具象テストはソースのcfg(test)から同名のテストファイルを登録し、非公開の乱数源を固定して連鎖を検証します。
+自動テストはcore・cui・gui_2dの`models/`・`services/`に限定し、対象と同名のファイルを`tests/`以下に置きます。入力・出力・run・views・DOM操作のテストは保持しません。CUI/GUIのMolkky具象テストはソースのcfg(test)から同名のテストファイルを登録し、乱数源や実エンジンの結果からサービスの契約を確認します。
 
 ScoreBoardは投てき履歴を保持して順に再計算します。50点を超えたら25点、3回連続のミスなら失格・0点となり、勝利・失格の後は追加記録を拒否します。単独参加では失格または50点まで継続します。
 不戦勝の判定はjudge_gameが行い、runが勝者の得点表へwith_winで50点・勝利を反映します。with_win自体は他チームの状態を調べず、元の履歴を変更しません。
 
-GUIを含むテストでは、単体hitの状態保持・連鎖・一投単位の採点・次投準備まで確認しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
+GUIを含むモデル・サービスのテストでは、hitの状態保持・連鎖・採点・失格・勝敗・立て直しを確認しています。確率0%・100%で転倒結果を固定し、得点・履歴・終了の既存の期待値も検証しています。実行結果と変更理由は[DEVELOPMENT.md](DEVELOPMENT.md)を参照してください。
 
 ### GUI 2Dの起動
 
@@ -142,23 +141,12 @@ cd rust_molkky
 cargo test --locked --features gui_2d
 cargo test --locked --no-default-features --features gui_2d
 cargo clippy --locked --all-targets --features gui_2d -- -D warnings
-# 入力・描画、ゲーム進行を絞って確認する場合
-cargo test --locked --features gui_2d --lib gui_2d::views
+# サービスの契約を絞って確認する場合
+cargo test --locked --features gui_2d --lib gui_2d::services
 cargo test --locked --features gui_2d --test gui_2d
-# DOM接続の破棄・接続失敗時の後始末（Node.jsのみ）
-node tests/gui_2d/views/field.js
 ```
 
-Webを起動した状態で、実DOMの入力確認も実行できます。次はLinux用の例です。Playwrightは検証時だけ使用し、ゲームの実行依存には含めません。
-
-```sh
-cd rust_molkky
-npm install --prefix /tmp/molkky-browser-tools --no-save playwright
-/tmp/molkky-browser-tools/node_modules/.bin/playwright install chromium
-NODE_PATH=/tmp/molkky-browser-tools/node_modules node tests/gui_2d/app.js
-```
-
-既存Chromiumを使う場合はCHROMIUM_PATH、別の起動URLを使う場合はGUI_URLを指定します。Chromiumでcapture・取消・リサイズ・領域外解放・採点・失格・勝利・終了後の入力無効化を確認しました。今回のコンポーネント移行ではデスクトップ版の実機確認は行っていません。Linuxでは前述の開発ライブラリが必要です。
+入力と表示はWeb・デスクトップ上で操作して確認します。今回、WebはChromiumで確認し、デスクトップはコンパイルのみ確認しています。
 
 ### GUI 2Dの描画部品
 
@@ -172,7 +160,7 @@ cargo test --locked --features gui_2d --test gui_2d
 cargo build --locked --features gui_2d
 ```
 
-描画はdioxus-ssrによるHTML/SVG出力とChromiumで確認しています。既存CUIの起動方法は変わりません。
+フィールド・棒・スキットルは共通SVGのviewBox内へ配置します。SVG自体の縦横比を2:5へ揃え、全体を等比拡縮します。物理座標や個々の寸法は変えません。既存CUIの起動方法は変わりません。
 
 ### GUI 2Dの投擲サービス
 
@@ -180,26 +168,24 @@ cargo build --locked --features gui_2d
 
 | API | 動作 |
 | --- | --- |
-| physics::step | GuiSkittleの一覧とGuiStickから、1/60秒の移動結果とhit/chain_hit適用後の状態を返す。Heldでは時間を進めない |
-| physics::contacts | 一投で力積が発生した個体のIdの組を返す。壁と重複する逆向きの組を除き、停止時の再評価まで履歴を保つ |
 | aim | Rapierの形状問い合わせで候補を選び、位置・角度・照準状態を反映したGuiSkittleを返す |
 | hit | 指定したStickとSkittleの接触とボディ状態から、位置・角度・状態を更新したGuiSkittleを返す |
 | chain_hit | 指定した2個体の実際の接触ペアから、対象の物理状態を反映したGuiSkittleを返す |
 | stand_up | 位置・Id・番号を保ち、対象ボディの角度・速度・角速度・接触記録とStandを復元する |
 
-physics::stepが唯一のワールドを一度進め、位置・速度をモデルへ反映します。実際の接触履歴から、棒とピンにはhit、ピン同士には双方へchain_hitを適用します。接触履歴のないHitで再開したモデルもhitで停止まで追跡します。状態の判定はMolkkyの具象実装へ集約します。モデルのupdateはIdを保ち、元の値を変更せず新しいモデルを返します。
+FieldがRapierの共有ワールドを固定刻みで一度ずつ進めます。独自のstep APIとphysics.rsはありません。実際の接触履歴から、棒とピンにはhit、ピン同士には双方へchain_hitを適用します。接触履歴のないHitで再開したモデルもhitで停止まで追跡します。状態の判定はMolkkyの具象実装へ集約します。モデルのupdateはIdを保ち、元の値を変更せず新しいモデルを返します。
 
 Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。FieldはMoveまたはHitがある間更新を続け、「StickがStop、かつHitが0本」でAppへ完了を通知します。AppはFallだけをcalc_scoreへ渡し、ScoreBoard.addとTeam.with_score_boardを反映します。弱い衝突はStandへ戻り、得点には含めません。継続時はstand_upで移動後の位置とIdを保って立て直します。
 
-半径・質量はGuiSkittle、棒の半径・長さ・質量はGuiStickの関連定数です。時間刻み・共通減衰はphysics.rs、転倒閾値はmolkky.rsに置きます。時間刻みは従来どおりservices::TIME_STEPから参照できます。新しいワールドラッパー、Observer trait、イベントバス、開始用のラッパーは追加していません。
+半径・質量はGuiSkittle、棒の半径・長さ・質量はGuiStickの関連定数です。時間刻み・共通減衰はワールド生成を行うservices/field.rs、転倒閾値はmolkky.rsに置きます。時間刻みは従来どおりservices::TIME_STEPから参照できます。新しいワールドラッパー、Observer trait、イベントバス、開始用のラッパーは追加していません。
 
 ### GUI 2Dの入力と進行
 
-StickはDioxusのonpointerdown/move/up/cancelを受け取り、一つのuse_coroutineで順番に処理します。内部のStickInputは所有ポインター・蓄力開始時刻・最後の有効目標だけを保持します。SVGの領域はイベントごとにMountedDataで取得し、中央寄せ・アスペクト比維持・Y上向きを考慮して変換します。SVGの余白や領域外は拒否します。
+StickはDioxusのonpointerdown/move/up/cancelを受け取り、一つのuse_coroutineで順番に処理します。内部のStickInputは所有ポインター・蓄力開始時刻・最後の有効目標だけを保持します。SVGの領域はイベントごとにMountedDataで取得します。縦横比がフィールドと一致するため、入力座標は領域内の割合とY反転だけで物理座標へ変換します。領域外では最後の有効目標を使います。
 
 左押下で同じIdのHeldのGuiStickへ目標を設定します。FieldがMolkky::aimの結果を各Skittleへ反映します。押下中は時間ベースのspeed（0〜10m/s、往復2秒）を更新し、実速度は0、位置も保持します。解放時はその瞬間の目標とspeedでmoveを一度呼び、Moveへ進めます。領域外では最後の有効目標を使い、0速度・方向なしでは投擲しません。
 
-Fieldの一つのループが固定刻みでphysics::stepを呼びます。physicsが位置・速度と接触を反映し、hit/chain_hitがHit/Fall/Standを判定します。Appは完了通知から採点・judge_game・next_teamを接続し、返却先へturnを反映します。最後に同じIdのStickをHeldへ戻すことで二重採点を防ぎます。進行用の別モデルや完了フラグは持ちません。
+Fieldの一つのループがRapierを固定刻みで更新し、棒へ運動結果を反映します。実際の接触履歴をhit/chain_hitへ渡し、スキットルの位置とHit/Fall/Standを取得します。Appは完了通知から採点・judge_game・next_teamを接続し、返却先へturnを反映します。最後に同じIdのStickをHeldへ戻すことで二重採点を防ぎます。進行用の別モデルや完了フラグは持ちません。
 
 Ready・Charging・Simulatingは棒の状態・目標・Hitの有無から、終了はチームの手番から求めます。モデルの所有元はAppに揃え、各描画部品にcoreモデルを重複所有させません。
 
