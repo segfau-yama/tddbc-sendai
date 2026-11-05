@@ -1,5 +1,17 @@
 # 開発支援方針の記録
 
+## StickとSkittleのuse_coroutine監視案のレビュー（2026-11-05）
+
+- 対象：60eba34のviews/stick.rs:L106・L169・L260・L288、views/skittle.rs:L5、views/app.rs、physics/gameの実行経路。ユーザー指定どおり性能は評価軸に含めず、役割・状態の所有・処理順・必要なコードの量で評価する。今回はレビューのみで実装は変更しない。
+- API確認：採用中のDioxus 0.7.10のuse_coroutineは、use_futureとメッセージ受信用のチャネルを組み合わせたhook。Signalを読むだけで変更を自動購読してループを起こすhookではなく、各Coroutineの受信口も自動的な全コンポーネント配信にはならない。ローカル依存のdioxus-hooks/src/use_coroutine.rs・use_future.rs・use_effect.rsを確認した。
+- 提案への評価：Stick/Skittleごとのタスクが完成済みの物理結果を受け取る設計は可能。ただし表示だけならApp所有のSignalを各コンポーネントが読むだけで足りる。監視用タスク・結果配信・購読解除を追加するより単純で、Skittleにuse_coroutineを置く理由は現時点では薄い。
+- P1 / physics.rs:L41・game.rs:L117：各コンポーネントから共有ワールドを進めず、App側の一つの更新経路が物理計算とhit/chain_hitを適用し、同じ刻みの結果をモデルへ反映する。各タスクが個体の状態を書き戻す構成では、採点前に全個体の反映完了を揃える仕組みが必要になり、新たな調停コードを増やす。これは性能ではなく状態の一貫性と責務の問題である。
+- P2 / views/stick.rs:L106・L169：use_coroutineが有効な候補は、押下・移動・フレーム・解放・取消を順番に受ける入力処理。既存DomEventを使い、押下開始時刻・所有ポインター・フレーム時刻をタスクのローカル変数として保持できる。受信・状態更新のためだけのStickInputのSignalは不要にできるが、ボタン/座標/取消の検証や状態遷移の処理は残る。
+- P2 / views/app.rs：Gameを削除する前節の構成なら、Appの一つのuse_coroutineが複数の子コンポーネントから既存イベントを受け、共有モデルと物理更新・投擲完了を接続する案もある。入力用Stick coroutineとAppの共通coroutineは目的に応じた代替候補であり、全階層へ重ねて追加する案ではない。Appがモデルを所有し、表示部品にはモデル参照だけを渡す。
+- P2 / views/stick.rs:L261・L291 / shrink：現在のStickInputは受信タスク内だけで使われ、描画はGameのモデルを参照する。既存spawn内の通常の可変ローカル変数へ移すだけでもSignalを一つ削除でき、use_coroutineの導入を前提にしない。現行eval.recv().awaitの一つの受信ループを置き換えるだけなら、新たな受信チャネルを足す利点は小さい。複数の送信元から命令をまとめたい場合にuse_coroutine、受信だけなら既存spawn/use_futureが自然。
+- 表示・後始末：スキットル・得点表・速度メーター・結果の描画はSignal参照、派生値が必要ならuse_memoで足りる。採点・手番のcore呼び出しは同期処理なので、それ専用のcoroutineは作らず、全モデルの結果反映後にAppから一度実行する。use_coroutineにしてもDOMリスナー・requestAnimationFrame・pointer captureの解除は別の責務であり、既存JSのfinally/use_dropを無条件に削除しない。
+- [x] Dioxusの実装と現在の入力/物理/描画経路を確認し、可能な構成と簡潔になる条件を整理した。ソースとテストは変更せず、動作テストは再実行しない。git diff --checkで文書を確認して記録だけcommit・通常pushする。正味の削減行数は受信経路の選択によるため未算定。
+
 ## Gameの仲介を減らしAppとコンポーネントへ責務を戻すレビュー（2026-11-05）
 
 - 対象：033790bのgui_2d/services/game.rs・physics.rs・molkky.rs、views/app.rs・stick.rs・skittle.rs・score.rs。ユーザーの「Appでモデル保持」「physicsで物理結果を処理」「Stopを起点に完了」を基準に評価する。前節のGameの作成理由は当時の分離案の説明であり、Game型を必須とはしない。今回はレビューのみで実装修正は行わない。
