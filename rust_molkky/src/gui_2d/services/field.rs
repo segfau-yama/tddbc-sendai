@@ -1,4 +1,4 @@
-use super::{GuiMolkky, TIME_STEP, molkky::DAMPING};
+use super::{GuiMolkky, TIME_STEP, physics::DAMPING};
 use crate::{
     Field, Skittle, SkittleState,
     gui_2d::models::{GuiField, GuiSkittle, GuiStick},

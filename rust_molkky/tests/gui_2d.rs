@@ -31,3 +31,7 @@ mod field_service;
 #[cfg(feature = "gui_2d")]
 #[path = "gui_2d/services/teams.rs"]
 mod teams_service;
+
+#[cfg(feature = "gui_2d")]
+#[path = "gui_2d/services/physics.rs"]
+mod physics;

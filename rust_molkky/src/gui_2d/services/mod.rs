@@ -3,6 +3,9 @@ mod game;
 mod molkky;
 
 pub use game::Game;
-pub use molkky::{GuiMolkky, TIME_STEP};
+pub use molkky::GuiMolkky;
+pub use physics::TIME_STEP;
+
+pub mod physics;
 
 pub mod teams;

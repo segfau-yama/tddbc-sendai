@@ -1,4 +1,4 @@
-use super::{GuiMolkky, field::create_world};
+use super::{GuiMolkky, field::create_world, physics};
 use crate::core::{Molkky, SkittleState, StickState, Team, Throw};
 use crate::gui_2d::models::{GuiField, GuiSkittle, GuiStick};
 
@@ -63,7 +63,23 @@ impl Game {
             return;
         }
         let prepared = GuiStick::new(*self.stick.as_ref(), Some(target), speed);
-        (self.skittles, self.stick) = self.rules.update(&self.skittles, prepared);
+        let targets = self.rules.aim(&prepared, &self.skittles);
+        self.skittles = self
+            .skittles
+            .iter()
+            .map(|skittle| {
+                let aimed = targets
+                    .iter()
+                    .any(|target| target.as_ref().id() == skittle.as_ref().id());
+                skittle.update(
+                    skittle.position(),
+                    skittle.angle(),
+                    skittle.as_ref().state(),
+                    aimed,
+                )
+            })
+            .collect();
+        self.stick = prepared;
     }
 
     pub fn throw(&mut self) -> bool {
@@ -102,7 +118,34 @@ impl Game {
         if self.is_finished() || !self.is_simulating() {
             return;
         }
-        (self.skittles, self.stick) = self.rules.update(&self.skittles, self.stick);
+        (self.skittles, self.stick) = physics::step(&mut self.rules, &self.skittles, self.stick);
+        let contacts = physics::contacts(&self.rules);
+        // 接触履歴のないHitで再開した場合も、停止時に既存のhitで確定する。
+        for skittle in self.skittles.iter_mut().filter(|s| {
+            s.as_ref().state() == SkittleState::Hit
+                && !contacts
+                    .iter()
+                    .any(|&(a, b)| a == s.as_ref().id() || b == s.as_ref().id())
+        }) {
+            *skittle = self.rules.hit(&self.stick, skittle);
+        }
+        for (a, b) in contacts {
+            let stick_id = self.stick.as_ref().id();
+            if a == stick_id || b == stick_id {
+                let id = if a == stick_id { b } else { a };
+                if let Some(skittle) = self.skittles.iter_mut().find(|s| s.as_ref().id() == id) {
+                    *skittle = self.rules.hit(&self.stick, skittle);
+                }
+            } else if let (Some(left), Some(right)) = (
+                self.skittles.iter().position(|s| s.as_ref().id() == a),
+                self.skittles.iter().position(|s| s.as_ref().id() == b),
+            ) {
+                let first = self.skittles[left];
+                let second = self.skittles[right];
+                self.skittles[left] = self.rules.chain_hit(&second, &first);
+                self.skittles[right] = self.rules.chain_hit(&first, &second);
+            }
+        }
         // 棒だけが停止しても、スキットルの連鎖が終わるまでは採点しない。
         if self.stick.as_ref().state() == StickState::Stop
             && self

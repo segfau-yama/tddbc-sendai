@@ -1,7 +1,10 @@
 use super::*;
 use crate::gui_2d::{
     models::{GuiField, GuiSkittle},
-    services::field::{create_field, create_world},
+    services::{
+        field::{create_field, create_world},
+        physics,
+    },
 };
 use crate::{Molkky, Skittle, SkittleState};
 use crate::{Name, Stick as CoreStick, StickState, Team, Throw};
@@ -28,7 +31,7 @@ mod next_throw {
         let mut skittles = vec![];
         let mut rules = create_world(&model, &skittles);
         for _ in 0..1200 {
-            (skittles, model) = rules.update(&skittles, model);
+            (skittles, model) = physics::step(&mut rules, &skittles, model);
             if model.as_ref().state() == StickState::Stop {
                 break;
             }
@@ -54,7 +57,7 @@ mod next_throw {
         );
         assert!(html.contains("<line"));
         assert!(!thrown_html.contains("<line"));
-        let (_, moved) = rules.update(&skittles, thrown);
+        let (_, moved) = physics::step(&mut rules, &skittles, thrown);
         assert!(!render(moved).contains("translate(0 0) rotate(0)"));
     }
 }

@@ -1,5 +1,25 @@
 # 開発支援方針の記録
 
+## 接触履歴から命中と連鎖を反映する実装（2026-11-05）
+
+- 対象：GUIのservices/molkky.rs・game.rs・field.rsと新しいphysics.rs、呼び出し元と対応テスト。GuiMolkkyの固有updateを削除し、物理側が一刻みの共有ワールド更新・力積の履歴・位置/速度の反映を担当する。Gameが実際の接触した組をhit/chain_hitへ振り分け、状態の確定はこれらのメソッドに集約する。
+- 最小の分割：physicsの関数から既存GuiMolkky内の唯一のRapierワールドを扱う。新しいWorldラッパー・Observer trait・イベントバス・coreの引数や型は追加しない。物理側はスキットルのStand/Hit/Fallを判定しない。接触履歴は一投内で保持し、立て直しで対象の履歴を消す。
+- 進行：物理を一度進める→モデルへ位置/速度を反映→接触した棒/ピンへhit、ピン同士には双方へchain_hitを適用→StopかつHitなしなら一度採点。記録された接触は停止まで再評価する。接触履歴のないHitで再開したモデルも既存hitで停止状態を確定できるように保つ。照準中はaimを使い、物理時間を進めない。
+- [x] 作業前のGUI有効206テストの成功と呼び出し元を確認した。
+- [x] 物理更新が位置を変えてもスキットルの状態を確定せず、接触履歴が実個体だけを返すテストを先に実行してRedを確認する。
+- [x] physicsへ共有更新を分離し、GuiMolkky::updateを削除する。
+- [x] Gameが接触履歴を使って状態を反映し、hit/chain_hitによる停止後の確定を維持する。
+- [x] 旧テストの物理・命中・連鎖・壁・再投擲・Hit継続中の採点防止・CUI/coreの検証を移行する。
+- [x] fmt/Clippy・feature分離・Web/desktopビルド・Web実操作・差分を確認する。
+- [x] 記録後Conventional Commitでcommit・通常pushする。
+- Red：tests/gui_2d/services/physics.rsに、物理更新で位置が変わってもStandのままで、hitを適用して初めてHitになる検証を追加し、physics未定義でコンパイルが失敗することを確認した（/tmp/molkky-contact-red.log）。これはAPIのRedであり、衝突ルールが失敗した記録とは区別する。
+- Green/Refactor：GuiMolkkyの固有implとupdateを削除した。physics::stepは初速反映・固定刻み・力積履歴・位置/速度の反映、physics::contactsは実際に力積が発生した個体Idの組の取得を担当する。逆向きの重複と壁を除き、履歴を停止時まで保持する。既存の唯一のワールドとId対応はGuiMolkkyが所有し、関数が借りて扱う。新たな世界ラッパーやObserver機構は作っていない。
+- Gameは接触履歴からhit/chain_hitを呼ぶ。ピン同士は同じ物理結果を使って双方を更新する。履歴のある個体に余分な直接hitを呼ばず、履歴なしのHitで再開したモデルだけは既存hitで追跡する。すべての接触を適用後にStopかつHitなしを確認する。Game::aimは既存のaimとモデルで照準を更新し、物理時間を進めない。
+- 新しい物理テストは接触した同番号の実個体だけを返すこと、元モデルの不変性、停止後のFall確定、立て直し後の履歴削除まで成功した。Gameには同番号2本の連鎖を逆順で配置するケースも追加し、双方のHit、2点の一度だけの加点、手番、個体保持を確認した。後者は追加時から成功したのでRedとは記録しない。片側のchain_hit適用を一時的に外すと、このテストがHitの個体不足で失敗し、復元後は成功した（/tmp/molkky-contact-route-negative.log・route-restored.log）。
+- 既存検証：ルール単体のテストはphysicsの位置結果に各hit/chain_hitを適用するテスト用advanceへ移行し、Gameのディスパッチとは独立して従来の期待値を保つ。製品の全組み合わせ処理は削除したが、テストでは任意の引数へのルール適用を続けて検証する。次投の描画テストはphysics::stepを利用する。テストの無効化や期待値の緩和は行っていない。
+- 最終検証：GUI有効のcargo test --locked --features gui_2dは208件、既定のcargo test --lockedは149件、GUIのみは115件成功し、失敗・無視0件。ログは/tmp/molkky-contact-green.log・default.log・gui-only.log。cargo fmt --check、cargo clippy --locked --all-targets --features gui_2d -- -D warnings、coreのみのcargo check、Webビルド、desktopのcargo check、git diff --checkが成功した。desktopは既存の/workspace/.cloud-tools/desktopをPKG_CONFIG_SYSROOT_DIR/PKG_CONFIG_PATHで参照した。
+- Web実操作：Chromiumで蓄力中の静止、解放後のMove、capture・取消・領域外解放・連続投擲・採点・失格・結果・反射が成功した（/tmp/molkky-contact-browser.log）。node tests/gui_2d/views/stick.jsの破棄2件も成功した。検証用8081番サーバーは終了した。デスクトップの実機操作は未確認。core/CUI・依存関係・DOM接続は変更していない。
+
 ## 衝突通知でhitとchain_hitを呼ぶ設計の評価（2026-11-05）
 
 - 対象：7951109のservices/molkky.rs:L20・L67・L98・L172・L217、services/game.rs:L101、views/stick.rs:L260と対応テスト。ユーザー案はviewsのオブザーバーから衝突種別に応じてhit/chain_hitを呼び、GuiMolkky::updateを削除するもの。今回は設計評価で、ソースとテストは変更しない。

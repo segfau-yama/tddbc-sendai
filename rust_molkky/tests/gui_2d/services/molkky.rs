@@ -2,7 +2,7 @@ use rust_molkky::{
     Molkky, Name, Skittle, SkittleState, StickState, Team, Throw,
     gui_2d::{
         models::{GuiSkittle, GuiStick},
-        services::{GuiMolkky, TIME_STEP, field::create_world},
+        services::{GuiMolkky, TIME_STEP, field::create_world, physics},
     },
 };
 
@@ -19,9 +19,31 @@ fn shot(stick: &GuiStick, target: [f32; 2], speed: f32) -> GuiStick {
     GuiStick::throw(GuiStick::new(*stick.as_ref(), Some(target), speed))
 }
 
+// ルール単体の検証は物理結果を各引数へ適用する。Gameの接触ディスパッチとは独立させる。
+fn advance(
+    rules: &mut GuiMolkky,
+    skittles: &[GuiSkittle],
+    stick: GuiStick,
+) -> (Vec<GuiSkittle>, GuiStick) {
+    let (positions, stick) = physics::step(rules, skittles, stick);
+    let skittles = positions
+        .iter()
+        .map(|target| {
+            let mut result = rules.hit(&stick, target);
+            for source in &positions {
+                if source.as_ref().id() != target.as_ref().id() {
+                    result = rules.chain_hit(source, &result);
+                }
+            }
+            result
+        })
+        .collect();
+    (skittles, stick)
+}
+
 fn settle(rules: &mut GuiMolkky, skittles: &mut Vec<GuiSkittle>, stick: &mut GuiStick) {
     for _ in 0..(20.0 / TIME_STEP) as usize {
-        (*skittles, *stick) = rules.update(skittles, *stick);
+        (*skittles, *stick) = advance(rules, skittles, *stick);
         if stick.as_ref().state() == StickState::Stop
             && skittles
                 .iter()
@@ -51,8 +73,16 @@ mod movement {
             .map(|index| [0.0, 0.6 + index as f32 * 0.0551])
             .collect();
         let (mut full, full_skittles, full_stick) = scene(&positions);
-        let (_, empty_moved) = empty.update(&empty_skittles, shot(&empty_stick, [0.0, 1.0], 1.0));
-        let (_, full_moved) = full.update(&full_skittles, shot(&full_stick, [0.0, 1.0], 1.0));
+        let (_, empty_moved) = advance(
+            &mut empty,
+            &empty_skittles,
+            shot(&empty_stick, [0.0, 1.0], 1.0),
+        );
+        let (_, full_moved) = advance(
+            &mut full,
+            &full_skittles,
+            shot(&full_stick, [0.0, 1.0], 1.0),
+        );
         assert_eq!(empty_moved.position(), full_moved.position());
         assert_eq!(empty_moved.velocity(), full_moved.velocity());
         assert!(full_moved.position()[1] > 0.0 && full_moved.position()[1] < 0.017);
@@ -68,7 +98,7 @@ mod movement {
             [skittles[0].as_ref().id()]
         );
         assert!(targets[0].aimed());
-        let (updated, moved) = rules.update(&skittles, stick);
+        let (updated, moved) = advance(&mut rules, &skittles, stick);
         assert_eq!(stick.position(), [0.0; 2]);
         assert!(moved.position()[1] > 0.0 && moved.position()[1] < 0.11);
         assert!(moved.position()[0].abs() < 0.001);
@@ -89,23 +119,23 @@ mod movement {
             shot(&held, [0.0, 1.0], f32::NAN),
             shot(&held, [0.0, 1.0], f32::INFINITY),
         ] {
-            let (_, result) = rules.update(&skittles, invalid);
+            let (_, result) = advance(&mut rules, &skittles, invalid);
             assert_eq!(result.as_ref().state(), StickState::Held);
             assert_eq!(result.position(), [0.0; 2]);
         }
         let stick = shot(&held, [0.0, 1.0], 6.0);
-        let (_, moved) = rules.update(&skittles, stick);
-        let (_, next) = rules.update(&skittles, moved);
+        let (_, moved) = advance(&mut rules, &skittles, stick);
+        let (_, next) = advance(&mut rules, &skittles, moved);
         assert!(next.position()[1] > moved.position()[1]);
         assert!(next.position()[1] - moved.position()[1] < moved.position()[1]);
         assert!(next.speed() < moved.speed());
         let mut stopped = next;
         settle(&mut rules, &mut skittles, &mut stopped);
-        let (_, again) = rules.update(&skittles, stopped);
+        let (_, again) = advance(&mut rules, &skittles, stopped);
         assert_eq!(again, stopped);
         let new_throw = shot(&stopped, [0.0, 1.0], 6.0);
         assert_eq!(new_throw.position(), [0.0; 2]);
-        let (_, next_throw) = rules.update(&skittles, new_throw);
+        let (_, next_throw) = advance(&mut rules, &skittles, new_throw);
         assert!(next_throw.position()[1] > 0.0 && next_throw.position()[1] < 0.11);
         assert_eq!(next_throw.as_ref().id(), stopped.as_ref().id());
     }
@@ -159,7 +189,7 @@ mod collisions {
         let original = skittles.to_vec();
         let mut stick = shot(&held, [0.0, 1.0], 120.0);
         for _ in 0..1200 {
-            (skittles, stick) = rules.update(&skittles, stick);
+            (skittles, stick) = advance(&mut rules, &skittles, stick);
             if skittles
                 .iter()
                 .any(|p| p.as_ref().state() == SkittleState::Hit)
@@ -187,7 +217,7 @@ mod collisions {
         let mut stick = shot(&held, [0.0, 1.0], 0.1);
         let mut touched = false;
         for _ in 0..1200 {
-            (skittles, stick) = rules.update(&skittles, stick);
+            (skittles, stick) = advance(&mut rules, &skittles, stick);
             touched |= skittles[0].as_ref().state() == SkittleState::Hit;
             if stick.as_ref().state() == StickState::Stop
                 && skittles[0].as_ref().state() != SkittleState::Hit
@@ -268,7 +298,7 @@ mod field_boundaries {
         let mut previous = [0.0; 2];
         let mut reflected = [false; 2];
         for _ in 0..1200 {
-            (skittles, stick) = rules.update(&skittles, stick);
+            (skittles, stick) = advance(&mut rules, &skittles, stick);
             let position = stick.position();
             let angle = stick.angle();
             let half_segment = GuiStick::LENGTH / 2.0 - GuiStick::RADIUS;
@@ -320,7 +350,7 @@ mod field_boundaries {
         let (mut rules, mut skittles, held) = scene(&[[0.0, 0.7]]);
         let mut stick = shot(&held, [0.0, 1.0], 120.0);
         for _ in 0..1200 {
-            (skittles, stick) = rules.update(&skittles, stick);
+            (skittles, stick) = advance(&mut rules, &skittles, stick);
             let [x, y] = skittles[0].position();
             let radius = GuiSkittle::RADIUS;
             assert!(

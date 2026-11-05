@@ -195,3 +195,63 @@ mod simulation {
         assert_eq!(game.teams()[0].score_board().history().len(), 1);
     }
 }
+
+mod contact_routing {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn 同番号の連鎖でも配置順によらず双方を更新し一度だけ二点を採点する() {
+        for positions in [
+            vec![[0.02, 0.7], [0.06, 0.85]],
+            vec![[0.06, 0.85], [0.02, 0.7]],
+        ] {
+            let (field, stick, _) = create_field();
+            let skittles: Vec<_> = positions
+                .into_iter()
+                .map(|position| GuiSkittle::new(crate::Skittle::new(12), position))
+                .collect();
+            let ids: HashSet<_> = skittles.iter().map(|s| s.as_ref().id()).collect();
+            let mut game = Game::new(
+                vec![team("赤", &[]), team("青", &[])],
+                field,
+                stick,
+                skittles,
+            );
+            game.aim([0.0, 1.0], 6.0);
+            assert!(game.throw());
+            let mut hit_ids = HashSet::new();
+            for _ in 0..1200 {
+                game.update();
+                hit_ids.extend(
+                    game.skittles()
+                        .iter()
+                        .filter(|s| s.as_ref().state() == SkittleState::Hit)
+                        .map(|s| s.as_ref().id()),
+                );
+                if !game.is_simulating() {
+                    break;
+                }
+            }
+            assert_eq!(hit_ids, ids);
+            assert!(!game.is_simulating());
+            assert_eq!(game.teams()[0].score_board().total(), 2);
+            assert_eq!(game.teams()[0].score_board().history().len(), 1);
+            assert!(game.teams()[1].turn());
+            assert!(
+                game.skittles()
+                    .iter()
+                    .all(|s| s.as_ref().state() == SkittleState::Stand)
+            );
+            game.update();
+            assert_eq!(game.teams()[0].score_board().history().len(), 1);
+            assert_eq!(
+                game.skittles()
+                    .iter()
+                    .map(|s| s.as_ref().id())
+                    .collect::<HashSet<_>>(),
+                ids
+            );
+        }
+    }
+}
