@@ -1,4 +1,20 @@
-use rust_molkky::{Skittle, SkittleState};
+use rust_molkky::{Skittle, SkittleState, StandUp};
+
+mod standing_up {
+    use super::*;
+
+    #[test]
+    fn 立て直しは全状態から立位の新しい個体を返し識別子と番号と元の値を保つ() {
+        for state in [SkittleState::Stand, SkittleState::Hit, SkittleState::Fall] {
+            let original = Skittle::new(12).with_state(state);
+            let standing = original.stand_up();
+            assert_eq!(standing.state(), SkittleState::Stand);
+            assert_eq!(standing.id(), original.id());
+            assert_eq!(standing.number(), original.number());
+            assert_eq!(original.state(), state);
+        }
+    }
+}
 
 mod valid_numbers {
     use super::*;

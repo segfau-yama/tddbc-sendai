@@ -49,3 +49,14 @@ impl AsRef<Skittle> for Skittle {
         self
     }
 }
+
+pub trait StandUp: AsRef<Skittle> + Sized {
+    /// 個体自身を立て直し、同じIdの新しいモデルを返す。
+    fn stand_up(self) -> Self;
+}
+
+impl StandUp for Skittle {
+    fn stand_up(self) -> Self {
+        self.with_state(SkittleState::Stand)
+    }
+}

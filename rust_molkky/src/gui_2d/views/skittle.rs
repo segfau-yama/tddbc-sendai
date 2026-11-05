@@ -18,10 +18,16 @@ pub fn Skittle(model: GuiSkittle) -> Element {
     let font_size = radius * 0.9;
     rsx! {
         g {
-            id: "skittle-{id}", class,
+            id: "skittle-{id}",
+            class,
             "data-state": state,
             transform: "translate({x} {y})",
-            circle { r: "{radius}", fill, stroke: "#493b28", stroke_width: "0.01" }
+            circle {
+                r: radius,
+                fill,
+                stroke: "#493b28",
+                stroke_width: "0.01",
+            }
             // フィールドのY反転を文字だけ打ち消す。
             text {
                 transform: "scale(1 -1)",

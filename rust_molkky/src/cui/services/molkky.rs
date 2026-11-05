@@ -76,8 +76,4 @@ impl Molkky for CuiMolkky {
             *chained_skittle
         }
     }
-
-    fn stand_up(&mut self, skittle: &Self::Skittle) -> Self::Skittle {
-        skittle.as_ref().with_state(SkittleState::Stand).into()
-    }
 }

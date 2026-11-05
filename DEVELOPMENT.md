@@ -1,5 +1,24 @@
 # 開発支援方針の記録
 
+## Skittleの立て直しと描画コンポーネントの整理（2026-11-05）
+
+- stand_upは単体の振る舞いとしてcore/models/skittle.rsのStandUpトレイトへ移す。core・CUI・GUIは同じ契約を実装し、Molkkyから立て直しのメソッドを削除する。Id・番号・位置を保った新しいモデルを返し、CUIの連鎖確率とGUIの姿勢・照準を初期化する。
+- GUIの立て直し後はservices/field::create_worldで共有ワールドを置き換える。既存モデルから速度・接触履歴のないボディを構築し、モデルにワールドやサービスへの参照を持たせない。前投の履歴を次へ持ち越さず、稼働中のワールドとモデルの所有元はAppに揃える。
+- RSXはScores・TeamScore・Result・Speedometer・FieldSurface・StickShape・Aimへ役割ごとにまとめる。同じファイルの関連部品は同居させ、描画専用の別モデルや状態を追加しない。Appの一回だけのrenderと、Fieldの中間RSX/Vecは撤去する。
+- [x] 変更前のモデル・サービス136件を確認する。
+- [x] StandUpの契約をcore/CUI/GUIのモデルテストでRed→Green確認した。
+- [x] Molkkyの呼び出し元と既存のサービス検証をモデルAPIへ移行した。
+- [x] RSXのコンポーネント化と整形を行い、Webで入力・採点・立て直し・終了を確認した。
+- [x] モデル・サービスの検証、fmt/Clippy、feature別ビルドと差分を確認した。
+- [x] 記録とREADMEを更新してConventional Commit・通常pushする。
+
+- Red→Green：StandUpの宣言と自身をそのまま返す実装を先に置き、core/CUI/GUIのモデルテスト3件がHit/FallとStandの不一致で失敗した。各モデルのskittle.rsへ実装して成功した（/tmp/molkky-stand-up-red.log・green.log）。元のId・番号・位置・状態が保たれること、CUI確率0・GUI角度0/照準解除を確認する。サービス側にあった重複する立て直し単体ケースはCUIモデルへ移した。
+- ワールド生成の修正：再構築時に既存モデルの角度を無視していたため、立て直していない個体まで0radへ戻った。services/field.rsのテストで1.2radが0radになるRedを確認し、RigidBodyBuilderへモデルの角度を渡して成功した（/tmp/molkky-stand-up-pose-red.log・all.log）。別個体へのhitはId・状態・位置・照準の一致を維持し、角度のみ回転型との往復によるf32::EPSILON以内の丸めを許容する。実際に観測した差は約4.7e-10radで、モデル自身のstand_upと元値の検証は完全一致のままにした。
+- コンポーネント：FieldSurfaceはSVG/壁、StickShapeは棒、Aimは照準、Scores/TeamScoreは得点表、Resultは判定済みの勝者名、Speedometerは表示値を担当する。TeamScoreは同じ読み取りSignalとIdを受け、TeamやScoreBoardを別所有しない。Appのrender関数とFieldの中間RSX・Vecを削除し、イベント内の一行に詰めた分岐と描画属性を整形した。
+- 終了表示の退行修正：コンポーネント化したScoresへSignalから毎回ReadSignalを変換すると、終了時にAppの再描画が循環した。Dioxus 0.7.10のpropsマクロは、TeamがPartialEqを持たないVecの参照先を再設定すると購読元をdirtyにする。終了表示でteamsを読むAppも再実行され、同じ変換を繰り返していた。Appのuse_hookで読み取り参照を一度だけ作り、同じハンドルを渡す形へ修正した。別のモデルや完了フラグは追加しない。調査用console出力は撤去した。
+- 検証：モデル・サービスのcargo test --locked --features gui_2dは139件、既定は119件、GUIのみは80件成功し、失敗・無視0件。cargo fmt --check、cargo clippy --locked --all-targets --features gui_2d -- -D warnings、coreのみのcheck、Webビルド、desktopのcheckが成功した（/tmp/molkky-stand-up-{all,default,gui-only,clippy,core,web-build,desktop}.log）。新規ケースはモデル・サービスだけに置き、描画テストや依存は追加していない。
+- Web実操作：削除前のDOM確認スクリプトをgit showから標準入力で一時実行し、リサイズ、照準、蓄力、取消、領域外解放、連続ミス失格、結果表示、終了後入力無効化、反射、実衝突からの加点・立て直し・交代が成功した（/tmp/molkky-stand-up-browser.log）。検証用8081番サーバーは終了した。desktopの実機操作は未確認。
+
 ## 入力イベント・等比拡縮・物理更新の整理（2026-11-05）
 
 - 対象：e48a5fcのgui_2d/views/{stick,field,app}.rs・field.js、services/{physics,molkky}.rs。最初のreview依頼の後、最新の指示でphysics.rsの削除が明示されたため実施した。独自step関数と固定刻みのエンジン更新は別の話であり、独自stepを残す必要はない。その他の設計指摘は提案として残す。

@@ -1,5 +1,5 @@
 use rust_molkky::{
-    Skittle, SkittleState, StickState,
+    Molkky, Skittle, SkittleState, StickState,
     gui_2d::{
         models::{GuiField, GuiSkittle, GuiStick},
         services::field::{create_field, create_world},
@@ -9,6 +9,20 @@ use std::collections::HashSet;
 
 mod initialization {
     use super::*;
+
+    #[test]
+    fn 倒れたモデルの位置と角度をワールドへ引き継ぐ() {
+        let stick = GuiStick::default();
+        let skittle = GuiSkittle::new(Skittle::new(12), [0.1, 0.8]).update(
+            [0.1, 0.8],
+            1.2,
+            SkittleState::Fall,
+            false,
+        );
+        let rules = create_world(&stick, &[skittle]);
+        let updated = rules.hit(&stick, &skittle);
+        assert_eq!(updated, skittle);
+    }
 
     #[test]
     fn 不正な配置を物理ワールドへ渡さない() {

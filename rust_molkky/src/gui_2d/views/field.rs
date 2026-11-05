@@ -1,5 +1,5 @@
 use super::stick::StickInput;
-use super::{Skittle, Stick, speedometer};
+use super::{Skittle, Speedometer, Stick};
 use crate::core::{Molkky, SkittleState, StickState};
 use crate::gui_2d::{
     models::{GuiField, GuiSkittle, GuiStick},
@@ -95,23 +95,38 @@ pub fn Field(
     } else {
         ("ready", "左ボタンを押して照準・蓄力を開始します。")
     };
-    let pins = skittles
-        .read()
-        .iter()
-        .map(|pin| {
-            let id = pin.as_ref().id();
-            rsx! { Skittle { key: "{id}", model: *pin } }
-        })
-        .collect::<Vec<_>>();
-    let scene = rsx! { Stick { model: stick, clock, surface, enabled, {pins.into_iter()} } };
     let field_id = field.as_ref().id();
     rsx! {
         div {
-            id: "molkky-input", "data-phase": phase, "data-field": "{field_id}",
+            id: "molkky-input",
+            "data-phase": phase,
+            "data-field": "{field_id}",
             p { role: "status", "{status}" }
-            {field_shape(GuiField::BOUNDS, scene, mounted)}
-            {speedometer(model.speed(), StickInput::MAX_SPEED)}
-            if error() { p { role: "alert", "入力の接続が停止しました。画面を再読み込みしてください。" } }
+            FieldSurface {
+                onmounted: mounted,
+                Stick {
+                    model: stick,
+                    clock,
+                    surface,
+                    enabled,
+                    for pin in skittles.read().iter() {
+                        Skittle {
+                            key: "{pin.as_ref().id()}",
+                            model: *pin,
+                        }
+                    }
+                }
+            }
+            Speedometer {
+                speed: model.speed(),
+                max_speed: StickInput::MAX_SPEED,
+            }
+            if error() {
+                p {
+                    role: "alert",
+                    "入力の接続が停止しました。画面を再読み込みしてください。"
+                }
+            }
         }
     }
 }
@@ -251,28 +266,28 @@ pub(super) fn advance(
     false
 }
 
-/// boundsはworldの[x, y, 幅, 高さ]。childrenもworld座標で受け取る。
-fn field_shape(
-    bounds: [f32; 4],
-    children: Element,
-    mounted: EventHandler<MountedEvent>,
-) -> Element {
-    let [x, y, width, height] = bounds;
+#[component]
+fn FieldSurface(onmounted: EventHandler<MountedEvent>, children: Element) -> Element {
+    let [x, y, width, height] = GuiField::BOUNDS;
     let view_box = format!("{x} {} {width} {height}", -(y + height));
     let wall = GuiField::WALL_THICKNESS;
     rsx! {
         svg {
             xmlns: "http://www.w3.org/2000/svg",
-            onmounted: move |event| mounted.call(event),
+            onmounted: move |event| onmounted.call(event),
             view_box,
             role: "img",
             "aria-label": "モルックのフィールド",
             style: "display:block;background:#e6efdc",
             g { transform: "scale(1 -1)",
                 rect {
-                    x: "{x + wall / 2.0}", y: "{y + wall / 2.0}",
-                    width: "{width - wall}", height: "{height - wall}",
-                    fill: "none", stroke: "#61734e", stroke_width: "{wall}"
+                    x: x + wall / 2.0,
+                    y: y + wall / 2.0,
+                    width: width - wall,
+                    height: height - wall,
+                    fill: "none",
+                    stroke: "#61734e",
+                    stroke_width: wall,
                 }
                 {children}
             }

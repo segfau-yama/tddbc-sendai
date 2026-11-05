@@ -1,10 +1,10 @@
-use crate::core::Team;
 use dioxus::prelude::*;
 
 /// 終了と勝者の判定は呼び出し側で行う。
-pub fn result(winner: Option<&Team>) -> Element {
+#[component]
+pub fn Result(winner: Option<String>) -> Element {
     let message = match winner {
-        Some(team) => format!("{}の勝利！", team.name()),
+        Some(name) => format!("{name}の勝利！"),
         None => "勝者なし".to_owned(),
     };
     rsx! {

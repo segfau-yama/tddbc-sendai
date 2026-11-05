@@ -1,4 +1,21 @@
-use rust_molkky::{Skittle, SkittleState, cui::models::CuiSkittle};
+use rust_molkky::{Skittle, SkittleState, StandUp, cui::models::CuiSkittle};
+
+mod standing_up {
+    use super::*;
+
+    #[test]
+    fn 立て直しは個体と番号を保って立位へ戻し連鎖確率を消す() {
+        let original = CuiSkittle::new(Skittle::new(5).with_state(SkittleState::Fall), 0.8);
+        let standing = original.stand_up();
+        assert_eq!(
+            *standing.as_ref(),
+            original.as_ref().with_state(SkittleState::Stand)
+        );
+        assert_eq!(standing.probability(), 0.0);
+        assert_eq!(original.as_ref().state(), SkittleState::Fall);
+        assert_eq!(original.probability(), 0.8);
+    }
+}
 
 mod composition {
     use super::*;

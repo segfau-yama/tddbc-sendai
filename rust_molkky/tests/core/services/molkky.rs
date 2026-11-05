@@ -121,21 +121,6 @@ mod hit {
         use super::*;
 
         #[test]
-        fn 立て直しの具象実装は番号と識別子を保って立位を返す() {
-            let mut service = CuiMolkky::default();
-            let rules: &mut dyn Molkky<Stick = CuiStick, Skittle = CuiSkittle> = &mut service;
-            let original = CuiSkittle::new(Skittle::new(5).with_state(SkittleState::Fall), 0.8);
-            let standing = rules.stand_up(&original);
-            assert_eq!(
-                *standing.as_ref(),
-                original.as_ref().with_state(SkittleState::Stand)
-            );
-            assert_eq!(standing.probability(), 0.0);
-            assert_eq!(original.as_ref().state(), SkittleState::Fall);
-            assert_eq!(original.probability(), 0.8);
-        }
-
-        #[test]
         fn 一本の状態を返し元を変えず転倒状態を保持する() {
             let rules = CuiMolkky::default();
             let stick = CuiStick::new(Stick::new(), 1.0);

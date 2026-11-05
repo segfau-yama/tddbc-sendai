@@ -21,8 +21,9 @@ cargo test --locked --test application
 | 場所 | 責務 |
 | --- | --- |
 | src/core/models/ | Team・Skittle・ScoreBoardなどのドメインモデル |
-| src/core/services/molkky.rs | 照準・命中・連鎖・立て直しの契約、採点・勝者・次のチームの判定 |
+| src/core/services/molkky.rs | 照準・命中・連鎖の契約、採点・勝者・次のチームの判定 |
 | src/core/models/stick.rs | Stickの状態、Stick→StickのThrow/Moveの契約 |
+| src/core/models/skittle.rs | Skittleの状態、個体自身を立て直すStandUpの契約 |
 | src/cui/models/ | coreモデルを内包するCuiXxxxの委譲型（AsRefで参照） |
 | src/cui/services/teams.rs | 名前の検証・Vec<Team>の生成と追加 |
 | src/cui/models/field.rs | CuiField：core::Fieldと1〜12番のVec<Skittle>の保持 |
@@ -39,7 +40,7 @@ cargo test --locked --test application
 | src/gui_2d/views/stick.rs | Stickコンポーネント：棒・照準の描画、マウス入力・蓄力・解放 |
 | src/gui_2d/views/field.rs | Fieldコンポーネント：共有ワールドの固定刻み更新、hit/chain_hitの接続、照準の反映、一投の完了通知 |
 | src/gui_2d/views/field.js | 同期pointer capture・取消・フレーム時刻通知と、破棄時の後始末 |
-| src/gui_2d/services/molkky.rs | 接触・停止結果に対するaim/hit/chain_hit/stand_up、coreルールの利用 |
+| src/gui_2d/services/molkky.rs | 接触・停止結果に対するaim/hit/chain_hit、coreルールの利用 |
 | src/gui_2d/views/ | AppコンポーネントとSVG・速度メーター・得点表・結果の描画部品 |
 | src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
 
@@ -79,7 +80,7 @@ assert_eq!(field.skittles.len(), 12);
 
 `CuiMolkky`はInputで検証済みの番号を受け取ります。aimは入力順にField内の個体を選びます。CUIの実行ループはthrowを呼ばず、設定済みの確率でシミュレーションします。hitは1本ずつ確率判定し、更新後のCuiSkittleだけを返します。転倒時には投げたStickの命中確率を連鎖用に保持します。結果は内側のSkittleStateで判定し、既にFallの個体は状態と確率を保ちます。呼び出し側が今回倒れた個体をまとめて採点します。元のFieldと個体IDは保ち、投てきごとにSkittleを新規生成しません。
 
-`Molkky`を実装する型は関連型Stick・Skittleとaim・hit・chain_hit・stand_upを定義します。CuiMolkkyのStickはCuiStick、SkittleはCuiSkittleです。aim・hit・chain_hitは関連型の個体を返し、CUI固有の確率を保持します。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
+`Molkky`を実装する型は関連型Stick・Skittleとaim・hit・chain_hitを定義します。CuiMolkkyのStickはCuiStick、SkittleはCuiSkittleです。aim・hit・chain_hitは関連型の個体を返し、CUI固有の確率を保持します。calc_score・judge_game・next_teamにはデフォルト実装があります。得点表や手番の更新はrunがモデルのメソッドを使って行います。runは第4引数に`&CuiStick`を受け取り、起動元のmainが既定の50%の棒を渡します。
 
 ThrowとMoveはcore/models/stick.rsに置く個体の操作契約です。`throw(stick: Self) -> Self`と`r#move(stick: Self) -> Self`はStickだけを値で受け、同じIdを保った新しいStickを返します。moveはRustの予約語なのでr#moveと表記します。状態はcore::StickStateのHeld/Move/Stopを使い、GUIに同じ状態のenumや完了boolは作りません。
 
@@ -87,7 +88,7 @@ GuiStick::newは保持位置・零実速度を初期化し、目標と強さを�
 
 chain_hit(fallen_skittle, chained_skittle)は、呼び出し側が指定した対象へ連鎖を判定します。初回転倒が80%なら次は60%、さらに次は40%と20パーセントポイントずつ下げ、成功した対象へ減衰後の確率を引き継ぎます。0%より下には下げません。連鎖元がStand、対象が既にFall、判定失敗の場合は対象をそのまま返します。現在のCUI入力ループは指定番号への直接hitを行い、隣接探索や連鎖対象の自動選択は追加していません。
 
-stand_upはcoreの抽象メソッドです。CUIの実装はId・番号を保ってStandと連鎖確率0へ戻した個体を返します。GUIでは対象個体の物理ボディも立て直します。元のモデルは変更しません。
+`StandUp`はcore/models/skittle.rsの抽象トレイトです。`skittle.stand_up()`が同じId・番号の新しいStandモデルを返します。CUIでは連鎖確率を0へ、GUIでは移動後の位置を保って角度と照準を初期化します。元のモデルは変更しません。GUIのAppは立て直したモデルから共有ワールドを作り直し、速度・角速度・接触履歴をクリアします。
 
 ### テストと残課題
 
@@ -150,9 +151,9 @@ cargo test --locked --features gui_2d --test gui_2d
 
 ### GUI 2Dの描画部品
 
-`gui_2d` featureを有効にすると、`gui_2d::views`から`App`・`Field`・`Skittle`・`Stick`コンポーネントと、`speedometer`・`scores`・`result`関数を利用できます。
+`gui_2d` featureを有効にすると、`gui_2d::views`から`App`・`Field`・`Skittle`・`Stick`・`Speedometer`・`Scores`・`Result`コンポーネントを利用できます。
 
-Fieldは共通フィールドをSVGで上から描き、Appから渡されたモデルのSignalをStickへ渡します。Stickは棒と照準を、Skittleは各GuiSkittleの位置・状態・照準強調を描きます。寸法にはモデルの関連定数を使います。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。
+Fieldは共通フィールドをSVGで上から描き、Appから渡されたモデルのSignalをStickへ渡します。Stickは棒と照準を、Skittleは各GuiSkittleの位置・状態・照準強調を描きます。寸法にはモデルの関連定数を使います。ScoresとTeamScoreは同じチームのSignalを参照し、Resultは判定済みの勝者名を受け取ります。FieldSurfaceは共通SVG、StickShapeとAimは棒と照準の描画を担当します。
 
 ```sh
 cd rust_molkky
@@ -171,11 +172,10 @@ cargo build --locked --features gui_2d
 | aim | Rapierの形状問い合わせで候補を選び、位置・角度・照準状態を反映したGuiSkittleを返す |
 | hit | 指定したStickとSkittleの接触とボディ状態から、位置・角度・状態を更新したGuiSkittleを返す |
 | chain_hit | 指定した2個体の実際の接触ペアから、対象の物理状態を反映したGuiSkittleを返す |
-| stand_up | 位置・Id・番号を保ち、対象ボディの角度・速度・角速度・接触記録とStandを復元する |
 
 FieldがRapierの共有ワールドを固定刻みで一度ずつ進めます。独自のstep APIとphysics.rsはありません。実際の接触履歴から、棒とピンにはhit、ピン同士には双方へchain_hitを適用します。接触履歴のないHitで再開したモデルもhitで停止まで追跡します。状態の判定はMolkkyの具象実装へ集約します。モデルのupdateはIdを保ち、元の値を変更せず新しいモデルを返します。
 
-Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。FieldはMoveまたはHitがある間更新を続け、「StickがStop、かつHitが0本」でAppへ完了を通知します。AppはFallだけをcalc_scoreへ渡し、ScoreBoard.addとTeam.with_score_boardを反映します。弱い衝突はStandへ戻り、得点には含めません。継続時はstand_upで移動後の位置とIdを保って立て直します。
+Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。FieldはMoveまたはHitがある間更新を続け、「StickがStop、かつHitが0本」でAppへ完了を通知します。AppはFallだけをcalc_scoreへ渡し、ScoreBoard.addとTeam.with_score_boardを反映します。弱い衝突はStandへ戻り、得点には含めません。継続時は各GuiSkittleのstand_upで立て直し、create_worldで同じ配置とIdのボディを作り直します。
 
 半径・質量はGuiSkittle、棒の半径・長さ・質量はGuiStickの関連定数です。時間刻み・共通減衰はワールド生成を行うservices/field.rs、転倒閾値はmolkky.rsに置きます。時間刻みは従来どおりservices::TIME_STEPから参照できます。新しいワールドラッパー、Observer trait、イベントバス、開始用のラッパーは追加していません。
 

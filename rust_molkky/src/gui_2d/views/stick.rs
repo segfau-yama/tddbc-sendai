@@ -224,48 +224,95 @@ pub fn Stick(
             input.send(Input::Cancel(None));
         }
     });
-    let stick = *model.read();
-    let [x, y] = stick.position();
-    let id = stick.as_ref().id();
-    let state = match stick.as_ref().state() {
-        StickState::Held => "held",
-        StickState::Move => "move",
-        StickState::Stop => "stop",
-    };
-    let [bx, by, bw, bh] = GuiField::BOUNDS;
-    let width = 2.0 * GuiStick::RADIUS;
-    let length = GuiStick::LENGTH;
-    let degrees = stick.angle().to_degrees();
+    let [x, y, width, height] = GuiField::BOUNDS;
     rsx! {
         g {
             "data-stick-input": "true",
             onpointerdown: move |event| input.send(Input::Press(event, clock())),
             onpointermove: move |event| {
-                if !event.held_buttons().contains(MouseButton::Primary) {
-                    if event.trigger_button() == Some(MouseButton::Primary) { input.send(Input::Release(event, clock())); }
-                    else { input.send(Input::Cancel(Some(event.pointer_id()))); }
-                } else { input.send(Input::Move(event, clock())); }
+                let action = if event.held_buttons().contains(MouseButton::Primary) {
+                    Input::Move(event, clock())
+                } else if event.trigger_button() == Some(MouseButton::Primary) {
+                    Input::Release(event, clock())
+                } else {
+                    Input::Cancel(Some(event.pointer_id()))
+                };
+                input.send(action);
             },
             onpointerup: move |event| input.send(Input::Release(event, clock())),
             onpointercancel: move |event| input.send(Input::Cancel(Some(event.pointer_id()))),
             onlostpointercapture: move |event| input.send(Input::Cancel(Some(event.pointer_id()))),
-            rect { x: "{bx}", y: "{by}", width: "{bw}", height: "{bh}", fill: "transparent" }
+            rect {
+                x,
+                y,
+                width,
+                height,
+                fill: "transparent",
+            }
             {children}
-            g {
-                id: "stick-{id}", "data-stick-state": state,
-                transform: "translate({x} {y}) rotate({degrees})",
-                rect {
-                    x: "{-width / 2.0}", y: "{-length / 2.0}",
-                    width: "{width}", height: "{length}", rx: "{width / 2.0}",
-                    fill: "#995c32", stroke: "#493b28", stroke_width: "0.01"
-                }
+            StickShape { model: *model.read() }
+            Aim { model: *model.read() }
+        }
+    }
+}
+
+#[component]
+fn StickShape(model: GuiStick) -> Element {
+    let [x, y] = model.position();
+    let id = model.as_ref().id();
+    let state = match model.as_ref().state() {
+        StickState::Held => "held",
+        StickState::Move => "move",
+        StickState::Stop => "stop",
+    };
+    let degrees = model.angle().to_degrees();
+    let width = 2.0 * GuiStick::RADIUS;
+    let length = GuiStick::LENGTH;
+    rsx! {
+        g {
+            id: "stick-{id}",
+            "data-stick-state": state,
+            transform: "translate({x} {y}) rotate({degrees})",
+            rect {
+                x: -width / 2.0,
+                y: -length / 2.0,
+                width,
+                height: length,
+                rx: width / 2.0,
+                fill: "#995c32",
+                stroke: "#493b28",
+                stroke_width: "0.01",
             }
-            if stick.as_ref().state() == StickState::Held {
-                if let Some([tx, ty]) = stick.target() {
-                    line { x1: "{x}", y1: "{y}", x2: "{tx}", y2: "{ty}", stroke: "#355fba", stroke_width: "0.008", stroke_dasharray: "0.03 0.02" }
-                    circle { cx: "{tx}", cy: "{ty}", r: "0.025", fill: "none", stroke: "#355fba", stroke_width: "0.008" }
-                }
-            }
+        }
+    }
+}
+
+#[component]
+fn Aim(model: GuiStick) -> Element {
+    if model.as_ref().state() != StickState::Held {
+        return rsx! {};
+    }
+    let Some([tx, ty]) = model.target() else {
+        return rsx! {};
+    };
+    let [x, y] = model.position();
+    rsx! {
+        line {
+            x1: x,
+            y1: y,
+            x2: tx,
+            y2: ty,
+            stroke: "#355fba",
+            stroke_width: "0.008",
+            stroke_dasharray: "0.03 0.02",
+        }
+        circle {
+            cx: tx,
+            cy: ty,
+            r: "0.025",
+            fill: "none",
+            stroke: "#355fba",
+            stroke_width: "0.008",
         }
     }
 }

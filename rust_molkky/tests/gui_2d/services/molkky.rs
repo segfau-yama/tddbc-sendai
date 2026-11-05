@@ -1,5 +1,5 @@
 use crate::{
-    Molkky, Move, Name, Skittle, SkittleState, StickState, Team,
+    Molkky, Move, Name, Skittle, SkittleState, StandUp, StickState, Team,
     gui_2d::{
         models::{GuiSkittle, GuiStick},
         services::{GuiMolkky, TIME_STEP, field::create_world},
@@ -218,7 +218,8 @@ mod collisions {
         settle(&mut rules, &mut skittles, &mut stick);
         let fallen = skittles[0];
         assert_eq!(fallen.as_ref().state(), SkittleState::Fall);
-        let standing = rules.stand_up(&fallen);
+        let standing = fallen.stand_up();
+        rules = create_world(&stick, &[standing]);
         assert_eq!(standing.as_ref().id(), fallen.as_ref().id());
         assert_eq!(standing.as_ref().state(), SkittleState::Stand);
         assert_eq!(standing.position(), fallen.position());
@@ -298,12 +299,18 @@ mod collisions {
         let unrelated = GuiSkittle::new(Skittle::new(12), [0.0; 2]);
         assert_eq!(rules.chain_hit(&unrelated, &original[1]), original[1]);
         assert_eq!(rules.chain_hit(&first, &first), first);
-        let restored = rules.stand_up(&second);
+        let restored = second.stand_up();
+        rules = create_world(&stick, &[first, restored]);
         assert_eq!(restored.position(), second.position());
         assert_eq!(restored.angle(), 0.0);
         assert_eq!(restored.as_ref().state(), SkittleState::Stand);
         assert_eq!(rules.hit(&stick, &restored), restored);
-        assert_eq!(rules.hit(&stick, &first), first);
+        let unchanged = rules.hit(&stick, &first);
+        assert_eq!(*unchanged.as_ref(), *first.as_ref());
+        assert_eq!(unchanged.position(), first.position());
+        assert_eq!(unchanged.aimed(), first.aimed());
+        // 角度→回転→角度の再構築によるf32の丸めだけを許容する。
+        assert!((unchanged.angle() - first.angle()).abs() <= f32::EPSILON);
         assert_eq!(second.as_ref().state(), SkittleState::Fall);
     }
 
@@ -315,14 +322,12 @@ mod collisions {
         assert!(!fallen_skittles(&skittles).is_empty());
         let positions: Vec<_> = skittles.iter().map(|p| p.position()).collect();
         let ids: Vec<_> = skittles.iter().map(|p| p.as_ref().id()).collect();
-        skittles = skittles
-            .iter()
-            .map(|skittle| rules.stand_up(skittle))
-            .collect();
+        skittles = skittles.iter().copied().map(StandUp::stand_up).collect();
         assert_eq!(
             skittles.iter().map(|p| p.position()).collect::<Vec<_>>(),
             positions
         );
+        rules = create_world(&stick, &skittles);
         stick = shot(&stick, [1.0, 0.0], 0.1);
         settle(&mut rules, &mut skittles, &mut stick);
         assert!(fallen_skittles(&skittles).is_empty());

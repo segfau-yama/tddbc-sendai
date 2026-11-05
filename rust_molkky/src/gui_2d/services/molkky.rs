@@ -161,21 +161,4 @@ impl Molkky for GuiMolkky {
             target.aimed(),
         )
     }
-
-    fn stand_up(&mut self, skittle: &GuiSkittle) -> GuiSkittle {
-        if let Some((&collider, _)) = self
-            .skittle_ids
-            .iter()
-            .find(|(_, id)| **id == skittle.as_ref().id())
-        {
-            let body = &mut self.world.bodies[self.world.colliders[collider].parent().unwrap()];
-            body.set_rotation(Rotation::IDENTITY, false);
-            body.set_linvel(Vector::ZERO, false);
-            body.set_angvel(0.0, false);
-            body.sleep();
-            self.impacts
-                .retain(|&(source, target), _| source != collider && target != collider);
-        }
-        skittle.update(skittle.position(), 0.0, SkittleState::Stand, false)
-    }
 }

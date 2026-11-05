@@ -1,4 +1,4 @@
-use crate::Skittle;
+use crate::{Skittle, StandUp};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CuiSkittle {
@@ -30,5 +30,11 @@ impl From<Skittle> for CuiSkittle {
 impl AsRef<Skittle> for CuiSkittle {
     fn as_ref(&self) -> &Skittle {
         &self.skittle
+    }
+}
+
+impl StandUp for CuiSkittle {
+    fn stand_up(self) -> Self {
+        self.skittle.stand_up().into()
     }
 }

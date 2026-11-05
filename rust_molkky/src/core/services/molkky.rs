@@ -15,9 +15,6 @@ pub trait Molkky {
         chained_skittle: &Self::Skittle,
     ) -> Self::Skittle;
 
-    /// 個体を立て直す。位置・回転などの復元方法は具象実装が決める。
-    fn stand_up(&mut self, skittle: &Self::Skittle) -> Self::Skittle;
-
     fn calc_score(&self, fallen_skittles: &[Skittle]) -> Point {
         Point::new(match fallen_skittles {
             [skittle] => skittle.number(),

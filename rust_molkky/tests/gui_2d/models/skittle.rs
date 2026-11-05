@@ -1,4 +1,29 @@
-use rust_molkky::{Skittle, SkittleState, gui_2d::models::GuiSkittle};
+use rust_molkky::{Skittle, SkittleState, StandUp, gui_2d::models::GuiSkittle};
+
+mod standing_up {
+    use super::*;
+
+    #[test]
+    fn 立て直しは個体と番号と移動後の位置を保ち角度と照準を戻す() {
+        let original = GuiSkittle::new(Skittle::new(12), [0.1, 0.7]).update(
+            [0.2, 0.9],
+            1.2,
+            SkittleState::Fall,
+            true,
+        );
+        let standing = original.stand_up();
+        assert_eq!(
+            *standing.as_ref(),
+            original.as_ref().with_state(SkittleState::Stand)
+        );
+        assert_eq!(standing.position(), original.position());
+        assert_eq!(standing.angle(), 0.0);
+        assert!(!standing.aimed());
+        assert_eq!(original.angle(), 1.2);
+        assert!(original.aimed());
+        assert_eq!(original.as_ref().state(), SkittleState::Fall);
+    }
+}
 
 mod updating {
     use super::*;

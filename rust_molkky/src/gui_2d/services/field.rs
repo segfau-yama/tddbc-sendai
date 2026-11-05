@@ -92,6 +92,7 @@ pub fn create_world(stick: &GuiStick, skittles: &[GuiSkittle]) -> GuiMolkky {
         let (_, collider) = world.insert(
             RigidBodyBuilder::dynamic()
                 .translation(Vector::from_array(position))
+                .rotation(skittle.angle())
                 .linear_damping(DAMPING)
                 .angular_damping(DAMPING)
                 .ccd_enabled(true)
