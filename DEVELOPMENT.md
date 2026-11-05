@@ -1,5 +1,14 @@
 # 開発支援方針の記録
 
+## 共通StickのID検証のレビュー（2026-11-05）
+
+- 対象：7cf54b7のgui_2d/services/molkky.rs:L15・L27・L76、services/field.rs:L36・L106、views/app.rs:L49・L61、core/models/team.rsとCUIのmain.rs。今回はreviewとして説明・削減案のみ記録し、実装・テストは変更しない。
+- 目的：stick_idはcreate_worldで作った物理ボディとcoreの個体を対応づけるために保持している。aim/hitの一致検査は、別ワールド用の棒を誤って渡したとき、固定されたstick_colliderの衝突をその棒の結果として返さないための防御である。チーム所有を検証する処理ではない。
+- 所有関係：Appはcreate_fieldから共通のGuiStickを一つ生成し、全チームで共有する。投擲後のGuiStick::newも内包したStickのIdを保つ。TeamはStickを所有しておらず、CUIのmainもCuiStickを一つ生成してrunへ渡す。ユーザーの「1チーム1本ではない」という前提と一致する。
+- services/molkky.rs:L27・L76: delete: 現在のAppが同じ共有棒を渡す経路では、各aim/hitのIDガードは重複した防御になる。共通棒を渡す前提へAPI契約を揃え、二つのガードを削除する（P2、計6行）。ワールドと個体の対応づけ自体は物理側の責務として扱う。
+- 影響：既存のservices/molkky.rsのテストには、別IdのGuiStickでhitを呼ぶと元の個体を返す期待値がある。削除時はこの公開APIの契約変更を明示する。今回のレビューでは、ガードや期待値を先に変更しない。Field内のstick_id比較は接触した二者の種類を選ぶ処理で、aim/hitの一致ガードとは役割が異なる。
+- [x] 検証箇所・生成元・所有元・Id保持と関連する期待値を静的に確認した。製品コード・テストは未変更のため動作テストやRed/Greenは実行しない。git diff --checkで記録を確認し、レビュー記録をConventional Commit・通常pushする。
+
 ## Skittleの立て直しと描画コンポーネントの整理（2026-11-05）
 
 - stand_upは単体の振る舞いとしてcore/models/skittle.rsのStandUpトレイトへ移す。core・CUI・GUIは同じ契約を実装し、Molkkyから立て直しのメソッドを削除する。Id・番号・位置を保った新しいモデルを返し、CUIの連鎖確率とGUIの姿勢・照準を初期化する。
