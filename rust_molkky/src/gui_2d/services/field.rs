@@ -82,7 +82,7 @@ pub fn create_world(stick: &GuiStick, skittles: &[GuiSkittle]) -> GuiMolkky {
         ColliderBuilder::capsule_y(GuiStick::LENGTH / 2.0 - GuiStick::RADIUS, GuiStick::RADIUS)
             .mass(GuiStick::MASS),
     );
-    let mut ids = HashSet::from([stick.stick().id()]);
+    let mut ids = HashSet::from([stick.as_ref().id()]);
     let mut skittle_ids = HashMap::new();
     for skittle in skittles {
         let id = skittle.as_ref().id();
@@ -103,7 +103,6 @@ pub fn create_world(stick: &GuiStick, skittles: &[GuiSkittle]) -> GuiMolkky {
     }
     GuiMolkky {
         world,
-        stick_id: stick.stick().id(),
         stick_body,
         skittle_ids,
         stick_collider,

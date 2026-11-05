@@ -142,6 +142,9 @@ mod movement {
             [skittles[0].as_ref().id()]
         );
         assert!(targets[0].aimed());
+        let same_conditions = shot(&GuiStick::default(), [0.0, 1.0], 6.0);
+        assert_ne!(same_conditions.as_ref().id(), stick.as_ref().id());
+        assert_eq!(rules.aim(&same_conditions, &skittles), targets);
         let (updated, moved) = advance(&mut rules, &skittles, stick);
         assert_eq!(stick.position(), [0.0; 2]);
         assert!(moved.position()[1] > 0.0 && moved.position()[1] < 0.11);
@@ -207,7 +210,7 @@ mod collisions {
         );
         assert_eq!(updated.position(), skittles[0].position());
         assert_eq!(rules.hit(&stick, &updated), updated);
-        assert_eq!(rules.hit(&GuiStick::default(), &original), original);
+        assert_eq!(rules.hit(&GuiStick::default(), &original), updated);
         assert_eq!(original.as_ref().state(), SkittleState::Stand);
     }
 

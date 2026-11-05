@@ -12,10 +12,6 @@ impl CuiStick {
         Self { stick, probability }
     }
 
-    pub fn stick(&self) -> &Stick {
-        &self.stick
-    }
-
     pub fn probability(&self) -> f64 {
         self.probability
     }

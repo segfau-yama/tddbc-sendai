@@ -165,7 +165,7 @@ cargo build --locked --features gui_2d
 
 ### GUI 2Dの投擲サービス
 
-`gui_2d::services::GuiMolkky`は共有のRapier2Dワールドを所有します。services::field::create_worldはGuiStickとGuiSkittleのモデル一覧を受け、Idで対応するボディを生成します。座標・寸法はm、速度はm/s、角度はラジアンです。coreに座標・Rapier型は追加しません。
+`gui_2d::services::GuiMolkky`は共有のRapier2Dワールドを所有します。services::field::create_worldはGuiStickとGuiSkittleのモデル一覧を受け、Idで対応するボディを生成します。aimは引数の照準条件、hitは共有ワールドの接触結果を使い、StickのIdによる拒否は行いません。座標・寸法はm、速度はm/s、角度はラジアンです。coreに座標・Rapier型は追加しません。
 
 | API | 動作 |
 | --- | --- |

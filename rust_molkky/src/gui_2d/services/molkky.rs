@@ -12,7 +12,6 @@ const FALL_IMPULSE: f32 = 0.08;
 
 pub struct GuiMolkky {
     pub(crate) world: PhysicsWorld,
-    pub(crate) stick_id: Id,
     pub(crate) stick_body: RigidBodyHandle,
     pub(crate) stick_collider: ColliderHandle,
     pub(crate) skittle_ids: HashMap<ColliderHandle, Id>,
@@ -24,9 +23,6 @@ impl Molkky for GuiMolkky {
     type Skittle = GuiSkittle;
 
     fn aim(&self, stick: &GuiStick, skittles: &[GuiSkittle]) -> Vec<GuiSkittle> {
-        if stick.as_ref().id() != self.stick_id {
-            return Vec::new();
-        }
         let Some(target) = stick.target() else {
             return Vec::new();
         };
@@ -72,10 +68,7 @@ impl Molkky for GuiMolkky {
             .collect()
     }
 
-    fn hit(&self, stick: &GuiStick, skittle: &GuiSkittle) -> GuiSkittle {
-        if stick.as_ref().id() != self.stick_id {
-            return *skittle;
-        }
+    fn hit(&self, _stick: &GuiStick, skittle: &GuiSkittle) -> GuiSkittle {
         let Some((&collider, _)) = self
             .skittle_ids
             .iter()

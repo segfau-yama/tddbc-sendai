@@ -37,9 +37,6 @@ impl GuiStick {
         }
     }
 
-    pub fn stick(&self) -> &Stick {
-        &self.stick
-    }
     pub fn target(&self) -> Option<[f32; 2]> {
         self.target
     }

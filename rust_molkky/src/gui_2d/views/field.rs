@@ -208,6 +208,7 @@ pub(super) fn advance(
                     )
                 })
                 .collect();
+            let stick_id = updated.as_ref().id();
             let contacts: Vec<_> = rules
                 .impacts
                 .iter()
@@ -217,7 +218,7 @@ pub(super) fn advance(
                     }
                     let id = |handle| {
                         if handle == rules.stick_collider {
-                            Some(rules.stick_id)
+                            Some(stick_id)
                         } else {
                             rules.skittle_ids.get(&handle).copied()
                         }
@@ -235,7 +236,6 @@ pub(super) fn advance(
                 *skittle = rules.hit(&updated, skittle);
             }
             for (a, b) in contacts {
-                let stick_id = updated.as_ref().id();
                 if a == stick_id || b == stick_id {
                     let id = if a == stick_id { b } else { a };
                     if let Some(skittle) = skittles.iter_mut().find(|s| s.as_ref().id() == id) {

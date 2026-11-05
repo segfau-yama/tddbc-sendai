@@ -1,5 +1,20 @@
 # 開発支援方針の記録
 
+## StickのIDガードと重複保持の削除（2026-11-05）
+
+- 対象：207d980のGUIのaim/hit、ワールド生成、接触振り分け。共通の棒を渡す現在の契約に合わせ、stick_idの一致ガードを削除する。接触種別の判定は残す。
+- 周辺整理：GuiMolkkyのstick_idはGuiStickが持つIdと重複するため削除し、接触を変換する場面で現在のモデルから取得する。GuiStick::stickはAsRef<Stick>と同じ値を返し、生成側だけで使っているためAsRefへ統一する。点検でCuiStick::stickも呼び出し元がなくAsRefと重複していたため削除した。
+- [x] 変更前のモデル・サービス139件を確認した。
+- [x] 既存aim/hitテストへ新しいID非依存の契約を反映し、Red→Greenを確認した。
+- [x] ガード・重複メンバ・重複getterを削除し、残す検証と追加の整理候補を点検した。
+- [x] モデル・サービス、fmt/Clippy、Webビルド・接触経路と差分を確認した。
+- [x] 記録を更新してConventional Commit・通常pushする。
+
+- Red→Green：同じ投擲条件で別Idの棒を渡しても同じ照準候補を返すこと、hitが棒のIdで結果を拒否しないことを既存サービステストへ反映した。実装前はaimが空配列、hitが元のStandを返して2件失敗し、ガード削除後は全139件成功した（/tmp/molkky-stick-id-{red,green}.log）。新しい契約の明示的な変更であり、無視・削除したケースはない。新規テストファイルは作成しない。
+- 維持する処理：Field内のId比較は接触した二者が棒/ピンかピン/ピンかを識別する処理である。SkittleのId対応とワールド生成時の一意性・有限値検査も別の役割がある。単純にIdや検査という名前だけで削除しない。
+- 点検範囲：coreの採点・勝敗・手番、CUI/GUIのモデルとGUIの物理接続・入力経路を確認した。追加の整理候補は、services/molkky.rsのhit/chain_hitで重複するsleep/力積の状態判定（P2）と、views/stick.rsのCharge.targetとGuiStick.targetの二重保持（P2）。今回はこれらの振る舞いや入力構成を変更せず、依頼に直結する不要な保持・参照を削除した。製品コードの差分は15行減で、新しい抽象や依存は追加していない。
+- 検証：モデル・サービス139件、fmt、Clippy、coreのみのcheck、Webビルド、desktopのcheckが成功した。削除前のDOM確認スクリプトをgit showから標準入力で一時実行し、リサイズ・照準・取消・領域外解放・衝突・採点・立て直し・交代・結果・反射が成功した。ログは/tmp/molkky-stick-id-{baseline,red,green,clippy,core,web,desktop,browser}.log。対象外のテストは作成せず、検証用8081番サーバーは終了した。desktopの実機操作は未確認。
+
 ## 共通StickのID検証のレビュー（2026-11-05）
 
 - 対象：7cf54b7のgui_2d/services/molkky.rs:L15・L27・L76、services/field.rs:L36・L106、views/app.rs:L49・L61、core/models/team.rsとCUIのmain.rs。今回はreviewとして説明・削減案のみ記録し、実装・テストは変更しない。
