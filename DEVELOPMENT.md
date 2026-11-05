@@ -1,5 +1,16 @@
 # 開発支援方針の記録
 
+## mouseの責務をStickのviewへまとめる設計レビュー（2026-11-05）
+
+- 対象：a322222のgui_2d/views/mouse.rs・stick.rs・app.rs、models/stick.rs、services/game.rsと対応テスト。リモートの最新構成ではcontrollersが削除され、入力はviews、ゲーム進行はservices/Gameへ移っている。この構成を前提に評価し、controllersの再導入は提案しない。今回はレビューのみで、ソース・テストは変更しない。
+- P2 / shrink：views/mouse.rs:L64のMouseInputは棒の照準・蓄力・解放・取消だけに使われている。一方、views/stick.rs:L15は棒を描画するだけなので、一連の棒の操作を追うにはapp.rs・mouse.rs・stick.rsを往復する。mouse.rsの既存処理をviews/stick.rsへ移し、MouseInputをStickInputとする案に賛成する。元のMouseInputを残して委譲するラッパーや、新しいcontroller層は追加しない。
+- 責務の境界：views/stick.rsはポインターID・座標変換・経過時間による蓄力・入力取消と棒/照準の描画を担当する。models/stick.rsは目標・位置・速度・coreの状態とnew/throw/move/updateを担当する。マウスボタン、DOM矩形、フォーカス喪失はviewの入力境界へ残す。coreにも持ち込まない。
+- views/app.rsはイベントの配送・全体の描画合成・フレーム時刻の管理を担当し、ゲームの受付条件や投擲は既存Gameへ接続する。StickInputが別のGuiStickやGameを所有せず、サービスが保持する個体を描画する。Game::aimは既にGuiStickの準備と物理照準を集約し、Game::throwはGuiStick::throwを使っているため、同じ準備や状態遷移をviewへ再実装しない。
+- 維持する検証：座標の拡縮・余白・上下反転、所有ポインター、領域外の解放、表示と同じ初速、取消時に投げないこと、投擲中/終了後の受付停止。実装時はtests/gui_2d/views/mouse.rsをstick.rsへ統合して、対象ファイル名を一致させる。
+- [x] 最新の入力・描画・モデル・ゲームサービスの経路と対応テストを静的に確認し、根拠・優先度・移動先を記録した。
+- [x] 文書だけの変更なので動作テストは再実行せず、git diff --checkで確認する。リモートの変更を保持してレビュー記録のみcommit・通常pushする。
+- net: -0 lines possible（単純な移動・改名の場合）。ファイル数は1つ減らせる。未実装のコンポーネント再編による行数削減は見積もらない。
+
 ## controllersを撤去しviewsのコンポーネントとservicesへ移行（2026-11-04）
 
 - 対象：gui_2dのcontrollers・view・app、GUIモデルとサービス、対応するテスト・起動元・README。最新の指示を優先し、前節のcontrollerを残す案は置き換える。
