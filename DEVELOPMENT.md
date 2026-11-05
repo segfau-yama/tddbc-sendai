@@ -1,5 +1,20 @@
 # 開発支援方針の記録
 
+## Gameの仲介を減らしAppとコンポーネントへ責務を戻すレビュー（2026-11-05）
+
+- 対象：033790bのgui_2d/services/game.rs・physics.rs・molkky.rs、views/app.rs・stick.rs・skittle.rs・score.rs。ユーザーの「Appでモデル保持」「physicsで物理結果を処理」「Stopを起点に完了」を基準に評価する。前節のGameの作成理由は当時の分離案の説明であり、Game型を必須とはしない。今回はレビューのみで実装修正は行わない。
+- P1 / game.rs:L9 / yagni：Appがモデルを保持する方針なら、Gameによる再集約とteams/field/stick/skittles・winner/is_finished/is_simulatingの取得/判定層は不要。AppのSignalからモデルを参照し、coreの判定を必要な場所で使う。Gameの構造体をAppStateという名前で同じサービス層へ作り直す案や、描画部品ごとのモデル複製は採らない。
+- P1 / game.rs:L117 / shrink：physics::stepの後に接触Idを調べてhit/chain_hitを振り分ける処理がGameへ分散している。既存physics.rsを物理更新から接触結果の適用までの入口にし、状態の判断自体はGuiMolkkyのhit/chain_hitを呼ぶ。Game::updateの仲介は削除できる。新たなObserverやイベントバスは追加せず、共有ワールドの時間更新は全体で一度だけ行う。
+- P2 / game.rs:L61・L85・L98 / shrink：照準準備・GuiStick::throwの呼び出し・入力取消が、StickコンポーネントからGameを往復する。棒自身の準備・throwと入力状態は既存Stickコンポーネントへ寄せる。スキットルへのaimの適用など共有モデルに関わる接続はApp/既存サービスへ渡し、Stickへチーム管理を移さない。無効入力・投擲中/終了後の受付制限は削除対象にしない。
+- P2 / views/stick.rs:L260 / shrink：棒の部品がSignal<Game>全体を受け取り、他チーム・フィールド一覧を含むGame APIへ依存している。棒のモデルと通常のDioxusイベント通知へ引数を絞り、共有モデルの更新と物理フレームの起動はAppへ接続する。コンポーネントごとにworld.stepを実行しない。
+- P2 / views/app.rs:L31、views/skittle.rs:L5 / shrink：照準ハイライトを付ける外側のg要素がAppにあり、棒のような実コンポーネントになっていない。既存skittle.rsをSkittleコンポーネントにして、GuiSkittleの位置・Stand/Hit/Fall・aimedから自身の描画を完結させる。Appは個体Idをkeyに一覧を配置する。新しいSkittleControllerや描画モデルの複製は不要。
+- P2 / game.rs:L160・L189 / shrink：完了処理を実行するGame固有の層はAppの状態更新へ寄せられるが、採点・勝敗・手番・立て直しの処理自体は必要。Appが既存のcalc_score→ScoreBoard.add→judge_game/next_team→stand_upを接続し、処理後に棒をHeldへ戻して繰り返し加点を防ぐ。ScoreBoardコンポーネントごとのeffectから採点する構成や、独自の勝敗ルールは作らない。
+- 表示部品の境界：score.rs/result.rsは既に渡されたデータを表示するため、新たなManager/Serviceを作る必要はない。必要なら既存の表示関数をDioxusコンポーネントへ移し、App所有のモデルを参照するだけにする。Phaseは派生した表示区分で、現行実装で二重に保存されている状態ではないため、保存済みの重複フラグとしては指摘しない。
+- Stopの条件確認：現在はユーザーが以前指定した「棒自身が止まったらStop、Hitがなくなれば完了」の意味で実装されている。Stopだけにすると、残る連鎖/命中中の個体がFall/Standへ確定する前に採点する。完了の監視をAppへ置く案には賛成し、現仕様を保つならStopかつHitが0本という直接の条件で足りる。専用の完了オブジェクトや二重の完了フラグは不要。「棒停止時点で採点する」へのルール変更はレビューの中で暗黙に実施しない。
+- [x] 保持・入力・物理・採点の呼び出し経路を確認し、削除/移動候補と残す処理を区別した。
+- [x] cargo test --locked --features gui_2d --lib gui_2d::services::game::tests::simulationが成功した（/tmp/molkky-simplify-review-stop.log）。棒がStopでもHitが残り、採点していないことを確認する既存テスト1件であり、今回追加したRedテストとは扱わない。
+- [x] ソースは未変更。文書をgit diff --checkで確認し、レビュー記録だけcommit・通常pushする。Gameの7つの取得/判定メソッドの定義は合計21行だが、進行処理は移動しコンポーネント配線も必要なので、全体の正味削減量は未算定。Gameの199行をそのまま削減成果として数えない。
+
 ## services/game.rsを設けた理由の説明（2026-11-05）
 
 - 対象：74b1bc4のservices/game.rsとviews/app.rs・stick.rs、core/services/molkky.rs、作成時の5eac035と開発記録。今回は作成理由と責務の説明で、Rust/JS・テストは変更しない。
