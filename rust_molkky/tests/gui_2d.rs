@@ -6,9 +6,6 @@ mod skittle;
 mod stick;
 
 #[cfg(feature = "gui_2d")]
-#[path = "gui_2d/views/field.rs"]
-mod field_view;
-#[cfg(feature = "gui_2d")]
 #[path = "gui_2d/views/result.rs"]
 mod result_view;
 

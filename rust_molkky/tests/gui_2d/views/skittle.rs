@@ -1,6 +1,7 @@
+use dioxus::prelude::*;
 use rust_molkky::{
     Skittle, SkittleState,
-    gui_2d::{models::GuiSkittle, views::skittle as render_skittle},
+    gui_2d::{models::GuiSkittle, views::Skittle as SkittleView},
 };
 
 mod appearance {
@@ -15,7 +16,7 @@ mod appearance {
             (SkittleState::Fall, "fall"),
         ] {
             let model = GuiSkittle::new(skittle.with_state(state), [1.0, 2.0]);
-            let html = dioxus_ssr::render_element(render_skittle(&model));
+            let html = dioxus_ssr::render_element(dioxus::prelude::rsx! { SkittleView { model } });
             assert!(html.contains(&format!("skittle-{}", skittle.id())));
             assert!(html.contains("translate(1 2)"));
             assert!(html.contains(">12</text>"));

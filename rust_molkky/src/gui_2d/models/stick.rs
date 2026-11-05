@@ -1,5 +1,5 @@
 use super::GuiField;
-use crate::core::{Move, Stick, StickState, Throw};
+use crate::core::{Move, Stick, StickState};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GuiStick {
@@ -66,6 +66,9 @@ impl GuiStick {
         velocity: [f32; 2],
         angular_velocity: f32,
     ) -> Self {
+        if self.stick.state() == StickState::Held {
+            return self;
+        }
         Self::r#move(Self {
             position,
             angle,
@@ -82,34 +85,27 @@ impl AsRef<Stick> for GuiStick {
     }
 }
 
-impl Throw for GuiStick {
-    fn throw(stick: Self) -> Self {
-        let Some(target) = stick.target else {
-            return stick;
-        };
-        let [x, y] = [target[0] - stick.position[0], target[1] - stick.position[1]];
-        let length = x.hypot(y);
-        if stick.stick.state() != StickState::Held
-            || !length.is_finite()
-            || length == 0.0
-            || !stick.speed.is_finite()
-            || stick.speed <= 0.0
-        {
-            return stick;
-        }
-        Self {
-            stick: stick.stick.with_state(StickState::Move),
-            velocity: [x / length * stick.speed, y / length * stick.speed],
-            angle: y.atan2(x) - std::f32::consts::FRAC_PI_2,
-            ..stick
-        }
-    }
-}
-
 impl Move for GuiStick {
     fn r#move(stick: Self) -> Self {
         if stick.stick.state() == StickState::Held {
-            return stick;
+            let Some(target) = stick.target else {
+                return stick;
+            };
+            let [x, y] = [target[0] - stick.position[0], target[1] - stick.position[1]];
+            let length = x.hypot(y);
+            if !length.is_finite()
+                || length == 0.0
+                || !stick.speed.is_finite()
+                || stick.speed <= 0.0
+            {
+                return stick;
+            }
+            return Self {
+                stick: stick.stick.with_state(StickState::Move),
+                velocity: [x / length * stick.speed, y / length * stick.speed],
+                angle: y.atan2(x) - std::f32::consts::FRAC_PI_2,
+                ..stick
+            };
         }
         let state = if stick.velocity == [0.0; 2] && stick.angular_velocity == 0.0 {
             StickState::Stop

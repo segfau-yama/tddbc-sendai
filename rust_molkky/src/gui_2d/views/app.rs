@@ -1,58 +1,82 @@
-use super::{
-    stick::{Phase, StickInput, phase},
-    *,
-};
+use super::{Field, result, scores};
+use crate::core::{Molkky, SkittleState, StickState, Team};
 use crate::gui_2d::{
-    models::GuiField,
-    services::{Game, field::create_field, teams::from_names},
+    models::{GuiField, GuiSkittle, GuiStick},
+    services::{
+        GuiMolkky,
+        field::{create_field, create_world},
+        teams::from_names,
+    },
 };
 use dioxus::prelude::*;
 
 #[cfg(test)]
 #[path = "../../../tests/gui_2d/views/app.rs"]
-mod tests;
+pub(super) mod tests;
 
-pub(super) fn render(game: Signal<Game>) -> Element {
-    let input_phase = phase(&game.read());
-    let shared_game = game;
-    let game = game.read();
-    let stick = game.stick();
-    let finished = game.is_finished();
-    let (phase, status) = if finished {
-        ("finished", "試合終了")
-    } else {
-        match input_phase {
-            Phase::Ready => ("ready", "左ボタンを押して照準・蓄力を開始します。"),
-            Phase::Charging => ("charging", "マウスで狙い、左ボタンを離すと投擲します。"),
-            Phase::Simulating => ("simulating", "投擲中…"),
+pub(super) fn advance_turn(teams: &mut [Team], rules: &GuiMolkky) {
+    let winner = rules.judge_game(teams).map(Team::id);
+    let next = rules.next_team(teams).map(Team::id);
+    for team in teams {
+        *team = team.with_turn(next == Some(team.id()));
+        if winner == Some(team.id()) {
+            *team = team.with_score_board(team.score_board().with_win());
         }
+    }
+}
+
+pub(super) fn finish_throw(
+    teams: &mut [Team],
+    stick: &mut GuiStick,
+    skittles: &mut [GuiSkittle],
+    rules: &mut GuiMolkky,
+) {
+    if stick.as_ref().state() != StickState::Stop
+        || skittles
+            .iter()
+            .any(|s| s.as_ref().state() == SkittleState::Hit)
+    {
+        return;
+    }
+    let Some(current) = teams.iter().position(Team::turn) else {
+        return;
     };
-    let aiming = input_phase == Phase::Charging;
-    let skittles = game.skittles().iter().map(|skittle| {
-        let id = skittle.as_ref().id();
-        let class = if aiming && skittle.aimed() {
-            "aimed"
-        } else {
-            ""
-        };
-        rsx! { g { key: "{id}", class, {super::skittle(skittle)} } }
-    });
-    let scene = rsx! {
-        {skittles}
-        Stick { game: shared_game }
-    };
+    let fallen: Vec<_> = skittles
+        .iter()
+        .filter(|s| s.as_ref().state() == SkittleState::Fall)
+        .map(|s| *s.as_ref())
+        .collect();
+    let team = &teams[current];
+    teams[current] = team.with_score_board(team.score_board().add(rules.calc_score(&fallen)));
+    advance_turn(teams, rules);
+    if teams.iter().any(Team::turn) {
+        for skittle in skittles {
+            *skittle = rules.stand_up(skittle);
+        }
+    }
+    // 同じStopを二度採点しない。次投も同じ個体を保持状態から始める。
+    *stick = GuiStick::new(*stick.as_ref(), None, 0.0);
+}
+
+pub(super) fn render(
+    mut teams: Signal<Vec<Team>>,
+    field: GuiField,
+    mut stick: Signal<GuiStick>,
+    mut skittles: Signal<Vec<GuiSkittle>>,
+    mut rules: Signal<GuiMolkky>,
+    enabled: ReadSignal<bool>,
+) -> Element {
     rsx! {
         style { {include_str!("style.css")} }
         h1 { "モルック" }
-        p { role: "status", "{status}" }
         div { class: "game-layout",
-            div { id: "molkky-input", "data-phase": phase,
-                {field(GuiField::BOUNDS, scene)}
-                {speedometer(stick.speed(), StickInput::MAX_SPEED)}
+            Field {
+                field, stick, skittles, rules, enabled,
+                on_complete: move |_| finish_throw(&mut teams.write(), &mut stick.write(), &mut skittles.write(), &mut rules.write()),
             }
             div { class: "scores",
-                {scores(game.teams())}
-                if finished { {result(game.winner())} }
+                {scores(&teams.read())}
+                if !enabled() { {result(rules.read().judge_game(&teams.read()))} }
             }
         }
     }
@@ -60,19 +84,26 @@ pub(super) fn render(game: Signal<Game>) -> Element {
 
 #[component]
 pub fn App() -> Element {
-    let game = use_signal(|| {
+    let (field, stick, skittles, rules) = use_hook(|| {
         let (field, stick, skittles) = create_field();
-        Game::new(
-            from_names(&["赤チーム", "青チーム"]),
+        let rules = create_world(&stick, &skittles);
+        (
             field,
-            stick,
-            skittles,
+            Signal::new(stick),
+            Signal::new(skittles),
+            Signal::new(rules),
         )
     });
+    let teams = use_signal(|| {
+        let mut teams = from_names(&["赤チーム", "青チーム"]);
+        advance_turn(&mut teams, &rules.peek());
+        teams
+    });
+    let enabled = use_memo(move || teams.read().iter().any(Team::turn));
     rsx! {
         main {
             document::Title { "モルック" }
-            {render(game)}
+            {render(teams, field, stick, skittles, rules, enabled.into())}
         }
     }
 }

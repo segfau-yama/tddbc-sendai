@@ -1,7 +1,7 @@
 use crate::core::Field;
 
 /// 全チームが共有するフィールドの識別子と範囲。
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 pub struct GuiField {
     field: Field,
 }

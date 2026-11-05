@@ -1,12 +1,12 @@
 use super::GuiMolkky;
-use crate::core::{Id, StickState};
+use crate::core::{Id, Molkky, SkittleState, StickState};
 use crate::gui_2d::models::{GuiSkittle, GuiStick};
 use rapier2d::prelude::*;
 
 pub const TIME_STEP: f32 = 1.0 / 60.0;
 pub(super) const DAMPING: f32 = 2.0;
 
-/// 共有ワールドを一度進める。スキットルの命中・転倒状態は変更しない。
+/// 共有ワールドを一度進める。接触と停止の状態はhit/chain_hitを適用する。
 pub fn step(
     rules: &mut GuiMolkky,
     skittles: &[GuiSkittle],
@@ -24,7 +24,7 @@ pub fn step(
         body.sleep();
         return (skittles.to_vec(), stick);
     }
-    // throwが用意した初速を一度反映し、以降は物理計算の結果を使う。
+    // moveが用意した初速を一度反映し、以降は物理計算の結果を使う。
     if stick.as_ref().state() == StickState::Move
         && (body.translation().to_array() != stick.position()
             || body.linvel().to_array() != stick.velocity()
@@ -69,7 +69,7 @@ pub fn step(
             body.angvel()
         },
     );
-    let skittles = skittles
+    let mut skittles: Vec<_> = skittles
         .iter()
         .map(|skittle| {
             let Some((&collider, _)) = rules
@@ -88,6 +88,33 @@ pub fn step(
             )
         })
         .collect();
+    let contacts = contacts(rules);
+    // 接触履歴のないHitで再開した場合も、停止時に既存のhitで確定する。
+    for skittle in skittles.iter_mut().filter(|s| {
+        s.as_ref().state() == SkittleState::Hit
+            && !contacts
+                .iter()
+                .any(|&(a, b)| a == s.as_ref().id() || b == s.as_ref().id())
+    }) {
+        *skittle = rules.hit(&updated, skittle);
+    }
+    for (a, b) in contacts {
+        let stick_id = updated.as_ref().id();
+        if a == stick_id || b == stick_id {
+            let id = if a == stick_id { b } else { a };
+            if let Some(skittle) = skittles.iter_mut().find(|s| s.as_ref().id() == id) {
+                *skittle = rules.hit(&updated, skittle);
+            }
+        } else if let (Some(left), Some(right)) = (
+            skittles.iter().position(|s| s.as_ref().id() == a),
+            skittles.iter().position(|s| s.as_ref().id() == b),
+        ) {
+            let first = skittles[left];
+            let second = skittles[right];
+            skittles[left] = rules.chain_hit(&second, &first);
+            skittles[right] = rules.chain_hit(&first, &second);
+        }
+    }
     (skittles, updated)
 }
 

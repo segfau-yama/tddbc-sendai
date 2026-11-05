@@ -1,5 +1,28 @@
 # 開発支援方針の記録
 
+## App・Stick・Fieldによる一投の進行を実装（2026-11-05）
+
+- 採用する直近計画：Gameサービスを撤去し、Appがモデルと唯一の物理ワールドを保持する。StickはDioxusのpointerdown/move/up/cancelで入力し、解放時にmoveでHeld→Moveと初速を確定する。Fieldが一つのフレームループからphysicsとhit/chain_hitを実行し、MoveまたはHitがある間だけ進める。StopかつHitなしの完了をAppへ通知し、coreで採点・勝敗・手番を反映してHeldへ戻す。
+- GuiStickのthrowの開始処理をmoveへ統合する。GUI以外のThrowは変更しない。保持中はmoveを呼ばず、正speedでも位置/実速度を保つ。物理結果のmoveは速度・回転の停止を判定する。Skittleは自身の位置/状態/照準を描画するコンポーネントにする。
+- Dioxus共通APIには同期pointer captureがないため、JSはcapture・フォーカス喪失時のpointercancel・フレーム時刻通知だけに絞る。入力判定・座標変換・投擲・採点をJSへ置かない。Webとdesktopで同じDioxusイベントを利用する。
+- [x] 変更前の208件を確認する。
+- [x] moveの開始/継続/停止を先にテストしてRed→Greenを確認する。
+- [x] 物理側に接触適用を集約し、Fieldの固定刻み・停止後Hit継続・一度だけの完了を確認する。
+- [x] Appに採点/勝敗/手番/立て直しを移し、Gameを削除する。
+- [x] ネイティブイベントのStick、Field、Skittleを接続し、入力・照準・蓄力・取消の検証を維持する。
+- [x] 既存テストを対象の同名ファイルへ移し、無効化や期待値の緩和をせず既存のCUI/coreを確認する。
+- [x] fmt/Clippy・feature分離・Web/desktopビルド・Web実操作と差分を確認する。
+- [x] 記録を更新してConventional Commit・通常pushする。
+
+- Red→Green：moveだけでの初速生成を追加し、実装前は速度が[0,0]で失敗した。throwの開始処理をmoveへ移して成功した（/tmp/molkky-field-plan-move-red.log・move-green.log）。保持中の正speedを物理結果として移動へ変えないケースも、Heldのupdateで速度が反映される失敗を先に確認し、Heldでは値を保持して成功した（held-red.log・held-green.log）。その他の移行テストは既存の成功を確認するRefactorとして扱う。
+- 責務：Appの各Signalがモデルと一つのGuiMolkkyを所有する。GameとPhase・DomEvent・PointerSampleを削除した。Fieldはフレーム時刻から固定刻みでphysics::stepを呼び、完了時だけAppへ通知する。physicsは既存接触履歴を使ってhit/chain_hitを適用する。状態判定や採点ルールの複製、個体ごとの物理ワールドや監視タスクは追加しない。
+- 入力：Stickの一つのuse_coroutineでポインターイベントとフレームを順番に処理する。領域取得はDioxus MountedDataを使う。desktopでは非同期となる取得が押下・解放の処理順を入れ替えないため、この受信タスクを使用する。取得前にSignalのread/writeを保持せず、描画モデルの所有はAppに揃える。
+- ブラウザーでの座標検証：リサイズ後の照準を0.2固定と比較する旧期待値で失敗した。Dioxus 0.7.10のclient_coordinatesはweb_sysの整数client_x/yを使うことを依存ソースと実測で確認した。期待値を実際の整数CSS座標のSVG逆変換から求め、x/yとも従来と同じ0.0001以内を検証する。変換を緩めず、SVG余白とY反転も独立したブラウザーAPIで確認する。領域は各イベント時に取得する。
+- テスト移行：削除したGameの採点・補正・勝利・失格・継続不能と、Fieldの固定刻み・停止後Hit・連鎖・Id保持をtests/gui_2d/views/app.rs・field.rsへ移した。Stickの重複する入力単体/旧Game接続ケースは、入力単体・Field/App接続・実DOM操作へ整理した。旧PointerSampleの不正f64時刻ケースは型自体がなくなり、ネイティブ入力はDurationを使う。JSのフレーム時刻は受信時にDurationへ検証変換する。単体ルールテストの全組合せadvance補助も不要になり、physics::stepを直接使う。テストの無効化はない。
+- 停止条件の退行確認：Fieldの更新条件からHitを一時的に外すと、「棒が停止しても命中中のスキットルが残る間は採点しない」がStopから次投へ進めず失敗した。復元後に成功した（/tmp/molkky-field-plan-stop-negative.log・stop-restored.log）。これは移行後の負の対照実験であり、新規Red確認とは区別する。
+- 検証：cargo test --locked --features gui_2dは198件、既定は151件、GUIのみは105件成功し、失敗・無視0件。cargo fmt --check、cargo clippy --locked --all-targets --features gui_2d -- -D warnings、coreのみのcheck、Webビルド、desktopのcheckが成功した。ログは/tmp/molkky-field-plan-{green,default,gui-only,clippy,core,web,desktop}.log。desktopは既存の.cloud-tools/desktopのpkg-config設定を使った。削除したDomEventのためだけに置いていたserdeの直接依存も除去し、Cargo.lockはルートの依存一覧1行だけを更新した。core/CUIの製品コードは変更していない。
+- Web実操作：Chromiumで照準強調・保持中静止・解放後Move・capture・取消・リサイズ・領域外解放・投擲中focus喪失・一度だけの採点・失格・結果・終了後入力無効化・壁反射を確認した。実衝突からの加点・12本の立て直し・次チームの手番も確認した。DOM接続破棄/接続失敗のNodeテスト2件も成功した。ログは/tmp/molkky-field-plan-browser.log・js.log。検証用8081番サーバーは終了した。デスクトップの実機入力・描画は未確認。
+
 ## Fieldで一投を更新する提案フローのレビュー（2026-11-05）
 
 - 対象：07067ecのcore/models/stick.rs、gui_2d/models/stick.rs・views/field.rs・services/physics.rs・game.rsとDioxus 0.7.10のポインターイベント定義。最新のユーザー案は解放時にmoveで開始、Fieldで衝突/連鎖を反映、StopかつHitなしで次手番へ進めるもの。「既存削除可」は変更案の自由度として受け取り、今回は明示されたreviewとして評価し、実装修正は行わない。

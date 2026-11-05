@@ -31,16 +31,16 @@ cargo test --locked --test application
 | src/cui/io/input.rs | Input：入力元の保持、読み取り・変換・検証・再入力 |
 | src/cui/io/output.rs | Output：出力先の保持、プロンプト・得点表・結果の表示 |
 | src/cui/run.rs | チーム設定、投てき・採点・交代・終了のゲームループ |
-| src/gui_2d/views/app.rs | 共有Gameの生成と画面全体の合成 |
+| src/gui_2d/views/app.rs | モデル・共有ワールドの保持、採点・勝敗・交代の接続、画面全体の合成 |
 | src/gui_2d/models/ | GuiField・GuiStick・GuiSkittle・GuiTeam・GuiScoreBoardのcore委譲型 |
 | src/gui_2d/models/field.rs | 渡されたcore::Fieldの識別子と固定範囲の保持 |
 | src/gui_2d/services/field.rs | フィールド・棒・標準12本の生成と、モデルからの物理ワールド構築 |
 | src/gui_2d/services/teams.rs | 名前からチームを生成 |
-| src/gui_2d/views/stick.rs | Stickコンポーネント：棒・照準の描画、入力・蓄力・解放・フレーム更新とDOM接続の寿命 |
-| src/gui_2d/services/game.rs | Game：モデルと物理を使う投擲・採点・勝敗・立て直し・交代 |
-| src/gui_2d/views/stick.js | DOMのpointer capture・時刻通知と破棄時のイベント・フレーム解除 |
+| src/gui_2d/views/stick.rs | Stickコンポーネント：棒・照準の描画、マウス入力・蓄力・解放 |
+| src/gui_2d/views/field.rs | Fieldコンポーネント：固定刻みの更新、照準の反映、一投の完了通知 |
+| src/gui_2d/views/field.js | 同期pointer capture・取消・フレーム時刻通知と、破棄時の後始末 |
 | src/gui_2d/services/molkky.rs | 接触・停止結果に対するaim/hit/chain_hit/stand_up、coreルールの利用 |
-| src/gui_2d/services/physics.rs | 固定刻みの共有物理更新・位置/速度の反映・接触履歴の取得 |
+| src/gui_2d/services/physics.rs | 共有物理更新・位置/速度の反映・接触履歴からhit/chain_hitの適用 |
 | src/gui_2d/views/ | AppコンポーネントとSVG・速度メーター・得点表・結果の描画部品 |
 | src/bin/gui_2d.rs | Webまたはdesktopレンダラーの起動 |
 
@@ -84,7 +84,7 @@ assert_eq!(field.skittles.len(), 12);
 
 ThrowとMoveはcore/models/stick.rsに置く個体の操作契約です。`throw(stick: Self) -> Self`と`r#move(stick: Self) -> Self`はStickだけを値で受け、同じIdを保った新しいStickを返します。moveはRustの予約語なのでr#moveと表記します。状態はcore::StickStateのHeld/Move/Stopを使い、GUIに同じ状態のenumや完了boolは作りません。
 
-GuiStick::newは保持位置・零速度を初期化し、目標と強さを設定します。GuiStick::throw(stick)がその値から初速度ベクトルを生成してMoveへ変更します。GuiStick::r#move(stick)は個体自身の運動結果からMove/Stopを返します。CuiStick::throw(stick)は0以上1未満の確率を生成しますが、CUIのシミュレーションでは使いません。既定の50%や呼び出し側が指定した確率はそのまま維持します。
+GuiStick::newは保持位置・零実速度を初期化し、目標と強さを設定します。GUIでは解放時のGuiStick::r#move(stick)がその値から初速度ベクトルを生成し、HeldからMoveへ変更します。その後は物理結果をGuiStick::updateで反映し、moveが実速度と角速度からMove/Stopを返します。GUIのthrow実装はありません。CuiStick::throw(stick)は0以上1未満の確率を生成しますが、CUIのシミュレーションでは使いません。既定の50%や呼び出し側が指定した確率はそのまま維持します。
 
 chain_hit(fallen_skittle, chained_skittle)は、呼び出し側が指定した対象へ連鎖を判定します。初回転倒が80%なら次は60%、さらに次は40%と20パーセントポイントずつ下げ、成功した対象へ減衰後の確率を引き継ぎます。0%より下には下げません。連鎖元がStand、対象が既にFall、判定失敗の場合は対象をそのまま返します。現在のCUI入力ループは指定番号への直接hitを行い、隣接探索や連鎖対象の自動選択は追加していません。
 
@@ -131,7 +131,7 @@ cargo run --locked --no-default-features --features gui_2d_desktop --bin gui_2d
 
 CUIは既定のcui feature、GUIはgui_2d_webまたはgui_2d_desktopを選択します。Webの起動スクリプトはCUI依存を除外し、UUIDのjs機能を有効にします。単なるgui_2d featureはヘッドレスのテスト・ライブラリ利用向けで、起動時はレンダラーを選択してください。
 
-`views::App`が共有のSignal<Game>を生成し、`views::Stick`コンポーネントが入力・経過時間・棒の描画とDOM接続の寿命を所有します。`services::field::create_field`はGuiField・GuiStick・標準12本のVec<GuiSkittle>を返し、`services::Game::new`がそれらとチームを受け取って物理ワールドと進行を用意します。Gameは個体一覧を保持し、GuiFieldはフィールドの識別子と範囲を表します。viewsから固定刻みでGame::updateを呼び、採点・交代はサービスに任せます。全チームで同じフィールドと棒を共有します。操作用の初期投擲距離は1m、高さ方向の転倒は物理サービスの力積による近似です。
+`views::App`がチーム・GuiField・GuiStick・Vec<GuiSkittle>と、唯一のGuiMolkkyを保持します。`services::field::create_field`が標準配置のモデルを、create_worldがそれに対応する物理ワールドを用意します。Stickは入力、Fieldは一つのフレームループから物理更新と完了通知を担当し、Appがcoreの採点・勝敗・交代を接続します。Gameサービスはありません。全チームで同じフィールドと棒を共有します。操作用の初期投擲距離は1m、高さ方向の転倒は物理サービスの力積による近似です。
 
 表示範囲はx=-0.3〜0.3m、y=-0.15〜1.35mで固定し、物体の移動による拡大縮小は行いません。`GuiField::BOUNDS`と`WALL_THICKNESS`を描画と物理で共用し、外周の厚さ2cmの壁で棒・スキットルが反射します。反発係数は0.5で、既存の減衰と合わせて停止します。壁と反射はこのGUIの取り決めです。
 
@@ -144,9 +144,9 @@ cargo test --locked --no-default-features --features gui_2d
 cargo clippy --locked --all-targets --features gui_2d -- -D warnings
 # 入力・描画、ゲーム進行を絞って確認する場合
 cargo test --locked --features gui_2d --lib gui_2d::views
-cargo test --locked --features gui_2d --lib gui_2d::services::game
+cargo test --locked --features gui_2d --test gui_2d
 # DOM接続の破棄・接続失敗時の後始末（Node.jsのみ）
-node tests/gui_2d/views/stick.js
+node tests/gui_2d/views/field.js
 ```
 
 Webを起動した状態で、実DOMの入力確認も実行できます。次はLinux用の例です。Playwrightは検証時だけ使用し、ゲームの実行依存には含めません。
@@ -162,9 +162,9 @@ NODE_PATH=/tmp/molkky-browser-tools/node_modules node tests/gui_2d/app.js
 
 ### GUI 2Dの描画部品
 
-`src/gui_2d/views/`にDioxusのElementを返す関数を実装しています。`gui_2d` featureを有効にすると、`gui_2d::views`から`field`、`skittle`、`Stick`、`speedometer`、`scores`、`result`を利用できます。
+`gui_2d` featureを有効にすると、`gui_2d::views`から`App`・`Field`・`Skittle`・`Stick`コンポーネントと、`speedometer`・`scores`・`result`関数を利用できます。
 
-フィールドはworld座標の範囲と子要素を受け取り、SVGで上から見た表示を作ります。StickコンポーネントはSignal<Game>からGuiStickを読み、棒と照準を描画します。スキットルのviewはGuiSkittleを受け取り、位置と状態・型の寸法定数を読み取ります。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。
+Fieldは共通フィールドをSVGで上から描き、Appから渡されたモデルのSignalをStickへ渡します。Stickは棒と照準を、Skittleは各GuiSkittleの位置・状態・照準強調を描きます。寸法にはモデルの関連定数を使います。得点表は既存Teamを読み取り、結果表示は判定済みの勝者を受け取ります。
 
 ```sh
 cd rust_molkky
@@ -180,30 +180,30 @@ cargo build --locked --features gui_2d
 
 | API | 動作 |
 | --- | --- |
-| physics::step | GuiSkittleの一覧とGuiStickから、1/60秒の移動結果を返す。スキットルの状態は確定せず、Heldでは時間を進めない |
+| physics::step | GuiSkittleの一覧とGuiStickから、1/60秒の移動結果とhit/chain_hit適用後の状態を返す。Heldでは時間を進めない |
 | physics::contacts | 一投で力積が発生した個体のIdの組を返す。壁と重複する逆向きの組を除き、停止時の再評価まで履歴を保つ |
 | aim | Rapierの形状問い合わせで候補を選び、位置・角度・照準状態を反映したGuiSkittleを返す |
 | hit | 指定したStickとSkittleの接触とボディ状態から、位置・角度・状態を更新したGuiSkittleを返す |
 | chain_hit | 指定した2個体の実際の接触ペアから、対象の物理状態を反映したGuiSkittleを返す |
 | stand_up | 位置・Id・番号を保ち、対象ボディの角度・速度・角速度・接触記録とStandを復元する |
 
-GuiMolkky::updateは削除しました。physics::stepが既存GuiMolkky内の唯一のワールドを一度だけ進め、位置・速度をモデルへ反映します。Gameがphysics::contactsの実際の接触履歴を読み、棒とピンにはhit、ピン同士には双方へchain_hitを適用します。接触履歴のないHitで再開したモデルもhitで停止まで追跡します。全ピンの組み合わせを判定しません。GuiStick::updateは位置・角度・速度・角速度、GuiSkittle::updateは位置・角度・判定済み状態・照準状態を反映し、Idと元の値を保ちます。モデルは物理ワールドを進めません。初速はGuiStick::throwで設定し、サービスがボディへ反映します。停止した棒のupdateで次投を始めず、次投は保持状態から用意します。
+physics::stepが唯一のワールドを一度進め、位置・速度をモデルへ反映します。実際の接触履歴から、棒とピンにはhit、ピン同士には双方へchain_hitを適用します。接触履歴のないHitで再開したモデルもhitで停止まで追跡します。状態の判定はMolkkyの具象実装へ集約します。モデルのupdateはIdを保ち、元の値を変更せず新しいモデルを返します。
 
-Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。投擲完了は「StickがStop、かつHitが0本」です。Gameサービスはその時点でFallだけをcalc_scoreへ渡し、coreの得点表・勝者・次手番の結果を一度だけ反映します。弱い衝突はHitになっても最終的にStandへ戻り、得点には含めません。継続時はstand_upで移動後の位置とIdを保って立て直します。
+Stick自身が止まるとStopになります。スキットルは移動中Hit、停止時に接触力積からFallまたはStandへ確定します。FieldはMoveまたはHitがある間更新を続け、「StickがStop、かつHitが0本」でAppへ完了を通知します。AppはFallだけをcalc_scoreへ渡し、ScoreBoard.addとTeam.with_score_boardを反映します。弱い衝突はStandへ戻り、得点には含めません。継続時はstand_upで移動後の位置とIdを保って立て直します。
 
 半径・質量はGuiSkittle、棒の半径・長さ・質量はGuiStickの関連定数です。時間刻み・共通減衰はphysics.rs、転倒閾値はmolkky.rsに置きます。時間刻みは従来どおりservices::TIME_STEPから参照できます。新しいワールドラッパー、Observer trait、イベントバス、開始用のラッパーは追加していません。
 
 ### GUI 2Dの入力と進行
 
-`src/gui_2d/views/stick.rs`のStickコンポーネントが、棒の描画・マウス入力・固定刻み更新を担当します。内部のStickInputは所有ポインター、蓄力開始時刻、最後の有効目標とフレーム時刻を保持します。座標変換はSVGの中央寄せ・アスペクト比維持・Y上向きに合わせ、余白や領域外を拒否します。入力の矩形はborderを除いたSVG描画領域のCSSピクセル値です。
+StickはDioxusのonpointerdown/move/up/cancelを受け取り、一つのuse_coroutineで順番に処理します。内部のStickInputは所有ポインター・蓄力開始時刻・最後の有効目標だけを保持します。SVGの領域はイベントごとにMountedDataで取得し、中央寄せ・アスペクト比維持・Y上向きを考慮して変換します。SVGの余白や領域外は拒否します。
 
-左押下でGame::aimを呼び、既存Molkky::aimの照準結果と同じIdのHeldのGuiStickを保持します。押下中は時間ベースのspeed（0〜10m/s、往復2秒）を更新し、Heldのため実速度は0、位置も保持します。解放時はその瞬間の目標とspeedをGame::aimへ渡してからGame::throwを一度呼び、既存のGuiStick::throwでMoveへ進めます。領域外では最後の有効目標を使い、0速度・方向なしでは投擲しません。
+左押下で同じIdのHeldのGuiStickへ目標を設定します。FieldがMolkky::aimの結果を各Skittleへ反映します。押下中は時間ベースのspeed（0〜10m/s、往復2秒）を更新し、実速度は0、位置も保持します。解放時はその瞬間の目標とspeedでmoveを一度呼び、Moveへ進めます。領域外では最後の有効目標を使い、0速度・方向なしでは投擲しません。
 
-投擲中は固定刻みでGame::updateを呼びます。physics::stepが共有ワールドを一度だけ進め、GuiStick::updateが位置・速度を反映し、moveが実速度からspeedとMove/Stopを更新します。Gameは記録された接触を停止まで再評価し、hit/chain_hitだけがHit/Fall/Standを判定します。Heldではmoveが蓄力値を保ちます。減衰・衝突をviewで再計算しません。投擲完了・採点・立て直し・交代と終了後の記録防止は既存Gameサービスが担当します。
+Fieldの一つのループが固定刻みでphysics::stepを呼びます。physicsが位置・速度と接触を反映し、hit/chain_hitがHit/Fall/Standを判定します。Appは完了通知から採点・judge_game・next_teamを接続し、返却先へturnを反映します。最後に同じIdのStickをHeldへ戻すことで二重採点を防ぎます。進行用の別モデルや完了フラグは持ちません。
 
-Appはチーム・共通フィールド・棒・個体一覧からGameを一つ作り、同じSignalをStickへ渡して得点表なども描画します。Ready・Charging・Simulatingは棒の状態と目標から求め、入力コンポーネントが別のGuiStickやGameを保持しません。
+Ready・Charging・Simulatingは棒の状態・目標・Hitの有無から、終了はチームの手番から求めます。モデルの所有元はAppに揃え、各描画部品にcoreモデルを重複所有させません。
 
-views/stick.jsはDOMのpointer captureと時刻通知を行う接続コードです。Stickが受信イベントを扱い、取消は照準・速度・入力状態を戻します。別pointerの取消や投擲中のfocus喪失では進行を戻しません。Stickの破棄時はuse_dropでJSへ終了を通知し、JSは通常終了でも接続失敗でもfinallyでイベントリスナー、requestAnimationFrame、pointer captureを解除します。Webとdesktopで同じコンポーネントを使います。
+views/field.jsはDioxusの共通APIにない同期pointer capture、focus喪失時のpointercancel、requestAnimationFrameの時刻通知を補います。マウス入力と座標変換はRust側です。取消は蓄力中の照準・速度・入力状態を戻し、別pointerの取消や投擲中のfocus喪失では進行を戻しません。Fieldの破棄時はuse_dropでJSへ終了を通知し、JSは通常終了でも接続失敗でもfinallyでリスナー・フレーム・captureを解除します。Webとdesktopで同じコンポーネントを使います。
 
 ## Java演習環境
 

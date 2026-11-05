@@ -5028,7 +5028,6 @@ dependencies = [
  "rand 0.10.3",
  "rapier2d",
  "ratatui",
- "serde",
  "uuid",
  "web-sys",
 ]

@@ -45,7 +45,7 @@ const { chromium } = require("playwright");
         await page.mouse.move(...target);
         await page.mouse.down();
         await phase("charging");
-        assert.equal(await host.locator("svg").evaluate(svg => svg.hasPointerCapture(1)), true);
+        assert.equal(await host.locator("[data-stick-input]").evaluate(input => input.hasPointerCapture(1)), true);
         const stick = host.locator('g[id^="stick-"]');
         const heldPose = await stick.getAttribute("transform");
         await page.waitForTimeout(150);
@@ -55,18 +55,29 @@ const { chromium } = require("playwright");
         await page.evaluate(() => window.dispatchEvent(new Event("blur")));
         await phase("ready");
         await page.mouse.up();
-        assert.equal(await host.locator("svg").evaluate(svg => svg.hasPointerCapture(1)), false);
+        assert.equal(await host.locator("[data-stick-input]").evaluate(input => input.hasPointerCapture(1)), false);
 
         await page.mouse.move(...target);
         await page.mouse.down();
         await phase("charging");
         // pointerdown中のcapture指定を、次のイベントで実際のcaptureにする。
         await page.mouse.move(target[0] + 1, target[1]);
-        await host.locator("svg").evaluate(svg => svg.releasePointerCapture(1));
+        await host.locator("[data-stick-input]").evaluate(input => input.releasePointerCapture(1));
         // capture変更は次のpointerイベントで処理される。
         await page.mouse.move(target[0] + 2, target[1]);
         await phase("ready");
         await page.mouse.up();
+
+        // ネイティブ入力から照準を更新し、各Skittleコンポーネントが強調表示する。
+        const aimed = await point(0, 1);
+        await page.mouse.move(...aimed);
+        await page.mouse.down();
+        await phase("charging");
+        await page.waitForFunction(() => document.querySelectorAll("g.aimed").length > 0);
+        await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+        await phase("ready");
+        await page.mouse.up();
+        assert.equal(await page.locator("g.aimed").count(), 0);
 
         await page.setViewportSize({ width: 640, height: 800 });
         target = await point(0.2, 0.2);
@@ -75,12 +86,20 @@ const { chromium } = require("playwright");
         await phase("charging");
         await page.waitForTimeout(100);
         assert.ok(Number(await page.locator("meter").getAttribute("value")) > 0);
-        assert.ok(Math.abs(Number(await host.locator("svg line").getAttribute("x2")) - 0.2) < 0.0001);
+        // Dioxusのclient_x/yは整数CSS座標。SVGの逆変換を独立した期待値にする。
+        const expectedTarget = await host.locator("svg").evaluate((svg, [x, y]) => {
+            const point = new DOMPoint(Math.trunc(x), Math.trunc(y)).matrixTransform(svg.getScreenCTM().inverse());
+            return [point.x, -point.y];
+        }, target);
+        assert.ok(Math.abs(Number(await host.locator("svg line").getAttribute("x2")) - expectedTarget[0]) < 0.0001);
+        assert.ok(Math.abs(Number(await host.locator("svg line").getAttribute("y2")) - expectedTarget[1]) < 0.0001);
         await page.mouse.move(630, 790);
         await page.mouse.up();
         await phase("simulating");
         assert.equal(await stick.getAttribute("data-stick-state"), "move");
         assert.notEqual(await stick.getAttribute("transform"), heldPose);
+        await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+        assert.equal(await host.getAttribute("data-phase"), "simulating");
         await phase("ready");
         assert.equal((await page.locator("tbody tr").nth(0).locator("td").nth(1).innerText()).trim(), "0");
 
@@ -98,9 +117,15 @@ const { chromium } = require("playwright");
         assert.equal((await page.locator("tbody tr").nth(0).locator("td").nth(1).innerText()).trim(), "0, 0, 0");
         assert.equal((await page.locator("tbody tr").nth(1).locator("td").nth(1).innerText()).trim(), "0, 0");
         target = await point(0, 1);
-        await page.mouse.click(...target);
+        await page.mouse.move(...target);
+        await page.mouse.down();
+        await page.waitForTimeout(100);
+        assert.equal(await stick.getAttribute("data-stick-state"), "held");
+        assert.equal(Number(await page.locator("meter").getAttribute("value")), 0);
+        await page.mouse.up();
         await page.waitForTimeout(100);
         assert.equal(await host.getAttribute("data-phase"), "finished");
+        assert.equal((await page.locator("tbody tr").nth(0).locator("td").nth(1).innerText()).trim(), "0, 0, 0");
         // 新しい試合で横向きに投げ、描画中の反射と固定範囲も確認する。
         await page.reload();
         await host.waitFor();
@@ -133,6 +158,25 @@ const { chromium } = require("playwright");
             && frame.y >= -0.15 && frame.y <= 1.35 && frame.bounds === viewBox));
         await phase("ready");
         assert.equal((await page.locator("tbody tr").nth(0).locator("td").nth(1).innerText()).trim(), "0");
+        // 実際の衝突でも採点と立て直しが接続され、次のチームへ一度だけ交代する。
+        await page.reload();
+        await host.waitFor();
+        await page.waitForTimeout(250);
+        target = await point(0, 1);
+        await page.mouse.move(...target);
+        await page.mouse.down();
+        await phase("charging");
+        await page.waitForTimeout(600);
+        await page.mouse.up();
+        await phase("simulating");
+        await phase("ready");
+        const history = (await page.locator("tbody tr").nth(0).locator("td").nth(1).innerText()).trim();
+        assert.ok(Number(history) > 0 && Number(history) <= 12, history);
+        assert.equal(history.split(",").length, 1);
+        assert.equal(await page.locator('g[data-state="stand"]').count(), 12);
+        assert.equal(await page.locator("tbody tr").nth(1).getAttribute("aria-current"), "true");
+        await page.waitForTimeout(100);
+        assert.equal((await page.locator("tbody tr").nth(0).locator("td").nth(1).innerText()).trim(), history);
         assert.deepEqual(errors, []);
         assert.equal(await page.locator("[role=alert]").count(), 0);
         console.log("DOM入力・capture・採点・失格・結果表示・固定フィールド・反射の確認成功");
